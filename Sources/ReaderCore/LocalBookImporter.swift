@@ -17,7 +17,7 @@ public enum LocalBookImporter {
     public static let maximumFileBytes = 100 * 1024 * 1024
     public static let extensions = ["txt", "epub", "pdf", "md", "markdown", "html", "htm", "xhtml", "rtf", "docx"]
 
-    public static func parse(_ data: Data, filename: String) throws -> BookDocument {
+    public static func parse(_ data: Data, filename: String, progress: (@Sendable (Int, Int) -> Void)? = nil) throws -> BookDocument {
         guard data.count <= maximumFileBytes else { throw SourceError.message("单本文件不能超过 100 MB。") }
         let ext = (filename as NSString).pathExtension.lowercased()
         switch ext {
@@ -39,13 +39,21 @@ public enum LocalBookImporter {
             var chapters: [Chapter] = []
             var total = 0
             for index in 0..<pdf.pageCount {
-                let text = pdf.page(at: index)?.string ?? ""
+                try Task.checkCancellation()
+                guard let page = pdf.page(at: index) else { throw SourceError.message("PDF 第 \(index + 1) 页无法读取。") }
+                var text = page.string ?? ""
+                #if canImport(Vision)
+                if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    text = try autoreleasepool { try PDFTextRecognizer.recognize(page) }
+                }
+                #endif
+                progress?(index + 1, pdf.pageCount)
                 total += text.utf8.count
                 guard total <= 40 * 1024 * 1024 else { throw SourceError.message("PDF 文字内容过大。") }
                 chapters.append(Chapter(id: index, title: "第 \(index + 1) 页", firstPage: pages.count))
-                pages.append(ReadingPage(id: pages.count, chapter: index, text: text.isEmpty ? "本页没有可提取的文字（可能是图片或扫描页）。" : text))
+                pages.append(ReadingPage(id: pages.count, chapter: index, text: text.isEmpty ? "本页未识别到文字（可能是空白页或插图）。" : text))
             }
-            guard total > 0 else { throw SourceError.message("这是没有文字层的扫描版 PDF。当前版本不含 OCR，请导入有文字层的 PDF。") }
+            guard total > 0 else { throw SourceError.message("PDF 没有可提取的文字，OCR 也未识别到正文。请检查是否为空白、纯插图或扫描质量过低。") }
             return BookDocument(chapters: chapters, pages: pages, wordCount: pages.reduce(0) { $0 + $1.text.filter { !$0.isWhitespace }.count })
             #else
             throw SourceError.message("当前平台不支持 PDF 解析。")
