@@ -26,6 +26,7 @@ struct MoyuApp: App {
                 .environmentObject(online)
                 .onAppear {
                     #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--ui-scroll-check") { ScrollReadingView.checkPositionRecovery() }
                     if ProcessInfo.processInfo.arguments.contains("--ui-cookie-check") {
                         Task { await BrowserSessions.checkCookieSharing(client: online.client) }
                     }

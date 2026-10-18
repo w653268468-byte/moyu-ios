@@ -13,7 +13,7 @@ struct OnlineReaderView: View {
     @State private var official = false
     @State private var retry = 0
     @State private var resumeOffset = 0
-    @State private var resumeFraction = 0.0
+    @State private var resumeFraction: Double?
     @State private var openAtEnd = false
     @StateObject private var speech = ReaderSpeech()
     private var style = ReadingStyle()
@@ -94,7 +94,7 @@ struct OnlineReaderView: View {
                         guard target == index else { return }
                         let saved = online.novels.first { $0.id == novel.id } ?? novel
                         resumeOffset = openAtEnd ? Int.max : (saved.chapterIndex == target ? (saved.textOffset ?? 0) : 0)
-                        resumeFraction = !openAtEnd && saved.chapterIndex == target ? (saved.scrollFraction ?? 0) : 0
+                        resumeFraction = !openAtEnd && saved.chapterIndex == target ? saved.scrollFraction : nil
                         openAtEnd = false
                         text = fetched
                         online.position(novel, index: target)

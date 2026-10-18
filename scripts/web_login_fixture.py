@@ -4,6 +4,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        print("GET", self.path, flush=True)
         if self.path.startswith("/login"):
             self.send_response(200)
             self.send_header("Set-Cookie", "gavin_fixture=verified; Path=/; HttpOnly; SameSite=Lax")
@@ -24,4 +25,6 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-ThreadingHTTPServer(("127.0.0.1", 18765), Handler).serve_forever()
+server = ThreadingHTTPServer(("127.0.0.1", 18765), Handler)
+print("SERVER_READY", server.server_address, flush=True)
+server.serve_forever()

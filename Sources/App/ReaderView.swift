@@ -35,7 +35,7 @@ struct ReaderView: View {
     let document: BookDocument
     @State private var page = 0
     @State private var resumeOffset = 0
-    @State private var resumeFraction = 0.0
+    @State private var resumeFraction: Double?
     @State private var navigationID = UUID()
     @State private var panel: ReaderPanel?
     @State private var search = ""
@@ -111,7 +111,7 @@ struct ReaderView: View {
         .onAppear {
             page = min(max(0, liveBook.page), document.pages.count - 1)
             resumeOffset = liveBook.textOffset ?? offsetForSegment(page)
-            resumeFraction = liveBook.scrollFraction ?? 0
+            resumeFraction = liveBook.scrollFraction
             navigationID = UUID()
         }
         .onChange(of: page) { old, value in
@@ -119,7 +119,7 @@ struct ReaderView: View {
         }
         .onChange(of: style.paged) { _, _ in
             resumeOffset = liveBook.textOffset ?? offsetForSegment(page)
-            resumeFraction = liveBook.scrollFraction ?? 0
+            resumeFraction = liveBook.scrollFraction
             navigationID = UUID()
         }
         .onDisappear { speech.stop() }
