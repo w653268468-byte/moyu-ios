@@ -7,7 +7,7 @@ final class OnlineStore: ObservableObject {
     @Published private(set) var novels: [OnlineNovel] = []
     @Published var errorMessage: String?
     @Published private(set) var locked = false
-    let client = SourceClient()
+    let client = SourceClient(cookieProvider: { url in await BrowserSessions.cookies(for: url) })
     private let directory = URL.documentsDirectory.appendingPathComponent("MoyuOnline", isDirectory: true)
     private var indexURL: URL { directory.appendingPathComponent("index.json") }
     private var backupURL: URL { directory.appendingPathComponent("index.backup.json") }

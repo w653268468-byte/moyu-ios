@@ -3,13 +3,24 @@ import SwiftSoup
 
 public actor SourceClient {
     private let session: URLSession
-    public init(configuration: URLSessionConfiguration = .ephemeral) {
+    private let cookieStorage: HTTPCookieStorage?
+    private let cookieProvider: (@Sendable (URL) async -> [HTTPCookie])?
+    public init(configuration: URLSessionConfiguration = .ephemeral, cookieProvider: (@Sendable (URL) async -> [HTTPCookie])? = nil) {
         let config = configuration
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 60
         config.httpMaximumConnectionsPerHost = 2
+        cookieStorage = config.httpCookieStorage
+        self.cookieProvider = cookieProvider
         session = URLSession(configuration: config)
     }
+
+    public func replaceCookies(_ cookies: [HTTPCookie], for url: URL) {
+        for old in cookieStorage?.cookies ?? [] where SourceCookies.belongs(old, to: url) { cookieStorage?.deleteCookie(old) }
+        for cookie in cookies where SourceCookies.belongs(cookie, to: url) { cookieStorage?.setCookie(cookie) }
+    }
+
+    public func cookies(for url: URL) -> [HTTPCookie] { cookieStorage?.cookies(for: url) ?? [] }
 
     public static func resolve(_ raw: String, base: URL) throws -> URL {
         guard let url = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines), relativeTo: base)?.absoluteURL,
@@ -25,6 +36,9 @@ public actor SourceClient {
     private func fetch(_ original: URLRequest, source: BookSource? = nil, limit: Int = 8 * 1024 * 1024) async throws -> (Data, URL) {
         guard let url = original.url else { throw SourceError.message("请求地址为空。") }
         _ = try Self.resolve(url.absoluteString, base: url)
+        if let cookieProvider {
+            for cookie in await cookieProvider(url) where SourceCookies.belongs(cookie, to: url) { cookieStorage?.setCookie(cookie) }
+        }
         var request = original
         if request.value(forHTTPHeaderField: "User-Agent") == nil {
             request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")

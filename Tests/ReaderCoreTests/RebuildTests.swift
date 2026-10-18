@@ -27,7 +27,8 @@ final class RebuildTests: XCTestCase {
         XCTAssertEqual(try books[1].value("$.url"), "/b/2")
         XCTAssertEqual(try doc.value("$.data.books[-1].name"), "水浒")
         XCTAssertEqual(try doc.value("$.missing||data.books[0].name"), "三国")
-        XCTAssertFalse(JSONRule.isSupported("$.data[?(@.vip)]"))
+        XCTAssertTrue(JSONRule.isSupported("$.data[?(@.vip)]"))
+        XCTAssertEqual(try doc.value("$.data.books[?(@.name == '水浒')].url"), "/b/2")
         XCTAssertFalse(JSONRule.isSupported("$.data@js:result"))
     }
 

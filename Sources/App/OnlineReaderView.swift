@@ -34,7 +34,7 @@ struct OnlineReaderView: View {
                         Label("无法读取这一章", systemImage: "wifi.exclamationmark")
                     } description: { Text(failure) } actions: {
                         Button("重试") { retry += 1 }
-                        Button("官方网页", systemImage: "safari") { official = true }
+                        Button("网页登录 / 验证", systemImage: "safari") { official = true }
                     }
                 } else if style.paged {
                     PagedReadingView(text: text, title: novel.chapters[index].title, resumeOffset: resumeOffset,
@@ -115,7 +115,7 @@ struct OnlineReaderView: View {
                         }
                     }
                 }
-                .sheet(isPresented: $official) {
+                .sheet(isPresented: $official, onDismiss: { retry += 1 }) {
                     OfficialWebView(url: novel.chapters.indices.contains(index) ? novel.chapters[index].url : novel.url)
                 }
                 .sheet(isPresented: $showContents) {

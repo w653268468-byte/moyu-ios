@@ -17,6 +17,7 @@ struct SourceManagerView: View {
     @State private var selecting = false
     @State private var importing = false
     @State private var editing: BookSource?
+    @State private var authorizing: BookSource?
     @State private var pendingDelete: Set<String> = []
     @State private var confirmDelete = false
     @State private var export: JSONExport?
@@ -88,6 +89,7 @@ struct SourceManagerView: View {
                             if !selecting {
                                 HStack(spacing: 22) {
                                     Button("编辑") { editing = source }
+                                    Button("登录") { authorizing = source }
                                     Button(source.enabled == false ? "启用" : "禁用") { online.setEnabled([source.id], enabled: source.enabled == false) }
                                     Button("校验") { check([source]) }.disabled(checking)
                                     Button("删除", role: .destructive) { askDelete([source.id]) }
@@ -131,6 +133,9 @@ struct SourceManagerView: View {
                     }
                 }
                 .sheet(isPresented: $importing) { SourceImportView() }
+                .sheet(item: $authorizing) { source in
+                    if let url = BrowserSessions.loginURL(source) { OfficialWebView(url: url) }
+                }
                 .sheet(item: $editing) { SourceEditorView(source: $0) }
                 .confirmationDialog("删除 \(pendingDelete.count) 个书源？", isPresented: $confirmDelete, titleVisibility: .visible) {
                     Button("删除书源", role: .destructive) { online.deleteSources(pendingDelete); selection.subtract(pendingDelete) }
