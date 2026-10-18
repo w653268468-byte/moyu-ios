@@ -58,6 +58,17 @@ private enum BackupService {
         guard let preferences = try PropertyListSerialization.propertyList(from: backup.preferences, format: nil) as? [String: Any],
               preferences.keys.allSatisfy({ $0.hasPrefix("reader.") }),
               preferences.values.allSatisfy({ $0 is String || $0 is NSNumber }) else { throw SourceError.message("阅读设置格式无效。") }
+        let ranges: [String: ClosedRange<Double>] = [
+            "reader.fontSize": 12...44, "reader.lineSpacing": 0...30,
+            "reader.letterSpacing": 0...6, "reader.paragraphSpacing": 0...40,
+            "reader.horizontalMargin": 10...55, "reader.verticalMargin": 8...60,
+            "reader.brightness": 0.35...1, "reader.speechRate": 0.25...0.65
+        ]
+        for (key, range) in ranges {
+            if let value = preferences[key] {
+                guard let number = value as? NSNumber, number.doubleValue.isFinite, range.contains(number.doubleValue) else { throw SourceError.message("备份中的阅读设置超出范围：\(key)") }
+            }
+        }
         let manager = FileManager.default
         let staging = URL.documentsDirectory.appendingPathComponent("MoyuRestore-\(UUID().uuidString)")
         let rollback = staging.appendingPathComponent("rollback")
@@ -87,7 +98,7 @@ private enum BackupService {
             }
             if rollbackFailed {
                 keepRecoveryFiles = true
-                throw SourceError.message("恢复失败，原文件保留在“文件 → 墨屿 → \(staging.lastPathComponent) → rollback”，请先备份该文件夹。")
+                throw SourceError.message("恢复失败，原文件保留在“文件 → Gavin → \(staging.lastPathComponent) → rollback”，请先备份该文件夹。")
             }
             throw error
         }
@@ -139,14 +150,14 @@ struct AppSettingsView: View {
                     Text("复杂 JavaScript/Java 桥、XPath、WebView 验证、发现页、仿真翻页与 WebDAV 同步仍待实现；当前版本不等同 Android Legado 完整版。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Section("墨屿 2.0") {
+                Section("Gavin 2.0") {
                     Link("项目源码与安装包", destination: URL(string: "https://github.com/w653268468-byte/moyu-ios")!)
                     Text("MIT 开源许可 · 无广告 · 书籍保存在本机")
                     Text("免费 Apple 账号签名通常需每 7 天续签。用 Sideloadly 覆盖安装同一包名；不要先删 App，以免丢失本地数据。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }.navigationTitle("设置")
-                .fileExporter(isPresented: $exporting, document: export, contentType: .json, defaultFilename: "墨屿完整备份.json") { result in
+                .fileExporter(isPresented: $exporting, document: export, contentType: .json, defaultFilename: "Gavin完整备份.json") { result in
                     if case .failure(let error) = result { message = error.localizedDescription }
                 }
                 .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
@@ -154,7 +165,7 @@ struct AppSettingsView: View {
                 }
                 .confirmationDialog("用备份替换当前书架和设置？", isPresented: $confirmRestore, titleVisibility: .visible) {
                     Button("恢复备份", role: .destructive) { restore() }
-                } message: { Text("建议先导出当前备份。仅支持墨屿导出的完整备份文件。") }
+                } message: { Text("建议先导出当前备份。仅支持Gavin导出的完整备份文件。") }
                 .confirmationDialog("清理全部在线章节缓存？", isPresented: $confirmCache, titleVisibility: .visible) {
                     Button("清理缓存", role: .destructive) { online.clearCache() }
                 }

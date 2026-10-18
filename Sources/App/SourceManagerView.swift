@@ -135,7 +135,7 @@ struct SourceManagerView: View {
                 .confirmationDialog("删除 \(pendingDelete.count) 个书源？", isPresented: $confirmDelete, titleVisibility: .visible) {
                     Button("删除书源", role: .destructive) { online.deleteSources(pendingDelete); selection.subtract(pendingDelete) }
                 } message: { Text("书架记录和已缓存章节会保留，尚未缓存的章节需要重新导入对应书源才能读取。") }
-                .fileExporter(isPresented: $exporting, document: export, contentType: .json, defaultFilename: "墨屿书源.json") { result in
+                .fileExporter(isPresented: $exporting, document: export, contentType: .json, defaultFilename: "Gavin书源.json") { result in
                     if case .failure(let error) = result { online.errorMessage = error.localizedDescription }
                 }
                 .onDisappear { checkTask?.cancel() }

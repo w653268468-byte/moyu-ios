@@ -34,6 +34,9 @@ final class OnlineStore: ObservableObject {
                 let index = try JSONDecoder().decode(Index.self, from: data)
                 sources = index.sources
                 novels = index.novels
+            } else {
+                sources = []
+                novels = []
             }
             locked = false
         } catch { locked = true; errorMessage = "在线书架读取失败：\(error.localizedDescription)。已暂停写入，请先备份后重试。" }

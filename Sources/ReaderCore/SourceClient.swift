@@ -78,7 +78,37 @@ public actor SourceClient {
     }
 
     public func importURL(_ url: URL) async throws -> SourceImport {
-        let (data, _) = try await fetch(url, limit: 5 * 1024 * 1024)
+        try await importURL(url, depth: 0)
+    }
+
+    private func importURL(_ input: URL, depth: Int) async throws -> SourceImport {
+        let url = try SourceSubscription.normalize(input)
+        let (data, finalURL) = try await fetch(url, limit: SourceImport.maximumBytes)
+        if let links = try SourceSubscription.links(in: data, base: finalURL) {
+            guard depth == 0 else { throw SourceError.message("订阅索引嵌套过深，请直接导入其中的书源 JSON 链接。") }
+            var sources: [BookSource] = []
+            var failures: [String] = []
+            for link in links {
+                try Task.checkCancellation()
+                do {
+                    let result = try await importURL(link, depth: depth + 1)
+                    for source in result.sources {
+                        if let index = sources.firstIndex(where: { $0.id == source.id }) { sources[index] = source }
+                        else {
+                            guard sources.count < 5000 else { throw SourceError.message("合并书源超过 5000 个，请分批导入。") }
+                            sources.append(source)
+                        }
+                    }
+                    failures += result.failures
+                    guard sources.count <= 5000 else { throw SourceError.message("合并书源超过 5000 个，请分批导入。") }
+                } catch {
+                    if Task.isCancelled { throw error }
+                    failures.append("订阅 \(link.host ?? link.absoluteString)：\(error.localizedDescription)")
+                }
+            }
+            guard !sources.isEmpty else { throw SourceError.message("索引已读取，但实际书源下载失败：\n" + failures.joined(separator: "\n")) }
+            return SourceImport(sources: sources, failures: failures)
+        }
         do { return try SourceImport.parse(data) }
         catch let error as SourceError { throw error }
         catch { throw SourceError.message("书源链接下载成功，但内容不是有效的阅读 JSON。可能返回了网页或验证页。\(error.localizedDescription)") }

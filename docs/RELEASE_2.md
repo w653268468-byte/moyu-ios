@@ -1,4 +1,4 @@
-# 墨屿 2.0 重构预览
+# Gavin 2.0 重构预览
 
 书源管理增加显式删除、多选删除、JSON 编辑、禁用、导出、分组搜索与整链路校验。删除书源保留书架与缓存。支持基础 JSONPath、静态 GET/POST 和更具体的网络错误。
 
@@ -6,6 +6,6 @@
 
 这不是 Legado 完整移植：JS/Java 桥、通用 XPath、发现页、WebView 验证、仿真翻页、WebDAV、EPUB 原版式和 MOBI/AZW3 尚未完成。书源网站可用性需要手机实际网络校验。
 
-下载 `Moyu-unsigned.ipa` 后用 Sideloadly 签名，使用同一账号覆盖安装。先从旧版备份“文件 → 我的 iPhone → 墨屿”下的两个文件夹；不要先卸载旧版，以免删除阅读数据。
+下载 `Gavin-unsigned.ipa` 后用 Sideloadly 签名，使用同一账号覆盖安装。先从旧版备份“文件 → 我的 iPhone → Gavin”下的两个文件夹；不要先卸载旧版，以免删除阅读数据。
 
 每次此预览更新的实际构建提交请查看最新成功的 Actions。源码包与 IPA 由通过测试和 iOS 构建的同一个工作流生成。

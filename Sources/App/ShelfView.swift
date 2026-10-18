@@ -35,7 +35,7 @@ struct ShelfView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 26) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("MOYU · 私人的阅读岛屿")
+                        Text("GAVIN · 私人的阅读岛屿")
                             .font(.caption.weight(.semibold)).tracking(2).foregroundStyle(.secondary)
                         Text("把日子，读慢一点。")
                             .font(.system(size: 29, weight: .medium, design: .serif))
@@ -132,12 +132,12 @@ struct ShelfView: View {
                 }.padding(.horizontal, 24).padding(.bottom, 30)
             }
             .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle("墨屿").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Gavin").navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, prompt: "搜索书架")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showAbout = true } label: { Image(systemName: "info.circle") }
-                        .accessibilityLabel("关于墨屿")
+                        .accessibilityLabel("关于Gavin")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { importing = true } label: {
@@ -207,7 +207,7 @@ private struct AboutView: View {
         NavigationStack {
             List {
                 Section {
-                    Label("墨屿 Moyu", systemImage: "book.pages.fill").font(.title2)
+                    Label("Gavin Moyu", systemImage: "book.pages.fill").font(.title2)
                     Text("把日子，读慢一点。").foregroundStyle(.secondary)
                     Text("版本 2.0.0 · MIT 开源许可")
                 }
@@ -217,12 +217,12 @@ private struct AboutView: View {
                 }
                 Section("数据与隐私") {
                     Text("小说、进度、书源与章节缓存保存在本机，没有账号、广告或统计。使用书源时会直接访问相应网站。删除 App 会删除本地数据。")
-                    Text("可以通过“文件 → 我的 iPhone → 墨屿”备份 Moyu 和 MoyuOnline 两个文件夹。")
+                    Text("可以通过“文件 → 我的 iPhone → Gavin”备份 Moyu 和 MoyuOnline 两个文件夹。")
                 }
                 Section("当前范围") {
                     Text("支持文字书导入、CSS/基础 JSONPath 书源、GET/POST、搜索、目录与章节缓存。复杂 JS、XPath、MOBI/AZW3、仿真翻页和跨设备同步尚未完成，不等同 Legado 完整版。")
                 }
-            }.navigationTitle("关于墨屿").navigationBarTitleDisplayMode(.inline)
+            }.navigationTitle("关于Gavin").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }
     }

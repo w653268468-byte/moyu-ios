@@ -74,17 +74,18 @@ public struct BookSource: Codable, Identifiable, Equatable, Sendable {
 }
 
 public struct SourceImport: Sendable {
+    public static let maximumBytes = 20 * 1024 * 1024
     public var sources: [BookSource]
     public var failures: [String]
 
     public static func parse(_ data: Data) throws -> SourceImport {
-        guard data.count <= 5 * 1024 * 1024 else { throw SourceError.message("书源文件超过 5 MB。") }
+        guard data.count <= maximumBytes else { throw SourceError.message("书源文件超过 20 MB。") }
         let value = try JSONSerialization.jsonObject(with: data)
         let entries: [Any]
         if let array = value as? [Any] { entries = array }
         else if value is [String: Any] { entries = [value] }
         else { throw SourceError.message("请提供阅读 3.x JSON 书源对象或数组。") }
-        guard entries.count <= 2000 else { throw SourceError.message("一次最多导入 2000 个书源，请拆分后重试。") }
+        guard entries.count <= 5000 else { throw SourceError.message("一次最多导入 5000 个书源，请拆分后重试。") }
         var sources: [BookSource] = []
         var failures: [String] = []
         for (index, entry) in entries.enumerated() {

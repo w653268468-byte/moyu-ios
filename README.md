@@ -1,4 +1,4 @@
-# 墨屿 Moyu · iOS 阅读器
+# Gavin · iOS 阅读器
 
 原生 SwiftUI 小说阅读器，iOS 17+，MIT 开源。以 Android 阅读/Legado 为开发目标；**当前 2.0 重构预览不等同 Legado 完整功能或完整规则兼容性**。
 
@@ -15,6 +15,7 @@
 - 本地目录、书签、正文搜索、阅读进度；在线已读章节缓存；小说详情可逐章缓存全书并随时停止。
 - 完整 JSON 备份/恢复：书架、文字书、进度、书签、书源、章节缓存和阅读设置。恢复先校验并暂存原目录用于失败回滚。
 - 按用户要求移除番茄专用入口与解析接口。旧记录保留；已缓存章节仍能读，未缓存章节需重新导入通用书源。
+- 可直接导入用户提供的 `https://github.com/52liulian/yuanc`，识别其书源索引并下载实际 JSON；GitHub blob 文件链接会转换为原始文件链接。索引最多跟随 20 个链接、限制一层，书源合集最大 20 MB / 5000 项。
 
 ## 明确的未完成项
 
@@ -24,7 +25,7 @@
 
 ## 安装和构建
 
-在仓库 Releases 下载通过 CI 的 `Moyu-unsigned.ipa`，Windows 使用已配置的 Sideloadly 签名安装。免费 Apple 账号通常需每 7 天续签。同一账号/包名覆盖安装可保留数据；**先导出备份，不要先删除手机 App**。
+在仓库 Releases 下载通过 CI 的 `Gavin-unsigned.ipa`，Windows 使用已配置的 Sideloadly 签名安装。免费 Apple 账号通常需每 7 天续签。同一账号/包名覆盖安装可保留数据；**先导出备份，不要先删除手机 App**。
 
 Actions 在 macOS 上运行测试、模拟器构建、arm64 iPhone Release 构建后打包。Windows 的 `scripts/validate.py` 只做结构检查，不能代替 Swift/Xcode 编译。
 
@@ -40,3 +41,9 @@ xcodebuild -project Moyu.xcodeproj -scheme Moyu -sdk iphonesimulator -destinatio
 单文件不超过 100 MB；纯文本解码不超过 20 MB。EPUB 解压文字不超过 40 MB、单个章节文件不超过 20 MB。PDF 需要文字层，不保留原版式。MD 保留文字标记。备份内容上限 200 MB。
 
 依赖 SwiftSoup 2.7.7、ZIPFoundation 0.9.19（均为 MIT）。无内置第三方书源、账号、广告或阅读统计；书源请求直接访问所选网站。
+
+## 实际联网检查
+
+2026-10-19，macOS CI 实际通过 Project Gutenberg 的搜索 → 详情 → HTML 正文，并成功导入其公版 EPUB（30 个阅读节、562 个文本分段）。示例规则在 `Examples/gutenberg-public-domain.json`，可用 `Frankenstein` 搜索；此例把整本 HTML 作为一个在线阅读节，不代表已实现该网站的细分章节。
+
+用户提供的 yuanc 索引包含两条外部订阅；当前开发网络读取到 jsDelivr 文件 194 个规则，yckceo 重定向后连接重置。以最新 `Gavin-live-source-check` CI 日志中的实际导入和兼容统计为准。统计不等于每个小说网站的搜索/目录/正文均可用。

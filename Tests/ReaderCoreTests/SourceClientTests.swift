@@ -14,7 +14,7 @@ private final class FixtureProtocol: URLProtocol {
             "/api/book": #"{"name":"三国","toc":"/api/toc"}"#,
             "/api/toc": #"{"chapters":[{"title":"第一回","url":"/api/chapter"}]}"#,
             "/api/chapter": #"{"text":"滚滚长江东逝水。"}"#,
-            "/search": "<div class='book'><a href='/book/1'>山海来信</a><span class='author'>墨屿</span></div>",
+            "/search": "<div class='book'><a href='/book/1'>山海来信</a><span class='author'>Gavin</span></div>",
             "/book/1": "<h1>山海来信</h1><a class='catalog' href='/toc/1'>目录</a>",
             "/toc/1": "<div id='list'><a href='/chapter/1'>第一章</a></div><a class='next' href='/toc/2'>下一页</a>",
             "/toc/2": "<div id='list'><a href='/chapter/1'>第一章</a><a href='/chapter/2'>第二章</a></div>",
@@ -58,7 +58,7 @@ final class SourceClientTests: XCTestCase {
         let books = try await client.search("山海", source: source)
         XCTAssertEqual(books.count, 1)
         XCTAssertEqual(books[0].title, "山海来信")
-        XCTAssertEqual(books[0].author, "墨屿")
+        XCTAssertEqual(books[0].author, "Gavin")
         let novel = try await client.catalog(books[0], source: source)
         XCTAssertEqual(novel.chapters.count, 2, "Catalog pages must be merged and deduplicated")
         XCTAssertEqual(novel.chapters[1].url.absoluteString, "https://fixture.example/chapter/2")

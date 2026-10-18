@@ -1,4 +1,4 @@
-# Windows + iPhone 安装墨屿
+# Windows + iPhone 安装Gavin
 
 本项目是原生 iOS App，需要先编译，再对 IPA 签名。已经在 GitHub 云端 macOS 成功生成包含番茄导入功能的 IPA，你不需要自己拥有 Mac。**IPA 尚未签名，实际真机安装仍需你自己的 Apple ID，当前尚未完成真机运行验证。**
 
@@ -27,19 +27,19 @@ GitHub Actions 的可用额度和权限以你的账号为准。工作流只读�
 5. 在官方签名工具中输入你自己的 Apple ID 并完成验证；不要将密码发送给他人或填进书源/本项目。
 6. 在 iPhone「设置 → 通用 → VPN 与设备管理」中信任对应开发者；若系统提示，则开启开发者模式并重启。
 
-## 三、安装墨屿 IPA
+## 三、安装Gavin IPA
 
 1. 将 `Moyu-unsigned.ipa` 传到 iPhone 的“文件”App（例如个人网盘或 iCloud Drive）。
 2. 保持电脑 AltServer 运行，电脑与手机按官方要求连接。
 3. 在 iPhone 打开 AltStore Classic → **My Apps → +**，选择这个 IPA。
-4. 等待 AltStore 重新签名并安装，随后在主屏幕打开「墨屿」。
+4. 等待 AltStore 重新签名并安装，随后在主屏幕打开「Gavin」。
 5. 免费 Apple ID 的签名通常 7 天到期，需要通过 AltServer 定期刷新；免费账号也有活动 App 和 App ID 数量限制，AltStore 本身会占用名额。
 
 参见 [AltStore 使用与刷新说明](https://faq.altstore.io/altstore-classic/your-altstore) 和 [Apple 免费开发账号限制](https://developer.apple.com/help/account/basics/about-your-developer-account)。
 
 ## 四、导入阅读书源
 
-1. 打开墨屿 → 底部 **书源** → 右上角 **+**。
+1. 打开Gavin → 底部 **书源** → 右上角 **+**。
 2. 粘贴返回 Legado 3.x JSON 的书源链接并点“获取并预览书源”，也可以选择 JSON 文件或粘贴 JSON。
 3. 查看兼容提示，点“确认导入”。
 4. 在“使用书源”中选择对应书站，输入书名搜索；或粘贴该站的小说详情/目录链接。

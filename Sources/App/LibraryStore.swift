@@ -37,7 +37,7 @@ final class LibraryStore: ObservableObject {
             storageLocked = false
         } catch {
             storageLocked = true
-            errorMessage = "无法读取书架：\(error.localizedDescription)\n为保护现有文件，已暂停写入。请重试，或先通过“文件”App 备份墨屿文件夹。"
+            errorMessage = "无法读取书架：\(error.localizedDescription)\n为保护现有文件，已暂停写入。请重试，或先通过“文件”App 备份Gavin文件夹。"
         }
     }
 
@@ -93,6 +93,7 @@ final class LibraryStore: ObservableObject {
                         guard size <= LocalBookImporter.maximumFileBytes else { throw SourceError.message("单本文件不能超过 100 MB。") }
                         let data = try Data(contentsOf: url, options: .mappedIfSafe)
                         if url.pathExtension.lowercased() == "rtf" {
+                            guard data.count <= TextParser.maximumBytes else { throw TextImportError.tooLarge }
                             let text = try NSAttributedString(data: data, options: [.documentType: NSAttributedString.DocumentType.rtf], documentAttributes: nil).string
                             return try TextParser.parse(text)
                         }
@@ -152,7 +153,7 @@ final class LibraryStore: ObservableObject {
 
     private static let sample = """
     山海来信
-    墨屿 · 原创演示短篇
+    Gavin · 原创演示短篇
 
     第一章 风从海边来
     林屿回到小镇的那一天，渡口刚下过雨。青石板上留着浅浅的水光，远处的灯塔在雾里，像一枚没有寄出的邮票。
@@ -179,7 +180,7 @@ final class LibraryStore: ObservableObject {
     日子没有突然变得不同。只是从那以后，她不再急着把每一页翻过去。
 
     后记
-    欢迎来到墨屿。这是一款将书留在自己手里的阅读工具。
+    欢迎来到Gavin。这是一款将书留在自己手里的阅读工具。
     回到书架，点击右上角加号，就能从“文件”导入你自己的 TXT 小说。阅读时可切换纸张、调整字号、添加书签，也可以通过目录和搜索跳转。
     本演示短篇随软件以 MIT 许可提供，你可以自由修改和使用。
     """

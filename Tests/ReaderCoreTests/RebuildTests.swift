@@ -4,6 +4,16 @@ import ZIPFoundation
 @testable import ReaderCore
 
 final class RebuildTests: XCTestCase {
+    func testSourceIndexAndGitHubLinkNormalization() throws {
+        let repository = URL(string: "https://github.com/52liulian/yuanc")!
+        XCTAssertEqual(try SourceSubscription.normalize(repository).absoluteString, "https://raw.githubusercontent.com/52liulian/yuanc/main/data/legado/books.json")
+        let file = URL(string: "https://github.com/owner/repo/blob/main/book.json")!
+        XCTAssertEqual(try SourceSubscription.normalize(file).absoluteString, "https://raw.githubusercontent.com/owner/repo/main/book.json")
+        let data = Data(#"[{"name":"合集","link":"https://books.example/source.json"}]"#.utf8)
+        XCTAssertEqual(try SourceSubscription.links(in: data, base: repository)?.first?.host, "books.example")
+        XCTAssertNil(try SourceSubscription.links(in: Data(#"[{"bookSourceName":"书站","bookSourceUrl":"https://books.example"}]"#.utf8), base: repository))
+        XCTAssertThrowsError(try SourceSubscription.links(in: Data(#"[{"link":"file:///tmp/test"}]"#.utf8), base: repository))
+    }
     func testJSONListsAndRelativeFields() throws {
         let data = Data(#"{"data":{"books":[{"name":"三国","url":"/b/1"},{"name":"水浒","url":"/b/2"}]}}"#.utf8)
         let doc = try RuleDocument.parse(data, base: URL(string: "https://books.example")!)

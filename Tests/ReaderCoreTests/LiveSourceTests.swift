@@ -4,6 +4,14 @@ import XCTest
 
 /// Explicit opt-in: external network checks are reported separately from deterministic tests.
 final class LiveSourceTests: XCTestCase {
+    func testUserProvidedYuancSubscriptionIndex() async throws {
+        guard ProcessInfo.processInfo.environment["MOYU_LIVE_CHECK"] == "1" else { throw XCTSkip("Live network check disabled") }
+        let client = SourceClient()
+        let result = try await client.importURL(URL(string: "https://github.com/52liulian/yuanc")!)
+        XCTAssertFalse(result.sources.isEmpty)
+        let compatible = result.sources.filter { $0.incompatibility == nil }
+        print("YUANC IMPORT: \(result.sources.count) unique sources; \(compatible.count) recognized by current engine; \(result.failures.count) subscription/entry errors. Recognition is not live website validation.")
+    }
     func testPublicDomainSearchCatalogBodyAndEPUB() async throws {
         guard ProcessInfo.processInfo.environment["MOYU_LIVE_CHECK"] == "1" else { throw XCTSkip("Set MOYU_LIVE_CHECK=1 to test the public website") }
         let sourceJSON = #"""

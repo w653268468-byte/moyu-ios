@@ -32,7 +32,7 @@ def generate_project():
         obj("file:" + path, f"isa = PBXFileReference; lastKnownFileType = {filetype}; path = {quote(path)}; sourceTree = SOURCE_ROOT;")
         obj("build:" + path, f"isa = PBXBuildFile; fileRef = {uid('file:' + path)};")
 
-    obj("product", 'isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Moyu.app; sourceTree = BUILT_PRODUCTS_DIR;')
+    obj("product", 'isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Gavin.app; sourceTree = BUILT_PRODUCTS_DIR;')
     obj("products", f'isa = PBXGroup; children = {ids(["product"])}; name = Products; sourceTree = "<group>";')
     obj("main", f'isa = PBXGroup; children = {ids(["file:" + p for p in sources + resources] + ["products"])}; sourceTree = "<group>";')
     obj("sources", f'isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = {ids(["build:" + p for p in sources])}; runOnlyForDeploymentPostprocessing = 0;')
@@ -50,7 +50,7 @@ def generate_project():
         "SWIFT_VERSION": "5.0", "ENABLE_USER_SCRIPT_SANDBOXING": "YES",
     }
     app = {
-        "PRODUCT_NAME": "Moyu", "PRODUCT_BUNDLE_IDENTIFIER": "org.moyu.reader",
+        "PRODUCT_NAME": "Gavin", "PRODUCT_BUNDLE_IDENTIFIER": "org.moyu.reader",
         "INFOPLIST_FILE": "Resources/Info.plist", "GENERATE_INFOPLIST_FILE": "NO",
         "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon", "CODE_SIGN_STYLE": "Automatic",
         "TARGETED_DEVICE_FAMILY": "1,2", "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator",
@@ -69,14 +69,14 @@ def generate_project():
     for scope in ["project", "app"]:
         obj(scope + "-config", f'isa = XCConfigurationList; buildConfigurations = {ids([scope + "-Debug", scope + "-Release"])}; defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;')
 
-    obj("target", f'isa = PBXNativeTarget; buildConfigurationList = {uid("app-config")}; buildPhases = {ids(["sources", "frameworks", "resources"])}; buildRules = (); dependencies = (); name = Moyu; packageProductDependencies = {ids(["soup-product", "zip-product"])}; productName = Moyu; productReference = {uid("product")}; productType = "com.apple.product-type.application";')
+    obj("target", f'isa = PBXNativeTarget; buildConfigurationList = {uid("app-config")}; buildPhases = {ids(["sources", "frameworks", "resources"])}; buildRules = (); dependencies = (); name = Moyu; packageProductDependencies = {ids(["soup-product", "zip-product"])}; productName = Gavin; productReference = {uid("product")}; productType = "com.apple.product-type.application";')
     obj("project", f'isa = PBXProject; attributes = {{ BuildIndependentTargetsInParallel = YES; LastUpgradeCheck = 1600; TargetAttributes = {{ {uid("target")} = {{ CreatedOnToolsVersion = 16.0; }}; }}; }}; buildConfigurationList = {uid("project-config")}; compatibilityVersion = "Xcode 14.0"; developmentRegion = zh-Hans; hasScannedForEncodings = 0; knownRegions = ("zh-Hans", en, Base,); mainGroup = {uid("main")}; packageReferences = {ids(["soup-package", "zip-package"])}; productRefGroup = {uid("products")}; projectDirPath = ""; projectRoot = ""; targets = {ids(["target"])};')
     folder = ROOT / "Moyu.xcodeproj"
     folder.mkdir(exist_ok=True)
     (folder / "project.pbxproj").write_text("// !$*UTF8*$!\n{\n\tarchiveVersion = 1;\n\tclasses = {};\n\tobjectVersion = 56;\n\tobjects = {\n" + "\n".join(objects) + f"\n\t}};\n\trootObject = {uid('project')};\n}}\n", encoding="utf-8")
     schemes = folder / "xcshareddata/xcschemes"
     schemes.mkdir(parents=True, exist_ok=True)
-    reference = f'<BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="{uid("target")}" BuildableName="Moyu.app" BlueprintName="Moyu" ReferencedContainer="container:Moyu.xcodeproj"/>'
+    reference = f'<BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="{uid("target")}" BuildableName="Gavin.app" BlueprintName="Moyu" ReferencedContainer="container:Moyu.xcodeproj"/>'
     scheme = f'''<?xml version="1.0" encoding="UTF-8"?>
 <Scheme LastUpgradeVersion="1600" version="1.3">
   <BuildAction parallelizeBuildables="YES" buildImplicitDependencies="YES"><BuildActionEntries><BuildActionEntry buildForTesting="YES" buildForRunning="YES" buildForProfiling="YES" buildForArchiving="YES" buildForAnalyzing="YES">{reference}</BuildActionEntry></BuildActionEntries></BuildAction>

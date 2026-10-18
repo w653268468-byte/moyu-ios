@@ -11,6 +11,7 @@ struct MoyuApp: App {
         #endif
         return 0
     }()
+    @State private var showReaderPreferences = false
 
     var body: some Scene {
         WindowGroup {
@@ -22,8 +23,14 @@ struct MoyuApp: App {
             }
                 .environmentObject(library)
                 .environmentObject(online)
+                .onAppear {
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--ui-preferences") { showReaderPreferences = true }
+                    #endif
+                }
+                .sheet(isPresented: $showReaderPreferences) { NavigationStack { ReadingPreferences() } }
                 .tint(Color(red: 0.24, green: 0.40, blue: 0.34))
-                .alert("墨屿提示", isPresented: Binding(
+                .alert("Gavin提示", isPresented: Binding(
                     get: { library.errorMessage != nil || online.errorMessage != nil },
                     set: { if !$0 { library.errorMessage = nil; online.errorMessage = nil } }
                 )) {

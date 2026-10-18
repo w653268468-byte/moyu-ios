@@ -65,7 +65,7 @@ struct SourceHubView: View {
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
                 Section("隐私与兼容性") {
-                    Text("搜索和阅读会直接访问你选择的网站，对方可看到网络请求和搜索词。墨屿不提供内置书源，也不上传书架。")
+                    Text("搜索和阅读会直接访问你选择的网站，对方可看到网络请求和搜索词。Gavin不提供内置书源，也不上传书架。")
                     Text("复杂 JS、XPath、登录、验证码和付费解锁尚未实现。书源失效和网站改版会导致解析失败。HTTP 书源采用未加密连接，建议优先使用 HTTPS。")
                     Button("清空已读章节缓存", role: .destructive) { online.clearCache() }
                 }.font(.caption)
@@ -178,7 +178,7 @@ struct SourceImportView: View {
                         let access = url.startAccessingSecurityScopedResource()
                         defer { if access { url.stopAccessingSecurityScopedResource() } }
                         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-                        guard size <= 5 * 1024 * 1024 else { throw SourceError.message("书源文件超过 5 MB。") }
+                        guard size <= SourceImport.maximumBytes else { throw SourceError.message("书源文件超过 20 MB。") }
                         parse(try Data(contentsOf: url))
                     } catch { failure = error.localizedDescription }
                 }
