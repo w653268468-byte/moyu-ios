@@ -47,7 +47,9 @@ enum BrowserSessions {
                 if await cookies(for: origin).contains(where: { $0.name == "gavin_fixture" }) { break }
                 try await Task.sleep(for: .milliseconds(100))
             }
-            phase("http_request")
+            let received = await cookies(for: origin)
+            guard received.contains(where: { $0.name == "gavin_fixture" }) else { throw SourceError.message("浏览器未取得测试 Cookie。") }
+            phase("http_request_cookie_received")
             let (data, _) = try await client.fetch(URL(string: "http://127.0.0.1:18765/private")!)
             guard String(data: data, encoding: .utf8) == "GAVIN_AUTHENTICATED_CHAPTER" else { throw SourceError.message("Cookie sharing failed") }
             try Data(#"{"status":"passed"}"#.utf8).write(to: file, options: .atomic)

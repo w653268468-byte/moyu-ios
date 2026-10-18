@@ -69,6 +69,7 @@ jobs:
           python3 scripts/web_login_fixture.py > build/web-login-fixture.log 2>&1 &
           FIXTURE_PID=$!
           trap 'kill "$FIXTURE_PID" 2>/dev/null || true' EXIT
+          curl --retry 3 --retry-connrefused --connect-timeout 2 --max-time 5 -fsS http://127.0.0.1:18765/login > /dev/null
           xcrun simctl launch --terminate-running-process "$DEVICE_ID" org.moyu.reader --ui-cookie-check
           for ATTEMPT in $(seq 1 60); do
             if python3 -c 'import json,pathlib,sys; p=pathlib.Path(sys.argv[1]); sys.exit(0 if p.exists() and json.loads(p.read_text()).get("status") in ["passed","failed"] else 1)' "$CONTAINER/Documents/cookie-check.json"; then break; fi
