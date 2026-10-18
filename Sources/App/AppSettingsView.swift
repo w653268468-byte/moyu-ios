@@ -146,8 +146,8 @@ struct AppSettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("兼容性") {
-                    Text("CSS、旧式选择器、基础 JSONPath、静态 GET/POST、目录及正文分页。")
-                    Text("复杂 JavaScript/Java 桥、XPath、WebView 验证、发现页、仿真翻页与 WebDAV 同步仍待实现；当前版本不等同 Android Legado 完整版。")
+                    Text("CSS、旧式选择器、XPath 1.0、基础 JSONPath、静态 GET/POST、目录及正文分页。")
+                    Text("复杂 JavaScript/Java 桥、WebView 验证、发现页、仿真翻页与 WebDAV 同步仍待实现；当前版本不等同 Android Legado 完整版。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Gavin 2.0") {

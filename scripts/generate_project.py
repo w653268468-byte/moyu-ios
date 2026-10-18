@@ -17,7 +17,7 @@ def quote(value):
 
 
 def generate_project():
-    sources = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Sources").rglob("*.swift"))
+    sources = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Sources").rglob("*") if p.is_file() and p.suffix in [".swift", ".c"])
     resources = ["Resources/Assets.xcassets", "Resources/PrivacyInfo.xcprivacy"]
     objects = []
 
@@ -28,7 +28,7 @@ def generate_project():
         return "(" + ", ".join(uid(n) for n in names) + ",)"
 
     for path in sources + resources:
-        filetype = "sourcecode.swift" if path.endswith(".swift") else ("folder.assetcatalog" if path.endswith(".xcassets") else "text.xml")
+        filetype = "sourcecode.swift" if path.endswith(".swift") else "sourcecode.c.c" if path.endswith(".c") else ("folder.assetcatalog" if path.endswith(".xcassets") else "text.xml")
         obj("file:" + path, f"isa = PBXFileReference; lastKnownFileType = {filetype}; path = {quote(path)}; sourceTree = SOURCE_ROOT;")
         obj("build:" + path, f"isa = PBXBuildFile; fileRef = {uid('file:' + path)};")
 
@@ -55,6 +55,7 @@ def generate_project():
         "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon", "CODE_SIGN_STYLE": "Automatic",
         "TARGETED_DEVICE_FAMILY": "1,2", "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator",
         "SUPPORTS_MACCATALYST": "NO", "CURRENT_PROJECT_VERSION": "2", "MARKETING_VERSION": "2.0.0",
+        "SWIFT_INCLUDE_PATHS": "$(SRCROOT)/Sources/CReaderXML/include", "HEADER_SEARCH_PATHS": "$(inherited) $(SDKROOT)/usr/include/libxml2 $(SRCROOT)/Sources/CReaderXML/include", "OTHER_LDFLAGS": "-lxml2",
         "SWIFT_EMIT_LOC_STRINGS": "YES", "ENABLE_PREVIEWS": "YES",
     }
     for config in ["Debug", "Release"]:

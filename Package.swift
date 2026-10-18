@@ -10,7 +10,8 @@ let package = Package(
         .package(url: "https://github.com/weichsel/ZIPFoundation.git", exact: "0.9.19")
     ],
     targets: [
-        .target(name: "ReaderCore", dependencies: ["SwiftSoup", "ZIPFoundation"], path: "Sources/ReaderCore"),
+        .target(name: "CReaderXML", path: "Sources/CReaderXML", publicHeadersPath: "include", linkerSettings: [.linkedLibrary("xml2")]),
+        .target(name: "ReaderCore", dependencies: ["SwiftSoup", "ZIPFoundation", "CReaderXML"], path: "Sources/ReaderCore"),
         .testTarget(name: "ReaderCoreTests", dependencies: ["ReaderCore"], path: "Tests/ReaderCoreTests")
     ]
 )

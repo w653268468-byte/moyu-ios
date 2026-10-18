@@ -22,12 +22,12 @@ jobs:
       - name: Validate project files
         run: python3 scripts/validate.py
       - name: Test parser and source rules
-        run: swift test --parallel
+        run: swift test --parallel -Xcc "-I$(xcrun --show-sdk-path)/usr/include/libxml2"
       - name: Live public-domain source check
         continue-on-error: true
         env:
           MOYU_LIVE_CHECK: '1'
-        run: swift test --filter LiveSourceTests 2>&1 | tee live-source-check.log
+        run: swift test --filter LiveSourceTests -Xcc "-I$(xcrun --show-sdk-path)/usr/include/libxml2" 2>&1 | tee live-source-check.log
       - name: Upload live check result
         if: always()
         uses: actions/upload-artifact@v4

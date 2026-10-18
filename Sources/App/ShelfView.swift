@@ -220,7 +220,7 @@ private struct AboutView: View {
                     Text("可以通过“文件 → 我的 iPhone → Gavin”备份 Moyu 和 MoyuOnline 两个文件夹。")
                 }
                 Section("当前范围") {
-                    Text("支持文字书导入、CSS/基础 JSONPath 书源、GET/POST、搜索、目录与章节缓存。复杂 JS、XPath、MOBI/AZW3、仿真翻页和跨设备同步尚未完成，不等同 Legado 完整版。")
+                    Text("支持文字书导入、CSS/基础 JSONPath 书源、GET/POST、搜索、目录与章节缓存。复杂 JS、MOBI/AZW3、仿真翻页和跨设备同步尚未完成，不等同 Legado 完整版。")
                 }
             }.navigationTitle("关于Gavin").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }

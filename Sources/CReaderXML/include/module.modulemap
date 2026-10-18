@@ -1,0 +1,5 @@
+module CReaderXML {
+    header "ReaderXML.h"
+    link "xml2"
+    export *
+}

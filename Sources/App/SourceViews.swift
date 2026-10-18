@@ -21,7 +21,7 @@ struct SourceHubView: View {
                 Section {
                     Label("用你自己的书源，找到下一段故事", systemImage: "globe.asia.australia")
                         .font(.headline).padding(.vertical, 6)
-                    Text("支持阅读 3.x 的 CSS、基础 JSONPath 和静态 GET/POST 书源。先导入书源，再搜索书名或粘贴小说详情页网址。")
+                    Text("支持阅读 3.x 的 CSS、XPath、基础 JSONPath 和静态 GET/POST 书源。先导入书源，再搜索书名或粘贴小说详情页网址。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if online.locked { Section { Button("重新读取在线书架") { online.reload() } } }
@@ -66,7 +66,7 @@ struct SourceHubView: View {
                 }
                 Section("隐私与兼容性") {
                     Text("搜索和阅读会直接访问你选择的网站，对方可看到网络请求和搜索词。Gavin不提供内置书源，也不上传书架。")
-                    Text("复杂 JS、XPath、登录、验证码和付费解锁尚未实现。书源失效和网站改版会导致解析失败。HTTP 书源采用未加密连接，建议优先使用 HTTPS。")
+                    Text("复杂 JS、登录、验证码和付费解锁尚未实现。书源失效和网站改版会导致解析失败。HTTP 书源采用未加密连接，建议优先使用 HTTPS。")
                     Button("清空已读章节缓存", role: .destructive) { online.clearCache() }
                 }.font(.caption)
             }.navigationTitle("找书")

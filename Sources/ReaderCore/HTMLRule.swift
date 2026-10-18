@@ -6,11 +6,14 @@ public enum HTMLRule {
     public static func isSupported(_ rule: String) -> Bool {
         let lower = rule.components(separatedBy: "||")
             .map { metadataCSS($0.components(separatedBy: "##")[0]).lowercased() }.joined(separator: "||")
-        return !["@js:", "<js>", "{{", "$.", "$[", "//", "@xpath:", "@json:", "&&", "%%", "@put:", "@get:"].contains(where: { lower.contains($0) })
+        let isXPath = XPathRule.isXPath(lower)
+        let unsupported = ["@js:", "<js>", "{{", "$.", "$[", "@json:", "&&", "%%", "@put:", "@get:"] + (isXPath ? [] : ["//", "@xpath:"])
+        return !unsupported.contains(where: { lower.contains($0) })
     }
 
     public static func elements(_ rule: String, in element: Element) throws -> [Element] {
         guard isSupported(rule) else { throw SourceError.message("暂不支持此规则：\(rule)") }
+        if XPathRule.isXPath(rule) { return try XPathRule.elements(rule, in: element) }
         var current = [element]
         for raw in rule.replacingOccurrences(of: "@css:", with: "").components(separatedBy: "@") {
             var selector = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -52,7 +55,8 @@ public enum HTMLRule {
             else if ["text", "textNodes", "ownText", "html", "href", "src"].contains(parts[0]) {
                 attribute = parts.removeLast()
             } else { attribute = "text" }
-            let nodes = try elements(parts.joined(separator: "@"), in: element)
+            let xpath = XPathRule.isXPath(extraction)
+            let nodes = xpath ? [] : try elements(parts.joined(separator: "@"), in: element)
             var values: [String] = []
             for node in nodes {
                 switch attribute {
@@ -63,7 +67,13 @@ public enum HTMLRule {
                 default: values.append(try node.attr(attribute))
                 }
             }
-            var result = values.joined(separator: body ? "\n\n" : "\n")
+            var result: String
+            if xpath {
+                let bodyNodes = body ? try XPathRule.elements(extraction, in: element) : []
+                result = bodyNodes.isEmpty
+                    ? try XPathRule.evaluate(extraction, in: element, markup: false).joined(separator: body ? "\n\n" : "\n")
+                    : try bodyNodes.map { try bodyText($0) }.joined(separator: "\n\n")
+            } else { result = values.joined(separator: body ? "\n\n" : "\n") }
             if replacements.count >= 2, !replacements[1].isEmpty {
                 let regex = try NSRegularExpression(pattern: replacements[1])
                 result = regex.stringByReplacingMatches(in: result, range: NSRange(result.startIndex..., in: result),

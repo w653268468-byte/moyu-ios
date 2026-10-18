@@ -28,7 +28,7 @@ final class SourceTests: XCTestCase {
     }
 
     func testUnsupportedRulesNotSilentlyAccepted() throws {
-        for rule in ["@js:result", "<js>1</js>", "//div", "$.data", "{{java.get()}}", "@XPath://a"] {
+        for rule in ["@js:result", "<js>1</js>", "$.data", "{{java.get()}}"] {
             XCTAssertFalse(HTMLRule.isSupported(rule), rule)
         }
         let bad = sourceJSON.replacingOccurrences(of: "#content@text", with: "@js:java.get()")
@@ -70,7 +70,17 @@ final class SourceTests: XCTestCase {
         let doc = try SwiftSoup.parse("<meta property='og:novel:author' content='林屿'>")
         XCTAssertTrue(HTMLRule.isSupported(rule))
         XCTAssertEqual(try HTMLRule.value(rule, in: doc), "林屿")
-        XCTAssertFalse(HTMLRule.isSupported("//div[@id='content']/p"))
+        XCTAssertTrue(HTMLRule.isSupported("//div[@id='content']/p"))
+    }
+
+    func testGeneralXPathListsAttributesAndText() throws {
+        let doc = try SwiftSoup.parse("<section><div class='book'><a href='/a'><b>山海</b></a></div><div class='book'><a href='/b'>来信</a></div></section>")
+        let books = try HTMLRule.elements("//div[@class='book']", in: doc)
+        XCTAssertEqual(books.count, 2)
+        XCTAssertEqual(try HTMLRule.value(".//a/@href", in: books[1]), "/b")
+        XCTAssertEqual(try HTMLRule.value("@XPath:.//a", in: books[0]), "山海")
+        XCTAssertEqual(try HTMLRule.value("//div[@class='book'][2]/a/text()", in: doc), "来信")
+        XCTAssertThrowsError(try HTMLRule.value("//div[", in: doc))
     }
 
     func testTextSelectorForNextPage() throws {

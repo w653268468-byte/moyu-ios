@@ -7,7 +7,7 @@
 - 四个入口：书架、找书、书源管理、设置。
 - 书源：链接/文件/文本导入；按名称/网址/分组搜索；启用/禁用、JSON 编辑、导出、多选删除；搜索→目录→首章校验，可取消。
 - 删除被小说使用的书源也可执行，书架记录及缓存保留；未缓存章节需重新导入对应书源。
-- CSS/旧式选择器、基础 JSONPath（字段/索引/通配符）、UTF-8/GBK 静态 GET/POST、目录和正文分页。导出保留未识别的原始 Legado 字段。
+- CSS/旧式选择器、XPath 1.0、基础 JSONPath（字段/索引/通配符）、UTF-8/GBK 静态 GET/POST、目录和正文分页。导出保留未识别的原始 Legado 字段。
 - HTTP 状态、域名解析、超时、证书错误分别提示。采用移动浏览器 UA 与书源 Referer。
 - 本地 TXT、EPUB、PDF、MD、HTML、RTF、DOCX。EPUB 依阅读顺序读取章节；PDF 按页提取文字；其他富文本转为文字重排。
 - 阅读：八种主题、四种系统字形、字号/字重/字距/行距/段距、上下左右边距、缩进、标题、页面亮度、常亮、预览及重置；本地和在线共用。
@@ -19,7 +19,7 @@
 
 ## 明确的未完成项
 
-复杂 JavaScript 与 Java/Android 桥、通用 XPath、JSONPath 过滤器、WebView 登录验证、发现分类、自动换源、仿真翻页、在线精确滚动位置、跨设备/WebDAV 同步、EPUB 图片原版式、扫描 PDF OCR、MOBI/AZW3、DRM 保护正文。
+复杂 JavaScript 与 Java/Android 桥、JSONPath 过滤器、WebView 登录验证、发现分类、自动换源、仿真翻页、在线精确滚动位置、跨设备/WebDAV 同步、EPUB 图片原版式、扫描 PDF OCR、MOBI/AZW3、DRM 保护正文。
 
 导入书源不等于网站可用；“规则可识别”也不代表真实链路已通过。截图中的网易云/17K 等脚本书源目前仍有兼容缺口。
 
@@ -30,7 +30,7 @@
 Actions 在 macOS 上运行测试、模拟器构建、arm64 iPhone Release 构建后打包。Windows 的 `scripts/validate.py` 只做结构检查，不能代替 Swift/Xcode 编译。
 
 ```sh
-swift test --parallel
+swift test --parallel -Xcc "-I$(xcrun --show-sdk-path)/usr/include/libxml2"
 xcodebuild -project Moyu.xcodeproj -scheme Moyu -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 ```
 
@@ -47,3 +47,5 @@ xcodebuild -project Moyu.xcodeproj -scheme Moyu -sdk iphonesimulator -destinatio
 2026-10-19，macOS CI 实际通过 Project Gutenberg 的搜索 → 详情 → HTML 正文，并成功导入其公版 EPUB（30 个阅读节、562 个文本分段）。示例规则在 `Examples/gutenberg-public-domain.json`，可用 `Frankenstein` 搜索；此例把整本 HTML 作为一个在线阅读节，不代表已实现该网站的细分章节。
 
 用户提供的 yuanc 索引包含两条外部订阅；当前开发网络读取到 jsDelivr 文件 194 个规则，yckceo 重定向后连接重置。以最新 `Gavin-live-source-check` CI 日志中的实际导入和兼容统计为准。统计不等于每个小说网站的搜索/目录/正文均可用。
+
+XPath 使用 Apple 平台系统 libxml2，封装代码在 `Sources/CReaderXML`；禁用网络加载外部文档，不提供 XPath 扩展函数。
