@@ -44,6 +44,15 @@ struct ShelfView: View {
                     }
                     .padding(.top, 12)
 
+                    if library.isImporting {
+                        HStack {
+                            ProgressView()
+                            Text(library.importProgress).font(.caption)
+                            Spacer()
+                            Button("取消") { library.cancelImport() }
+                        }.padding().background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    }
+
                     if library.storageLocked {
                         VStack(alignment: .leading, spacing: 8) {
                             Label("书架暂时无法读取", systemImage: "externaldrive.badge.exclamationmark")
@@ -213,14 +222,14 @@ private struct AboutView: View {
                 }
                 Section("支持的格式") {
                     Text("TXT、EPUB、PDF、Markdown、HTML、RTF、DOCX。单文件 100 MB；TXT 文本 20 MB。")
-                    Text("EPUB/DOCX/HTML/RTF 提取文字重排；PDF 按原页提取文字，不保留插图与原版式。扫描 PDF 无 OCR，DRM 正文不支持。")
+                    Text("EPUB/DOCX/HTML/RTF 提取文字重排；PDF 按原页提取文字，不保留插图与原版式。扫描 PDF 自动尝试本机 OCR；不处理 DRM 保护正文。")
                 }
                 Section("数据与隐私") {
                     Text("小说、进度、书源与章节缓存保存在本机，没有账号、广告或统计。使用书源时会直接访问相应网站。删除 App 会删除本地数据。")
                     Text("可以通过“文件 → 我的 iPhone → Gavin”备份 Moyu 和 MoyuOnline 两个文件夹。")
                 }
                 Section("当前范围") {
-                    Text("支持文字书导入、CSS/基础 JSONPath 书源、GET/POST、搜索、目录与章节缓存。复杂 JS、MOBI/AZW3、仿真翻页和跨设备同步尚未完成，不等同 Legado 完整版。")
+                    Text("支持文字书导入、CSS/基础 JSONPath 书源、GET/POST、搜索、目录与章节缓存。完整 Java/Android 脚本接口、MOBI/AZW3、仿真卷页和跨设备同步尚未完成，不等同 Legado 完整版。")
                 }
             }.navigationTitle("关于Gavin").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }

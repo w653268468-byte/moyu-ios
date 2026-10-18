@@ -167,7 +167,7 @@ struct SourceImportView: View {
                     }
                 }
                 Section {
-                    Text("同地址书源会更新已有规则。不支持的书源也可保存，但不能用于搜索和解析。书源 JSON 只是规则配置，不会安装或执行其中的脚本。")
+                    Text("同地址书源会更新已有规则。不支持的书源也可保存，但不能用于搜索和解析。书源脚本在受限引擎中执行，部分 Java/Android 接口仍待实现；缺少接口会明确报错。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }.navigationTitle("导入书源").navigationBarTitleDisplayMode(.inline)

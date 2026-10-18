@@ -14,6 +14,8 @@ private final class FixtureProtocol: URLProtocol {
             "/api/book": #"{"name":"三国","toc":"/api/toc"}"#,
             "/api/toc": #"{"chapters":[{"title":"第一回","url":"/api/chapter"}]}"#,
             "/api/chapter": #"{"text":"滚滚长江东逝水。"}"#,
+            "/api/script-search": #"{"data":{"books":[{"title":"公版故事","sourceUuid":"one"}]}}"#,
+            "/source/one": "<div class='m-book-recent'><a>最新章</a></div>",
             "/search": "<div class='book'><a href='/book/1'>山海来信</a><span class='author'>Gavin</span></div>",
             "/book/1": "<h1>山海来信</h1><a class='catalog' href='/toc/1'>目录</a>",
             "/toc/1": "<div id='list'><a href='/chapter/1'>第一章</a></div><a class='next' href='/toc/2'>下一页</a>",
@@ -23,7 +25,7 @@ private final class FixtureProtocol: URLProtocol {
             "/chapter/2": "<div id='content'>第二天，天晴了。</div>"
         ]
         guard let url = request.url else { return }
-        let body = routes[url.path]
+        let body = url.path == "/js-search" && request.value(forHTTPHeaderField: "X-Reader") == "Gavin" ? routes["/search"] : routes[url.path]
         let response = HTTPURLResponse(url: url, statusCode: body == nil ? 404 : 200, httpVersion: "HTTP/1.1",
                                        headerFields: ["Content-Type": "text/html; charset=utf-8"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
@@ -72,6 +74,54 @@ final class SourceClientTests: XCTestCase {
             _ = try await makeClient().fetch(URL(string: "https://fixture.example/missing")!)
             XCTFail("HTTP 404 must fail")
         } catch { XCTAssertTrue(error.localizedDescription.contains("网站返回错误")) }
+    }
+
+    func testScriptSearchCatalogAndBodyUseRealRequestPipeline() async throws {
+        var source = try source()
+        source.ruleSearch?.bookList = "@js:java.getElements('.book')"
+        source.ruleSearch?.name = "a@text@js:result.trim()"
+        source.ruleToc?.chapterList = "#list a<js>result.toArray()</js>"
+        source.ruleContent?.content = "#content@text@js:result + '\\n' + source.bookSourceName"
+        XCTAssertNil(source.incompatibility)
+        let client = makeClient()
+        let books = try await client.search("山海", source: source)
+        XCTAssertEqual(books.first?.title, "山海来信")
+        let book = try await client.catalog(books[0], source: source)
+        XCTAssertEqual(book.chapters.count, 2)
+        let text = try await client.chapter(book.chapters[0], source: source)
+        XCTAssertTrue(text.contains("风从海边来。"))
+        XCTAssertTrue(text.contains("Fixture"))
+    }
+
+    func testScriptAjaxAndResponseBridgeShareRequestConfiguration() throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FixtureProtocol.self]
+        let script = try SourceScript(configuration: config)
+        let url = URL(string: "https://fixture.example")!
+        XCTAssertEqual(try script.evaluate("JSON.parse(java.ajax('/api/chapter')).text", result: "", baseURL: url) as? String, "滚滚长江东逝水。")
+        XCTAssertEqual(try script.evaluate("JSON.parse(java.get('https://fixture.example/api/chapter').body()).text", result: "", baseURL: url) as? String, "滚滚长江东逝水。")
+        XCTAssertThrowsError(try script.evaluate("java.ajax('/missing')", result: "", baseURL: url)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("HTTP 404"))
+        }
+    }
+    func testScriptURLAndHeadersActuallyReachSearch() async throws {
+        var source = try source()
+        source.searchUrl = "@js:'/js-search?q=' + encodeURIComponent(key)"
+        source.header = "@js:JSON.stringify({'X-Reader':'Gavin'})"
+        XCTAssertNil(source.incompatibility)
+        let found = try await makeClient().search("中文 空格", source: source)
+        XCTAssertEqual(found.first?.title, "山海来信")
+    }
+    func testJSONPrefixAndJsoupCollectionPatternUsedByImportedSources() async throws {
+        var source = try source()
+        source.searchUrl = "/api/script-search"
+        source.ruleSearch?.bookList = "data.books[*]@js:JSON.parse(result).map(o => ({name:o.title,url:'/api/book',author:org.jsoup.Jsoup.parse(java.ajax('/source/'+o.sourceUuid)).select('.m-book-recent a').text()}))"
+        source.ruleSearch?.name = "name"
+        source.ruleSearch?.bookUrl = "url"
+        source.ruleSearch?.author = "author"
+        let books = try await makeClient().search("故事", source: source)
+        XCTAssertEqual(books.first?.title, "公版故事")
+        XCTAssertEqual(books.first?.author, "最新章")
     }
 
     func testStreamingResponseLimit() async throws {

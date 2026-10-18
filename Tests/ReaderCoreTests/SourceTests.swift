@@ -31,7 +31,7 @@ final class SourceTests: XCTestCase {
         for rule in ["@js:result", "<js>1</js>", "$.data", "{{java.get()}}"] {
             XCTAssertFalse(HTMLRule.isSupported(rule), rule)
         }
-        let bad = sourceJSON.replacingOccurrences(of: "#content@text", with: "@js:java.get()")
+        let bad = sourceJSON.replacingOccurrences(of: "#content@text", with: "{{java.get()}}")
         XCTAssertNotNil(try SourceImport.parse(Data(bad.utf8)).sources[0].incompatibility)
     }
 

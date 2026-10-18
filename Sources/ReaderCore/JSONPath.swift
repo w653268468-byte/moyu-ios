@@ -32,6 +32,12 @@ enum JSONPath {
         try evaluate(compile(raw), nodes: [value], root: value)
     }
 
+    static func isPlural(_ raw: String) throws -> Bool {
+        try compile(raw).contains { selector in
+            switch selector { case .key, .index: return false; default: return true }
+        }
+    }
+
     /// Legado alternatives are outside selectors; `||` inside a filter is logical OR.
     static func alternatives(_ rule: String) -> [String] {
         let chars = Array(rule)

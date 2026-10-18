@@ -6,6 +6,9 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var books: [Book] = []
     @Published var errorMessage: String?
     @Published private(set) var isImporting = false
+    @Published private(set) var importProgress = ""
+    private var importTask: Task<Void, Never>?
+    private var parseTask: Task<BookDocument, Error>?
     @Published private(set) var storageLocked = false
     private let directory: URL
     private var manifest: URL { directory.appendingPathComponent("library.json") }
@@ -82,25 +85,37 @@ final class LibraryStore: ObservableObject {
     func importFiles(_ urls: [URL]) {
         guard !isImporting, !storageLocked else { return }
         isImporting = true
-        Task {
+        importTask = Task {
+            defer { isImporting = false; importProgress = ""; parseTask = nil; importTask = nil }
             var failures: [String] = []
             for url in urls {
+                if Task.isCancelled { break }
+                importProgress = "正在导入 \(url.lastPathComponent)"
                 do {
-                    let document = try await Task.detached(priority: .userInitiated) {
+                    let parser = Task.detached(priority: .userInitiated) { [weak self] in
                         let access = url.startAccessingSecurityScopedResource()
                         defer { if access { url.stopAccessingSecurityScopedResource() } }
                         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
                         guard size <= LocalBookImporter.maximumFileBytes else { throw SourceError.message("单本文件不能超过 100 MB。") }
                         let data = try Data(contentsOf: url, options: .mappedIfSafe)
-                        return try LocalBookImporter.parse(data, filename: url.lastPathComponent)
-                    }.value
+                        return try LocalBookImporter.parse(data, filename: url.lastPathComponent) { [weak self] completed, total in
+                            Task { @MainActor [weak self] in self?.importProgress = "\(url.lastPathComponent) · PDF / OCR \(completed)/\(total) 页" }
+                        }
+                    }
+                    parseTask = parser
+                    let document = try await parser.value
+                    try Task.checkCancellation()
                     try add(title: url.deletingPathExtension().lastPathComponent, document: document)
-                } catch { failures.append("\(url.lastPathComponent)：\(error.localizedDescription)") }
+                } catch {
+                    if Task.isCancelled { break }
+                    failures.append("\(url.lastPathComponent)：\(error.localizedDescription)")
+                }
             }
-            isImporting = false
             if !failures.isEmpty { errorMessage = failures.joined(separator: "\n") }
         }
     }
+
+    func cancelImport() { parseTask?.cancel(); importTask?.cancel() }
 
     func updatePosition(bookID: UUID, page: Int, textOffset: Int? = nil) {
         update(bookID) {
