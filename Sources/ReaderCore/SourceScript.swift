@@ -8,22 +8,30 @@ public final class SourceScript: @unchecked Sendable {
     private final class Limit {
         let lock = NSLock()
         var deadline = ProcessInfo.processInfo.systemUptime + 10
+        var absoluteDeadline = ProcessInfo.processInfo.systemUptime + 30
+        var ioStart: Double?
         var cancelled = false
-        func begin(_ seconds: Double) { lock.lock(); defer { lock.unlock() }; deadline = ProcessInfo.processInfo.systemUptime + seconds; cancelled = false }
+        func begin(_ seconds: Double) { lock.lock(); defer { lock.unlock() }; deadline = ProcessInfo.processInfo.systemUptime + seconds; absoluteDeadline = ProcessInfo.processInfo.systemUptime + min(30, seconds + 20); ioStart = nil; cancelled = false }
+        func beginIO() { lock.lock(); defer { lock.unlock() }; ioStart = ProcessInfo.processInfo.systemUptime }
+        func endIO() { lock.lock(); defer { lock.unlock() }; if let start = ioStart { deadline += ProcessInfo.processInfo.systemUptime - start }; ioStart = nil }
         func stop() { lock.lock(); defer { lock.unlock() }; cancelled = true }
-        func exceeded() -> Bool { lock.lock(); defer { lock.unlock() }; return cancelled || ProcessInfo.processInfo.systemUptime > deadline }
+        func exceeded() -> Bool { lock.lock(); defer { lock.unlock() }; let now = ProcessInfo.processInfo.systemUptime; return cancelled || now > absoluteDeadline || (ioStart == nil && now > deadline) }
     }
     private let limit: Limit
     private let gate = NSLock()
     private let runtime: JSRuntime
     private let context: JSContext
+    private let http: ScriptHTTP
+    private let configuration: URLSessionConfiguration
     private var input = ""
     private var base = URL(string: "https://example.com")!
     private var variables: [String: String] = [:]
 
-    public init() throws {
+    public init(configuration: URLSessionConfiguration = .ephemeral) throws {
         let limit = Limit()
         self.limit = limit
+        self.configuration = configuration
+        self.http = ScriptHTTP(configuration: configuration)
         guard let runtime = JSRuntime(options: JSRuntimeOptions(memoryLimit: 64 * 1024 * 1024, enableStdModules: false, enableHelpers: false, interruptHandler: { limit.exceeded() }, flushJobsAfterEval: false)),
               let context = runtime.createContext() else { throw SourceError.message("无法初始化 JavaScript 引擎。") }
         self.runtime = runtime; self.context = context
@@ -95,7 +103,30 @@ public final class SourceScript: @unchecked Sendable {
         case "html": result = try SwiftSoup.parse(string(0), base.absoluteString).body()?.html() ?? ""
         case "attr": result = try SwiftSoup.parse(string(0), base.absoluteString).body()?.children().first()?.attr(string(1)) ?? ""
         case "put": variables[string(0)] = string(1); result = string(1)
-        case "get": result = variables[string(0)] ?? ""
+        case "get" where !(string(0).hasPrefix("https://") || string(0).hasPrefix("http://")): result = variables[string(0)] ?? ""
+        case "ajax", "get", "post":
+            var request = try SourceRequest.make(string(0), query: "", base: base)
+            if method == "post" {
+                request.httpMethod = "POST"
+                request.httpBody = Data(string(1).utf8)
+                request.setValue("application/x-www-form-urlencoded; charset=utf-8", forHTTPHeaderField: "Content-Type")
+            }
+            request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
+            request.setValue(base.absoluteString, forHTTPHeaderField: "Referer")
+            let headerIndex = method == "post" ? 2 : 1
+            if args.indices.contains(headerIndex), let headers = args[headerIndex] as? [String: String] {
+                for (name, value) in headers where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
+            }
+            limit.beginIO(); defer { limit.endIO() }
+            let response = try http.request(request, cancelled: { self.limit.exceeded() })
+            result = method == "ajax" ? response.text : response.json
+        case "getCookie":
+            let url = try SourceClient.resolve(string(0), base: base)
+            result = HTTPCookie.requestHeaderFields(with: configuration.httpCookieStorage?.cookies(for: url) ?? [])["Cookie"] ?? ""
+        case "setCookie":
+            let url = try SourceClient.resolve(string(0), base: base)
+            for cookie in HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": string(1)], for: url) { configuration.httpCookieStorage?.setCookie(cookie) }
+            result = NSNull()
         case "base64Encode": result = Data(string(0).utf8).base64EncodedString()
         case "base64Decode":
             guard let bytes = Data(base64Encoded: string(0), options: .ignoreUnknownCharacters), let text = String(data: bytes, encoding: .utf8) else { throw SourceError.message("Base64 文本无效或不是 UTF-8。") }
@@ -112,7 +143,15 @@ public final class SourceScript: @unchecked Sendable {
 
     private static let bootstrap = #"""
     function gavinCall(name, args) {
-        return JSON.parse(__native.call(name, JSON.stringify(args)), (_, v) => v && typeof v.__gavinHTML === 'string' ? new GavinElement(v.__gavinHTML) : v);
+        return JSON.parse(__native.call(name, JSON.stringify(args)), (_, v) => v && typeof v.__gavinHTML === 'string' ? new GavinElement(v.__gavinHTML) : v && v.__gavinResponse ? new GavinResponse(v.__gavinResponse) : v);
+    }
+    class GavinResponse {
+        constructor(value) { this.value = value; }
+        body() { return this.value.body; }
+        url() { return this.value.url; }
+        code() { return this.value.status; }
+        headers() { return this.value.headers; }
+        toString() { return this.body(); }
     }
     class GavinElement {
         constructor(html) { this.value = html; }

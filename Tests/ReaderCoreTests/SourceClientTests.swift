@@ -91,6 +91,18 @@ final class SourceClientTests: XCTestCase {
         XCTAssertTrue(text.contains("Fixture"))
     }
 
+    func testScriptAjaxAndResponseBridgeShareRequestConfiguration() throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FixtureProtocol.self]
+        let script = try SourceScript(configuration: config)
+        let url = URL(string: "https://fixture.example")!
+        XCTAssertEqual(try script.evaluate("JSON.parse(java.ajax('/api/chapter')).text", result: "", baseURL: url) as? String, "滚滚长江东逝水。")
+        XCTAssertEqual(try script.evaluate("JSON.parse(java.get('https://fixture.example/api/chapter').body()).text", result: "", baseURL: url) as? String, "滚滚长江东逝水。")
+        XCTAssertThrowsError(try script.evaluate("java.ajax('/missing')", result: "", baseURL: url)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("HTTP 404"))
+        }
+    }
+
     func testStreamingResponseLimit() async throws {
         do {
             _ = try await makeClient().fetch(URL(string: "https://fixture.example/search")!, limit: 5)

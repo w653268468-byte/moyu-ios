@@ -29,7 +29,7 @@ final class RuleScope {
     let source: BookSource?
     let globals: [String: String]
     private var script: SourceScript?
-    init(baseURL: URL, source: BookSource?, globals: [String: String] = [:]) { self.baseURL = baseURL; self.source = source; self.globals = globals }
+    init(baseURL: URL, source: BookSource?, globals: [String: String] = [:], script: SourceScript? = nil) { self.baseURL = baseURL; self.source = source; self.globals = globals; self.script = script }
     func evaluate(_ code: String, input: Any, document: String) throws -> Any {
         if script == nil {
             let value = try SourceScript()

@@ -6,8 +6,8 @@ struct RuleDocument {
     let node: Node
     let scope: RuleScope
 
-    static func parse(_ data: Data, base: URL, source: BookSource? = nil, globals: [String: String] = [:]) throws -> RuleDocument {
-        let scope = RuleScope(baseURL: base, source: source, globals: globals)
+    static func parse(_ data: Data, base: URL, source: BookSource? = nil, globals: [String: String] = [:], script: SourceScript? = nil) throws -> RuleDocument {
+        let scope = RuleScope(baseURL: base, source: source, globals: globals, script: script)
         if let value = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) { return RuleDocument(node: .json(value), scope: scope) }
         return RuleDocument(node: .html(try SwiftSoup.parse(TextParser.decode(data), base.absoluteString)), scope: scope)
     }
@@ -49,7 +49,10 @@ struct RuleDocument {
         if let parts = try ScriptRule.parts(rule) {
             let result = try scripted(parts, list: true)
             return try ((result as? [Any]) ?? [result]).map { value in
-                if let html = (value as? [String: Any])?["__gavinHTML"] as? String { return child(.html(try SwiftSoup.parse(html, scope.baseURL.absoluteString))) }
+                if let html = (value as? [String: Any])?["__gavinHTML"] as? String {
+                    let parsed = try SwiftSoup.parse(html, scope.baseURL.absoluteString)
+                    return child(.html(parsed.body()?.children().first() ?? parsed))
+                }
                 return child(.json(value))
             }
         }

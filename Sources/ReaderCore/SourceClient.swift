@@ -5,6 +5,7 @@ public actor SourceClient {
     private let session: URLSession
     private let cookieStorage: HTTPCookieStorage?
     private let cookieProvider: (@Sendable (URL) async -> [HTTPCookie])?
+    private var scriptEngines: [String: (BookSource, SourceScript)] = [:]
     public init(configuration: URLSessionConfiguration = .ephemeral, cookieProvider: (@Sendable (URL) async -> [HTTPCookie])? = nil) {
         let config = configuration
         config.timeoutIntervalForRequest = 30
@@ -84,7 +85,19 @@ public actor SourceClient {
 
     private func document(_ request: URLRequest, source: BookSource, globals: [String: String] = [:]) async throws -> (RuleDocument, URL) {
         let (data, finalURL) = try await fetch(request, source: source)
-        return (try RuleDocument.parse(data, base: finalURL, source: source, globals: globals), finalURL)
+        return (try RuleDocument.parse(data, base: finalURL, source: source, globals: globals, script: scriptEngine(for: source)), finalURL)
+    }
+
+    private func scriptEngine(for source: BookSource) throws -> SourceScript? {
+        let rules = [source.ruleSearch, source.ruleBookInfo, source.ruleToc, source.ruleContent].compactMap { $0 }.flatMap(\.values)
+        guard rules.contains(where: { (try? ScriptRule.parts($0)) != nil }) else { return nil }
+        if let cached = scriptEngines[source.id], cached.0 == source { return cached.1 }
+        let engine = try SourceScript(configuration: session.configuration)
+        let json = try source.originalJSON ?? String(decoding: JSONEncoder().encode(source), as: UTF8.self)
+        try engine.setJSONGlobal("source", json: json)
+        if scriptEngines.count >= 4, let first = scriptEngines.keys.first { scriptEngines.removeValue(forKey: first) }
+        scriptEngines[source.id] = (source, engine)
+        return engine
     }
 
     private func document(_ url: URL, source: BookSource) async throws -> (RuleDocument, URL) {
@@ -155,6 +168,7 @@ public actor SourceClient {
         if let reason = source.incompatibility { throw SourceError.message(reason) }
         var result = novel
         let (detail, detailURL) = try await document(novel.url, source: source)
+        if let initialization = source.ruleBookInfo?.initialization, !initialization.isEmpty { _ = try detail.value(initialization) }
         if let info = source.ruleBookInfo {
             let title = try detail.optionalValue(info.name)
             if !title.isEmpty { result.title = title }
