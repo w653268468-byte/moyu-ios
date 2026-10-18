@@ -1,0 +1,16 @@
+name: Core development checks
+on:
+  push:
+    branches: [codex/js-runtime]
+permissions:
+  contents: read
+jobs:
+  core:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate project files
+        run: python3 scripts/validate.py
+      - name: Test core and script interpreter
+        run: swift test --parallel -Xcc "-I$(xcrun --show-sdk-path)/usr/include/libxml2"
