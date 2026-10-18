@@ -4,7 +4,7 @@
 
 本地增加 EPUB、PDF、Markdown、HTML、RTF、DOCX 文字导入。阅读设置增加字距、段距、边距、缩进、主题、亮度、常亮与预览，提供系统语音听书、完整备份和恢复。移除番茄专用接口。
 
-这不是 Legado 完整移植：JS/Java 桥、通用 XPath、发现页、WebView 验证、仿真翻页、WebDAV、全书下载、EPUB 原版式和 MOBI/AZW3 尚未完成。书源网站可用性需要手机实际网络校验。
+这不是 Legado 完整移植：JS/Java 桥、通用 XPath、发现页、WebView 验证、仿真翻页、WebDAV、EPUB 原版式和 MOBI/AZW3 尚未完成。书源网站可用性需要手机实际网络校验。
 
 下载 `Moyu-unsigned.ipa` 后用 Sideloadly 签名，使用同一账号覆盖安装。先从旧版备份“文件 → 我的 iPhone → 墨屿”下的两个文件夹；不要先卸载旧版，以免删除阅读数据。
 

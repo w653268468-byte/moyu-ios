@@ -6,7 +6,14 @@ private final class FixtureProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "fixture.example" }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
+        if request.url?.path == "/timeout" {
+            client?.urlProtocol(self, didFailWithError: URLError(.timedOut)); return
+        }
         let routes: [String: String] = [
+            "/api/search": #"{"data":{"books":[{"name":"三国","url":"/api/book"}]}}"#,
+            "/api/book": #"{"name":"三国","toc":"/api/toc"}"#,
+            "/api/toc": #"{"chapters":[{"title":"第一回","url":"/api/chapter"}]}"#,
+            "/api/chapter": #"{"text":"滚滚长江东逝水。"}"#,
             "/search": "<div class='book'><a href='/book/1'>山海来信</a><span class='author'>墨屿</span></div>",
             "/book/1": "<h1>山海来信</h1><a class='catalog' href='/toc/1'>目录</a>",
             "/toc/1": "<div id='list'><a href='/chapter/1'>第一章</a></div><a class='next' href='/toc/2'>下一页</a>",
@@ -72,5 +79,36 @@ final class SourceClientTests: XCTestCase {
             _ = try await makeClient().fetch(URL(string: "https://fixture.example/search")!, limit: 5)
             XCTFail("Oversized response must fail")
         } catch { XCTAssertTrue(error.localizedDescription.contains("大小限制")) }
+    }
+
+    func testJSONPOSTSearchCatalogAndBody() async throws {
+        let json = #"""
+        {"bookSourceName":"JSON fixture","bookSourceUrl":"https://fixture.example",
+         "searchUrl":"/api/search,{'method':'POST','body':'key={{key}}'}",
+         "ruleSearch":{"bookList":"$.data.books[*]","name":"name","bookUrl":"url"},
+         "ruleBookInfo":{"name":"$.name","tocUrl":"toc"},
+         "ruleToc":{"chapterList":"$.chapters[*]","chapterName":"title","chapterUrl":"url"},
+         "ruleContent":{"content":"$.text"}}
+        """#
+        let source = try SourceImport.parse(Data(json.utf8)).sources[0]
+        XCTAssertNil(source.incompatibility)
+        let client = makeClient()
+        let books = try await client.search("三国", source: source)
+        XCTAssertEqual(books.count, 1)
+        let novel = try await client.catalog(books[0], source: source)
+        XCTAssertEqual(novel.chapters.count, 1)
+        let text = try await client.chapter(novel.chapters[0], source: source)
+        XCTAssertEqual(text, "滚滚长江东逝水。")
+    }
+
+    func testTimeoutReportsNetworkStageAndHost() async throws {
+        do {
+            _ = try await makeClient().fetch(URL(string: "https://fixture.example/timeout")!)
+            XCTFail("Expected timeout")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("fixture.example"))
+            XCTAssertTrue(error.localizedDescription.contains("超时"))
+            XCTAssertTrue(error.localizedDescription.contains("-1001"))
+        }
     }
 }

@@ -247,6 +247,11 @@ struct NovelDetailView: View {
     @State private var reading: OnlineNovel?
     @State private var saved = false
     @State private var official = false
+    @State private var loadTask: Task<Void, Never>?
+    @State private var downloadTask: Task<Void, Never>?
+    @State private var downloading = false
+    @State private var downloadStatus = ""
+    @State private var confirmDownload = false
 
     var body: some View {
         NavigationStack {
@@ -267,9 +272,16 @@ struct NovelDetailView: View {
                         Button(saved ? "已加入书架" : "加入书架", systemImage: "plus") {
                             do { try online.keep(loaded); saved = true } catch { failure = error.localizedDescription }
                         }.disabled(saved)
+                        Button("缓存全书供离线阅读", systemImage: "arrow.down.circle") { confirmDownload = true }
+                            .disabled(downloading)
                     }
                 }
-                if loading { ProgressView("正在获取章节目录…") }
+                if loading {
+                    ProgressView("正在获取章节目录…")
+                    Button("取消获取", role: .cancel) { loadTask?.cancel(); loading = false }
+                }
+                if !downloadStatus.isEmpty { Text(downloadStatus).font(.caption).textSelection(.enabled) }
+                if downloading { Button("停止缓存", role: .cancel) { downloadTask?.cancel() } }
                 if let failure {
                     Section { Text(failure).foregroundStyle(.red); Button("重新获取目录") { load() } }
                 }
@@ -284,6 +296,10 @@ struct NovelDetailView: View {
             }.navigationTitle("小说详情").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
                 .task { load() }
+                .onDisappear { loadTask?.cancel(); downloadTask?.cancel() }
+                .confirmationDialog("缓存全书？", isPresented: $confirmDownload, titleVisibility: .visible) {
+                    Button("开始缓存") { if let loaded { download(loaded) } }
+                } message: { Text("会逐章下载并占用流量和存储空间；可随时停止，已缓存章节会保留。请保持此页面打开。") }
                 .fullScreenCover(item: $reading) { OnlineReaderView(novel: $0) }
                 .sheet(isPresented: $official) { OfficialWebView(url: novel.url) }
         }
@@ -295,12 +311,34 @@ struct NovelDetailView: View {
         guard let source else { failure = "对应书源已删除或旧版专用接口已移除。已缓存章节仍可从书架阅读；请导入新书源后重新搜索此书。"; return }
         loading = true; failure = nil
         saved = online.novels.contains { $0.id == novel.id && $0.sourceID == novel.sourceID }
-        Task {
+        loadTask = Task {
             do {
                 let current = online.novels.first(where: { $0.id == novel.id && $0.sourceID == novel.sourceID }) ?? novel
                 loaded = try await online.client.catalog(current, source: source)
-            } catch { failure = error.localizedDescription }
-            loading = false
+            } catch { if !Task.isCancelled { failure = "获取目录失败：" + error.localizedDescription } }
+            if !Task.isCancelled { loading = false }
+        }
+    }
+
+    private func download(_ book: OnlineNovel) {
+        guard !downloading else { return }
+        downloading = true
+        downloadTask = Task { @MainActor in
+            var completed = 0
+            defer { downloading = false }
+            do {
+                try online.keep(book); saved = true
+                for chapter in book.chapters {
+                    try Task.checkCancellation()
+                    downloadStatus = "正在缓存 \(completed + 1)/\(book.chapters.count) · \(chapter.title)"
+                    _ = try await online.chapter(chapter, sourceID: book.sourceID)
+                    completed += 1
+                    try await Task.sleep(for: .milliseconds(400))
+                }
+                downloadStatus = "已缓存全部 \(completed) 章，可在书架离线阅读。"
+            } catch {
+                downloadStatus = Task.isCancelled ? "已停止，保留已缓存的 \(completed) 章。" : "缓存到第 \(completed) 章后停止：\(error.localizedDescription)。已完成部分保留。"
+            }
         }
     }
 }

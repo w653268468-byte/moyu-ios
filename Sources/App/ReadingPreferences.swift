@@ -62,6 +62,7 @@ struct ReadingStyle: DynamicProperty {
 struct ReadingParagraphs: View {
     let text: String
     private var style = ReadingStyle()
+    init(text: String) { self.text = text }
     private var paragraphs: [String] { text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
     var body: some View {
         LazyVStack(alignment: .leading, spacing: style.paragraphSpacing) {

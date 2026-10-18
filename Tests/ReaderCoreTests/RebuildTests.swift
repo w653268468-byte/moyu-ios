@@ -26,7 +26,9 @@ final class RebuildTests: XCTestCase {
         XCTAssertEqual(String(data: request.httpBody!, encoding: .utf8), "key=%E5%B1%B1%E6%B5%B7%20%26&page=1")
         let get = try SourceRequest.make("/find?q={{key}}", query: "A&B", base: base)
         XCTAssertEqual(get.url?.query, "q=A%26B")
-        XCTAssertThrowsError(try SourceRequest.make(#"/s,{"method":"POST","charset":"gbk"}"#, query: "测试", base: base))
+        let legacy = try SourceRequest.make("/s,{'method':'POST','charset':'gbk','body':'key={{key}}'}", query: "测试", base: base)
+        XCTAssertEqual(String(data: legacy.httpBody!, encoding: .utf8), "key=%B2%E2%CA%D4")
+        XCTAssertThrowsError(try SourceRequest.make(#"/s,{"method":"POST","charset":"unsupported"}"#, query: "测试", base: base))
     }
 
     func testJSONPOSTPreservesQuotedQuery() throws {

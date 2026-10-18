@@ -179,6 +179,7 @@ private struct SourceEditorView: View {
     let source: BookSource
     @State private var text = ""
     @State private var failure: String?
+    init(source: BookSource) { self.source = source }
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading) {
