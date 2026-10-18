@@ -82,9 +82,9 @@ public actor SourceClient {
         }
     }
 
-    private func document(_ request: URLRequest, source: BookSource) async throws -> (RuleDocument, URL) {
+    private func document(_ request: URLRequest, source: BookSource, globals: [String: String] = [:]) async throws -> (RuleDocument, URL) {
         let (data, finalURL) = try await fetch(request, source: source)
-        return (try RuleDocument.parse(data, base: finalURL), finalURL)
+        return (try RuleDocument.parse(data, base: finalURL, source: source, globals: globals), finalURL)
     }
 
     private func document(_ url: URL, source: BookSource) async throws -> (RuleDocument, URL) {
@@ -136,7 +136,7 @@ public actor SourceClient {
         }
         let base = try Self.resolve(source.bookSourceUrl, base: URL(string: "https://example.com")!)
         let request = try SourceRequest.make(template, query: query, base: base)
-        let (doc, url) = try await document(request, source: source)
+        let (doc, url) = try await document(request, source: source, globals: ["key": query])
         var seen: Set<String> = []
         var results: [OnlineNovel] = []
         for element in try doc.elements(list).prefix(100) {

@@ -25,6 +25,17 @@ final class SourceScriptTests: XCTestCase {
         XCTAssertEqual(try engine.evaluate("java.get('chapter')", result: "", baseURL: base) as? String, "第一章")
         XCTAssertEqual(try engine.evaluate("java.resolve('../toc')", result: "", baseURL: base) as? String, "https://books.example/toc")
     }
+    func testRuleDocumentPipelinesPreserveElementsAndScope() throws {
+        let doc = try RuleDocument.parse(Data("<div class='book'><a href='/a'>三国</a></div><div class='book'><a href='/b'>水浒</a></div>".utf8), base: base)
+        let rows = try doc.elements(".book<js>result.toArray().slice(0,1)</js>")
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(try rows[0].value("a@text@js:result + '演义'"), "三国演义")
+        XCTAssertEqual(try rows[0].value("a@href"), "/a")
+        _ = try doc.value("@js:java.put('shared','kept')")
+        XCTAssertEqual(try rows[0].value("@js:java.get('shared')"), "kept")
+        let json = try RuleDocument.parse(Data(#"{"books":[{"name":"A"},{"name":"B"}]}"#.utf8), base: base)
+        XCTAssertEqual(try json.value("$.books@js:result.map(b => b.name).join(',')"), "A,B")
+    }
     func testInfiniteLoopIsInterruptedAndUnknownBridgeIsVisible() throws {
         let engine = try SourceScript()
         let began = Date()

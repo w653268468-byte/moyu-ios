@@ -49,7 +49,7 @@ public struct BookSource: Codable, Identifiable, Equatable, Sendable {
                      ruleBookInfo?.initialization, ruleBookInfo?.tocUrl,
                      ruleToc?.chapterList, ruleToc?.chapterName, ruleToc?.chapterUrl, ruleToc?.nextTocUrl,
                      ruleContent?.content, ruleContent?.nextContentUrl].compactMap { $0 }.filter { !$0.isEmpty }
-        if let unsupported = rules.first(where: { !HTMLRule.isSupported($0) && !JSONRule.isSupported($0) }) {
+        if let unsupported = rules.first(where: { !HTMLRule.isSupported($0) && !JSONRule.isSupported($0) && !ScriptRule.isSupported($0) }) {
             return "含暂不支持的规则：\(String(unsupported.prefix(65)))"
         }
         if let searchUrl, searchUrl.contains("<js>") || searchUrl.contains("@js:") {

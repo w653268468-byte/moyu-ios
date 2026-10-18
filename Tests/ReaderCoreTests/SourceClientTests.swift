@@ -74,6 +74,23 @@ final class SourceClientTests: XCTestCase {
         } catch { XCTAssertTrue(error.localizedDescription.contains("网站返回错误")) }
     }
 
+    func testScriptSearchCatalogAndBodyUseRealRequestPipeline() async throws {
+        var source = try source()
+        source.ruleSearch?.bookList = "@js:java.getElements('.book')"
+        source.ruleSearch?.name = "a@text@js:result.trim()"
+        source.ruleToc?.chapterList = "#list a<js>result.toArray()</js>"
+        source.ruleContent?.content = "#content@text@js:result + '\\n' + source.bookSourceName"
+        XCTAssertNil(source.incompatibility)
+        let client = makeClient()
+        let books = try await client.search("山海", source: source)
+        XCTAssertEqual(books.first?.title, "山海来信")
+        let book = try await client.catalog(books[0], source: source)
+        XCTAssertEqual(book.chapters.count, 2)
+        let text = try await client.chapter(book.chapters[0], source: source)
+        XCTAssertTrue(text.contains("风从海边来。"))
+        XCTAssertTrue(text.contains("Fixture"))
+    }
+
     func testStreamingResponseLimit() async throws {
         do {
             _ = try await makeClient().fetch(URL(string: "https://fixture.example/search")!, limit: 5)

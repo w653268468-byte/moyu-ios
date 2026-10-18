@@ -4,7 +4,7 @@
 
 Pinned source: https://github.com/zqqf16/QuickJS-Swift/tree/50eb132d6bc89736f478cf8336948fb62133a264
 
-+MIT License
+MIT License
 
 Copyright (c) 2021 zqqf16
 
