@@ -1,7 +1,8 @@
 import Foundation
 
 public enum SourceRequest {
-    public static func make(_ template: String, query: String, base: URL) throws -> URLRequest {
+    public static func make(_ template: String, query: String, base: URL, script: SourceScript? = nil, page: Int = 1) throws -> URLRequest {
+        let template = try ScriptTemplate.expand(template, using: script, query: query, base: base, page: page)
         let split = template.range(of: #",\s*\{"#, options: .regularExpression)
         let path = split.map { String(template[..<$0.lowerBound]) } ?? template
         var options: [String: Any] = [:]
@@ -24,7 +25,7 @@ public enum SourceRequest {
         }.joined()
         func substitute(_ text: String, encoded: Bool) -> String {
             text.replacingOccurrences(of: "{{key}}", with: encoded ? escaped : query)
-                .replacingOccurrences(of: "{{page}}", with: "1")
+                .replacingOccurrences(of: "{{page}}", with: String(page))
                 .replacingOccurrences(of: "searchKey", with: encoded ? escaped : query)
         }
         let address = substitute(path, encoded: true)

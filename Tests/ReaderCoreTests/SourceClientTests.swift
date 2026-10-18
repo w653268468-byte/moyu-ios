@@ -23,7 +23,7 @@ private final class FixtureProtocol: URLProtocol {
             "/chapter/2": "<div id='content'>第二天，天晴了。</div>"
         ]
         guard let url = request.url else { return }
-        let body = routes[url.path]
+        let body = url.path == "/js-search" && request.value(forHTTPHeaderField: "X-Reader") == "Gavin" ? routes["/search"] : routes[url.path]
         let response = HTTPURLResponse(url: url, statusCode: body == nil ? 404 : 200, httpVersion: "HTTP/1.1",
                                        headerFields: ["Content-Type": "text/html; charset=utf-8"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
@@ -101,6 +101,14 @@ final class SourceClientTests: XCTestCase {
         XCTAssertThrowsError(try script.evaluate("java.ajax('/missing')", result: "", baseURL: url)) { error in
             XCTAssertTrue(error.localizedDescription.contains("HTTP 404"))
         }
+    }
+    func testScriptURLAndHeadersActuallyReachSearch() async throws {
+        var source = try source()
+        source.searchUrl = "@js:'/js-search?q=' + encodeURIComponent(key)"
+        source.header = "@js:JSON.stringify({'X-Reader':'Gavin'})"
+        XCTAssertNil(source.incompatibility)
+        let found = try await makeClient().search("中文 空格", source: source)
+        XCTAssertEqual(found.first?.title, "山海来信")
     }
 
     func testStreamingResponseLimit() async throws {

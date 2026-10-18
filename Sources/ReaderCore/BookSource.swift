@@ -52,14 +52,11 @@ public struct BookSource: Codable, Identifiable, Equatable, Sendable {
         if let unsupported = rules.first(where: { !HTMLRule.isSupported($0) && !JSONRule.isSupported($0) && !ScriptRule.isSupported($0) }) {
             return "含暂不支持的规则：\(String(unsupported.prefix(65)))"
         }
-        if let searchUrl, searchUrl.contains("<js>") || searchUrl.contains("@js:") {
-            return "搜索请求需要 JavaScript，尚未实现 Legado 的 Java/Android 脚本接口"
-        }
-        if let searchUrl, let base = URL(string: bookSourceUrl) {
+        if let searchUrl, !ScriptTemplate.needsScript(searchUrl), let base = URL(string: bookSourceUrl) {
             do { _ = try SourceRequest.make(searchUrl, query: "测试", base: base) }
             catch { return error.localizedDescription }
         }
-        if let header, !header.isEmpty {
+        if let header, !header.isEmpty, !ScriptTemplate.needsScript(header) {
             guard let data = header.data(using: .utf8), (try? JSONDecoder().decode([String: String].self, from: data)) != nil else {
                 return "header 必须是静态 JSON 字符串，暂不支持脚本请求头"
             }

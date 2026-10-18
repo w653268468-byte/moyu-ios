@@ -36,6 +36,17 @@ final class SourceScriptTests: XCTestCase {
         let json = try RuleDocument.parse(Data(#"{"books":[{"name":"A"},{"name":"B"}]}"#.utf8), base: base)
         XCTAssertEqual(try json.value("$.books@js:result.map(b => b.name).join(',')"), "A,B")
     }
+    func testScriptURLAndInlineTemplates() throws {
+        let script = try SourceScript()
+        let request = try SourceRequest.make("@js:'/search?q=' + encodeURIComponent(key) + '&page=' + page", query: "中文 空格", base: base, script: script, page: 3)
+        XCTAssertEqual(URLComponents(url: request.url!, resolvingAgainstBaseURL: true)?.queryItems?.first?.value, "中文 空格")
+        XCTAssertTrue(request.url!.absoluteString.hasSuffix("page=3"))
+        let inline = try SourceRequest.make("/search?q={{encodeURIComponent(key)}}&n={{({a:2}).a}}", query: "a&b", base: base, script: script)
+        XCTAssertTrue(inline.url!.absoluteString.contains("q=a%26b&n=2"))
+        let quotes = try ScriptTemplate.expand("{{'x}}y'}}", using: script, query: "", base: base)
+        XCTAssertEqual(quotes, "x}}y")
+        XCTAssertThrowsError(try ScriptTemplate.expand("/{{key + 'broken'}", using: script, query: "", base: base))
+    }
     func testInfiniteLoopIsInterruptedAndUnknownBridgeIsVisible() throws {
         let engine = try SourceScript()
         let began = Date()

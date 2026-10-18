@@ -46,8 +46,9 @@ public actor SourceClient {
         }
         if let source {
             request.setValue(source.bookSourceUrl, forHTTPHeaderField: "Referer")
-            if let header = source.header, !header.isEmpty, let data = header.data(using: .utf8) {
-                let headers = try JSONDecoder().decode([String: String].self, from: data)
+            if let header = source.header, !header.isEmpty {
+                let expanded = try ScriptTemplate.expand(header, using: scriptEngine(for: source), query: "", base: url)
+                let headers = try JSONDecoder().decode([String: String].self, from: Data(expanded.utf8))
                 for (key, value) in headers where !["cookie", "authorization", "host"].contains(key.lowercased()) {
                     request.setValue(value, forHTTPHeaderField: key)
                 }
@@ -89,8 +90,8 @@ public actor SourceClient {
     }
 
     private func scriptEngine(for source: BookSource) throws -> SourceScript? {
-        let rules = [source.ruleSearch, source.ruleBookInfo, source.ruleToc, source.ruleContent].compactMap { $0 }.flatMap(\.values)
-        guard rules.contains(where: { (try? ScriptRule.parts($0)) != nil }) else { return nil }
+        let rules = [source.ruleSearch, source.ruleBookInfo, source.ruleToc, source.ruleContent].compactMap { $0 }.flatMap(\.values) + [source.searchUrl, source.header].compactMap { $0 }
+        guard rules.contains(where: { ScriptTemplate.needsScript($0) }) else { return nil }
         if let cached = scriptEngines[source.id], cached.0 == source { return cached.1 }
         let engine = try SourceScript(configuration: session.configuration)
         let json = try source.originalJSON ?? String(decoding: JSONEncoder().encode(source), as: UTF8.self)
@@ -148,7 +149,7 @@ public actor SourceClient {
             throw SourceError.message("此书源没有完整的搜索规则，可以尝试直接粘贴小说详情页链接。")
         }
         let base = try Self.resolve(source.bookSourceUrl, base: URL(string: "https://example.com")!)
-        let request = try SourceRequest.make(template, query: query, base: base)
+        let request = try SourceRequest.make(template, query: query, base: base, script: scriptEngine(for: source))
         let (doc, url) = try await document(request, source: source, globals: ["key": query])
         var seen: Set<String> = []
         var results: [OnlineNovel] = []
