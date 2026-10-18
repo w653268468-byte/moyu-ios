@@ -24,15 +24,11 @@ struct MoyuApp: App {
             }
                 .environmentObject(library)
                 .environmentObject(online)
-                .task {
-                    #if DEBUG
-                    if ProcessInfo.processInfo.arguments.contains("--ui-cookie-check") {
-                        await BrowserSessions.checkCookieSharing(client: online.client)
-                    }
-                    #endif
-                }
                 .onAppear {
                     #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--ui-cookie-check") {
+                        Task { await BrowserSessions.checkCookieSharing(client: online.client) }
+                    }
                     if ProcessInfo.processInfo.arguments.contains("--ui-preferences") { showReaderPreferences = true }
                     if ProcessInfo.processInfo.arguments.contains("--ui-reading") {
                         UserDefaults.standard.set(true, forKey: "reader.fullScreen")

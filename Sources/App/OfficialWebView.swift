@@ -28,17 +28,26 @@ enum BrowserSessions {
     #if DEBUG
     static func checkCookieSharing(client: SourceClient) async {
         let file = URL.documentsDirectory.appendingPathComponent("cookie-check.json")
+        func phase(_ name: String) {
+            let value = try? JSONSerialization.data(withJSONObject: ["status": "running", "phase": name])
+            try? value?.write(to: file, options: .atomic)
+        }
+        phase("started")
         let origin = URL(string: "http://127.0.0.1:18765/login")!
         let view = WKWebView(frame: .zero)
         defer { view.stopLoading() }
         do {
+            phase("clear_cookies")
             await clearCookies(for: origin)
             await client.replaceCookies([], for: origin)
+            phase("web_navigation")
             view.load(URLRequest(url: origin))
+            phase("cookie_poll")
             for _ in 0..<100 {
                 if await cookies(for: origin).contains(where: { $0.name == "gavin_fixture" }) { break }
                 try await Task.sleep(for: .milliseconds(100))
             }
+            phase("http_request")
             let (data, _) = try await client.fetch(URL(string: "http://127.0.0.1:18765/private")!)
             guard String(data: data, encoding: .utf8) == "GAVIN_AUTHENTICATED_CHAPTER" else { throw SourceError.message("Cookie sharing failed") }
             try Data(#"{"status":"passed"}"#.utf8).write(to: file, options: .atomic)

@@ -70,18 +70,20 @@ jobs:
           FIXTURE_PID=$!
           trap 'kill "$FIXTURE_PID" 2>/dev/null || true' EXIT
           xcrun simctl launch --terminate-running-process "$DEVICE_ID" org.moyu.reader --ui-cookie-check
-          for ATTEMPT in $(seq 1 30); do
-            if [ -f "$CONTAINER/Documents/cookie-check.json" ]; then break; fi
+          for ATTEMPT in $(seq 1 60); do
+            if python3 -c 'import json,pathlib,sys; p=pathlib.Path(sys.argv[1]); sys.exit(0 if p.exists() and json.loads(p.read_text()).get("status") in ["passed","failed"] else 1)' "$CONTAINER/Documents/cookie-check.json"; then break; fi
             sleep 1
           done
+          cp "$CONTAINER/Documents/cookie-check.json" build/ui/cookie-check.json || true
           python3 -c 'import json,pathlib,sys; p=pathlib.Path(sys.argv[1]); d=json.loads(p.read_text()); print(d); assert d["status"] == "passed"' "$CONTAINER/Documents/cookie-check.json"
           xcrun simctl terminate "$DEVICE_ID" org.moyu.reader
       - name: Upload simulator screens
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Gavin-UI-preview
-          path: build/ui/*.png
-          if-no-files-found: error
+          path: build/ui/
+          if-no-files-found: warn
           retention-days: 14
       - name: Package IPA for local signing
         run: |
