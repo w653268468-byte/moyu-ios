@@ -95,8 +95,9 @@ final class OnlineStore: ObservableObject {
         do { try save() } catch { novels = old; errorMessage = error.localizedDescription }
     }
 
-    func position(_ novel: OnlineNovel, index: Int) {
-        var updated = novel
+    func position(_ novel: OnlineNovel, index: Int, textOffset: Int? = nil) {
+        var updated = novels.first { $0.id == novel.id } ?? novel
+        updated.textOffset = textOffset ?? (updated.chapterIndex == index ? updated.textOffset : 0)
         updated.chapterIndex = index
         updated.lastReadAt = Date()
         do { try keep(updated) } catch { errorMessage = error.localizedDescription }

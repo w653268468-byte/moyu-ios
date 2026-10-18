@@ -44,6 +44,8 @@ struct ReadingStyle: DynamicProperty {
     @AppStorage("reader.keepAwake") var keepAwake = false
     @AppStorage("reader.brightness") var brightness = 1.0
     @AppStorage("reader.speechRate") var speechRate = 0.5
+    @AppStorage("reader.paged") var paged = true
+    @AppStorage("reader.fullScreen") var fullScreen = false
     var paper: Paper { Paper(rawValue: paperName) ?? .cream }
     var font: Font {
         let size = min(44, max(12, fontSize))
@@ -51,11 +53,17 @@ struct ReadingStyle: DynamicProperty {
         switch fontFamily { case "宋体": design = .serif; case "圆体": design = .rounded; case "等宽": design = .monospaced; default: design = .default }
         return .system(size: size, weight: bold ? .semibold : .regular, design: design)
     }
+    var uiFont: UIFont {
+        let base = UIFont.systemFont(ofSize: min(44, max(12, fontSize)), weight: bold ? .semibold : .regular)
+        let design: UIFontDescriptor.SystemDesign
+        switch fontFamily { case "宋体": design = .serif; case "圆体": design = .rounded; case "等宽": design = .monospaced; default: design = .default }
+        return UIFont(descriptor: base.fontDescriptor.withDesign(design) ?? base.fontDescriptor, size: min(44, max(12, fontSize)))
+    }
     func reset() {
         fontSize = 21; lineSpacing = 10; paperName = Paper.cream.rawValue; serif = true
         fontFamily = "宋体"; bold = false; letterSpacing = 0; paragraphSpacing = 18
         horizontalMargin = 26; verticalMargin = 24; indent = true; showChapterTitle = true
-        keepAwake = false; brightness = 1; speechRate = 0.5
+        keepAwake = false; brightness = 1; speechRate = 0.5; paged = true; fullScreen = false
     }
 }
 
@@ -123,6 +131,10 @@ struct ReadingPreferences: View {
                 Toggle("显示章节标题", isOn: Binding(get: { style.showChapterTitle }, set: { style.showChapterTitle = $0 }))
             }
             Section("页面") {
+                Toggle("左右翻页", isOn: Binding(get: { style.paged }, set: { style.paged = $0 }))
+                Toggle("全屏阅读", isOn: Binding(get: { style.fullScreen }, set: { style.fullScreen = $0 }))
+                Text("左右滑动或点击两侧翻页，点击正文中间显示菜单。关闭左右翻页后上下滚动，双击正文显示菜单。")
+                    .font(.caption).foregroundStyle(.secondary)
                 control("左右边距", value: Binding(get: { style.horizontalMargin }, set: { style.horizontalMargin = $0 }), range: 10...55)
                 control("上下边距", value: Binding(get: { style.verticalMargin }, set: { style.verticalMargin = $0 }), range: 8...60)
                 control("页面亮度", value: Binding(get: { style.brightness }, set: { style.brightness = $0 }), range: 0.35...1, step: 0.05)

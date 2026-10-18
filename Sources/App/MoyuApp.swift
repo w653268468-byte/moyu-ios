@@ -12,6 +12,7 @@ struct MoyuApp: App {
         return 0
     }()
     @State private var showReaderPreferences = false
+    @State private var showReadingPreview = false
 
     var body: some Scene {
         WindowGroup {
@@ -26,6 +27,17 @@ struct MoyuApp: App {
                 .onAppear {
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("--ui-preferences") { showReaderPreferences = true }
+                    if ProcessInfo.processInfo.arguments.contains("--ui-reading") {
+                        UserDefaults.standard.set(true, forKey: "reader.fullScreen")
+                        showReadingPreview = true
+                    }
+                    #endif
+                }
+                .fullScreenCover(isPresented: $showReadingPreview) {
+                    #if DEBUG
+                    let sample = "第一章 春日\n" + String(repeating: "清晨的阳光透过树叶，洒在安静的小路上。他翻开手中的书，故事从这一刻开始。阅读让旅途有了另一种风景。\n", count: 100)
+                    let document = try! TextParser.parse(sample)
+                    NavigationStack { ReaderView(book: Book(title: "Gavin 分页预览", document: document), document: document) }.environmentObject(library)
                     #endif
                 }
                 .sheet(isPresented: $showReaderPreferences) { NavigationStack { ReadingPreferences() } }

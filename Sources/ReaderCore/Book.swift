@@ -42,6 +42,7 @@ public struct Book: Codable, Identifiable, Equatable, Sendable {
     public var title: String
     public var addedAt: Date
     public var lastReadAt: Date?
+    public var textOffset: Int?
     public var page: Int
     public var pageCount: Int
     public var chapterCount: Int

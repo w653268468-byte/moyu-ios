@@ -34,6 +34,8 @@ struct ReaderView: View {
     let book: Book
     let document: BookDocument
     @State private var page = 0
+    @State private var resumeOffset = 0
+    @State private var navigationID = UUID()
     @State private var panel: ReaderPanel?
     @State private var search = ""
     @StateObject private var speech = ReaderSpeech()
@@ -49,7 +51,13 @@ struct ReaderView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
+            if style.paged {
+                PagedReadingView(text: chapterText, title: document.chapters[current.chapter].title,
+                    resumeOffset: resumeOffset, onOffset: saveOffset,
+                    previousChapter: { chapterJump(current.chapter - 1, atEnd: true) },
+                    nextChapter: { chapterJump(current.chapter + 1) },
+                    toggleChrome: { style.fullScreen.toggle() }).id("\(current.chapter)-\(navigationID)")
+            } else { ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     if style.showChapterTitle {
                         Text(document.chapters[current.chapter].title).font(.caption).opacity(0.6)
@@ -57,8 +65,8 @@ struct ReaderView: View {
                     ReadingParagraphs(text: current.text)
                 }.padding(.horizontal, style.horizontalMargin).padding(.vertical, style.verticalMargin).frame(maxWidth: 760)
                     .frame(maxWidth: .infinity)
-            }.id(page)
-            HStack {
+            }.id(page).onTapGesture(count: 2) { style.fullScreen.toggle() } }
+            if !style.fullScreen { HStack {
                 Button { jump(page - 1) } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
                     .disabled(page == 0).accessibilityLabel("上一页")
                 Spacer()
@@ -66,12 +74,14 @@ struct ReaderView: View {
                 Spacer()
                 Button { jump(page + 1) } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }
                     .disabled(page == document.pages.count - 1).accessibilityLabel("下一页")
-            }.padding(.horizontal, 16)
+            }.padding(.horizontal, 16) }
         }
         .background(style.paper.background).foregroundStyle(style.paper.ink)
         .preferredColorScheme(style.paper.isDark ? .dark : .light)
         .modifier(ReadingAppearance())
         .navigationTitle(book.title).navigationBarTitleDisplayMode(.inline)
+        .toolbar(style.fullScreen ? .hidden : .visible, for: .navigationBar)
+        .statusBarHidden(style.fullScreen)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button { dismiss() } label: { Image(systemName: "chevron.down") }.accessibilityLabel("返回书架")
@@ -81,6 +91,7 @@ struct ReaderView: View {
                     Image(systemName: marked ? "bookmark.fill" : "bookmark")
                 }.accessibilityLabel(marked ? "移除书签" : "添加书签")
                 Menu {
+                    Button("全屏阅读", systemImage: "arrow.up.left.and.arrow.down.right") { style.fullScreen = true }
                     Button(speech.active ? (speech.paused ? "继续朗读" : "暂停朗读") : "朗读当前分段", systemImage: "speaker.wave.2") { speech.play(current.text, rate: style.speechRate) }
                     if speech.active { Button("停止朗读", systemImage: "stop.circle") { speech.stop() } }
                     Button("目录与书签", systemImage: "list.bullet") { panel = .contents }
@@ -91,9 +102,14 @@ struct ReaderView: View {
         }
         .onAppear {
             page = min(max(0, liveBook.page), document.pages.count - 1)
-            library.updatePosition(bookID: book.id, page: page)
+            resumeOffset = liveBook.textOffset ?? offsetForSegment(page)
+            navigationID = UUID()
         }
-        .onChange(of: page) { _, value in speech.stop(); library.updatePosition(bookID: book.id, page: value) }
+        .onChange(of: page) { _, value in
+            speech.stop()
+            if !style.paged { library.updatePosition(bookID: book.id, page: value) }
+        }
+        .onChange(of: style.paged) { _, _ in resumeOffset = liveBook.textOffset ?? offsetForSegment(page); navigationID = UUID() }
         .onDisappear { speech.stop() }
         .alert("听书提示", isPresented: Binding(get: { speech.message != nil }, set: { if !$0 { speech.message = nil } })) { Button("知道了") { speech.message = nil } } message: { Text(speech.message ?? "") }
         .sheet(item: $panel) { selected in
@@ -109,7 +125,37 @@ struct ReaderView: View {
         }
     }
 
-    private func jump(_ target: Int) { page = min(max(0, target), document.pages.count - 1) }
+    private var chapterSegments: [ReadingPage] { document.pages.filter { $0.chapter == current.chapter } }
+    private var chapterText: String { chapterSegments.map(\.text).joined(separator: "\n\n") }
+
+    private func offsetForSegment(_ target: Int) -> Int {
+        let chapter = document.pages[target].chapter
+        return document.pages.filter { $0.chapter == chapter && $0.id < target }
+            .reduce(0) { $0 + ($1.text as NSString).length + 2 }
+    }
+    private func saveOffset(_ offset: Int) {
+        var start = 0
+        var segment = chapterSegments.first?.id ?? page
+        for item in chapterSegments {
+            if start > offset { break }
+            segment = item.id
+            start += (item.text as NSString).length + 2
+        }
+        page = segment
+        library.updatePosition(bookID: book.id, page: segment, textOffset: offset)
+    }
+    private func chapterJump(_ chapter: Int, atEnd: Bool = false) {
+        guard document.chapters.indices.contains(chapter) else { return }
+        page = document.chapters[chapter].firstPage
+        resumeOffset = atEnd ? Int.max : 0
+        navigationID = UUID()
+    }
+    private func jump(_ target: Int) {
+        page = min(max(0, target), document.pages.count - 1)
+        resumeOffset = offsetForSegment(page)
+        navigationID = UUID()
+        library.updatePosition(bookID: book.id, page: page, textOffset: resumeOffset)
+    }
 
     private var contents: some View {
         List {

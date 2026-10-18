@@ -12,6 +12,7 @@ struct OnlineReaderView: View {
     @State private var showSettings = false
     @State private var official = false
     @State private var retry = 0
+    @State private var resumeOffset = 0
     @StateObject private var speech = ReaderSpeech()
     private var style = ReadingStyle()
 
@@ -34,6 +35,12 @@ struct OnlineReaderView: View {
                         Button("重试") { retry += 1 }
                         Button("官方网页", systemImage: "safari") { official = true }
                     }
+                } else if style.paged {
+                    PagedReadingView(text: text, title: novel.chapters[index].title, resumeOffset: resumeOffset,
+                        onOffset: { online.position(novel, index: index, textOffset: $0) },
+                        previousChapter: { if index > 0 { index -= 1 } },
+                        nextChapter: { if index + 1 < novel.chapters.count { index += 1 } },
+                        toggleChrome: { style.fullScreen.toggle() }).id(index)
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 18) {
@@ -44,9 +51,9 @@ struct OnlineReaderView: View {
                             Text(index == novel.chapters.count - 1 ? "已到目录最后一章" : "本章完 · 点击右下角继续")
                                 .font(.caption).opacity(0.5).frame(maxWidth: .infinity).padding(.vertical, 25)
                         }.padding(.horizontal, style.horizontalMargin).padding(.vertical, style.verticalMargin).frame(maxWidth: 760).frame(maxWidth: .infinity, alignment: .center)
-                    }.id(index)
+                    }.id(index).onTapGesture(count: 2) { style.fullScreen.toggle() }
                 }
-                HStack {
+                if !style.fullScreen { HStack {
                     Button { index -= 1 } label: { Label("上一章", systemImage: "chevron.left").frame(minHeight: 44) }
                         .disabled(index <= 0)
                     Spacer()
@@ -55,17 +62,20 @@ struct OnlineReaderView: View {
                     Spacer()
                     Button { index += 1 } label: { Label("下一章", systemImage: "chevron.right").frame(minHeight: 44) }
                         .disabled(index >= novel.chapters.count - 1)
-                }.font(.subheadline).padding(.horizontal, 18)
+                }.font(.subheadline).padding(.horizontal, 18) }
             }.background(style.paper.background).foregroundStyle(style.paper.ink)
                 .preferredColorScheme(style.paper.isDark ? .dark : .light)
                 .modifier(ReadingAppearance())
                 .navigationTitle(novel.title).navigationBarTitleDisplayMode(.inline)
+                .toolbar(style.fullScreen ? .hidden : .visible, for: .navigationBar)
+                .statusBarHidden(style.fullScreen)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Button { dismiss() } label: { Image(systemName: "chevron.down") }.accessibilityLabel("返回书架")
                     }
                     ToolbarItemGroup(placement: .topBarTrailing) {
                         Menu {
+                            Button("全屏阅读", systemImage: "arrow.up.left.and.arrow.down.right") { style.fullScreen = true }
                             Button(speech.active ? (speech.paused ? "继续朗读" : "暂停朗读") : "朗读当前章节", systemImage: "speaker.wave.2") { speech.play(text, rate: style.speechRate) }.disabled(loading || text.isEmpty)
                             if speech.active { Button("停止朗读", systemImage: "stop.circle") { speech.stop() } }
                         } label: { Image(systemName: "speaker.wave.2") }
@@ -83,6 +93,8 @@ struct OnlineReaderView: View {
                         let fetched = try await online.chapter(novel.chapters[target], sourceID: novel.sourceID)
                         try Task.checkCancellation()
                         guard target == index else { return }
+                        let saved = online.novels.first { $0.id == novel.id } ?? novel
+                        resumeOffset = saved.chapterIndex == target ? (saved.textOffset ?? 0) : 0
                         text = fetched
                         online.position(novel, index: target)
                         loading = false

@@ -187,7 +187,7 @@ private struct BookCard: View {
                     Image(systemName: "water.waves").font(.title2).opacity(0.65)
                     Text(book.title).font(.system(size: 23, weight: .medium, design: .serif)).lineLimit(4)
                     Spacer(minLength: 4)
-                    Text("墨 屿 藏 书").font(.system(size: 9)).tracking(2).opacity(0.65)
+                    Text("G A V I N").font(.system(size: 9)).tracking(2).opacity(0.65)
                 }.foregroundStyle(.white).padding(22)
             }.frame(height: 218)
                 .shadow(color: .black.opacity(0.12), radius: 7, y: 4)
