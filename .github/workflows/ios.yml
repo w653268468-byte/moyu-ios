@@ -7,7 +7,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -46,3 +46,14 @@ jobs:
           path: build/Moyu-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
+      - name: Publish rebuild preview
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/package_source.py
+          if gh release view v2.0.0-preview.1 >/dev/null 2>&1; then
+            gh release upload v2.0.0-preview.1 build/Moyu-unsigned.ipa dist/Moyu-iOS-source.zip --clobber
+          else
+            gh release create v2.0.0-preview.1 build/Moyu-unsigned.ipa dist/Moyu-iOS-source.zip --target "$GITHUB_SHA" --prerelease --title "墨屿 2.0 重构预览" --notes-file docs/RELEASE_2.md
+          fi

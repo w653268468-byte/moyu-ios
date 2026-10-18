@@ -12,8 +12,8 @@ struct SourceHubView: View {
     @State private var searching = false
     @State private var failure: String?
     @State private var didSearch = false
-    @State private var fanqieLink = ""
-    private var available: [BookSource] { online.sources.filter { $0.incompatibility == nil } }
+    @State private var searchTask: Task<Void, Never>?
+    private var available: [BookSource] { online.sources.filter { $0.incompatibility == nil && $0.enabled != false } }
 
     var body: some View {
         NavigationStack {
@@ -21,18 +21,10 @@ struct SourceHubView: View {
                 Section {
                     Label("用你自己的书源，找到下一段故事", systemImage: "globe.asia.australia")
                         .font(.headline).padding(.vertical, 6)
-                    Text("兼容阅读 3.x 的部分 CSS 书源。先导入书源，再搜索书名或粘贴小说详情页网址。")
+                    Text("支持阅读 3.x 的 CSS、基础 JSONPath 和静态 GET/POST 书源。先导入书源，再搜索书名或粘贴小说详情页网址。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if online.locked { Section { Button("重新读取在线书架") { online.reload() } } }
-                Section("番茄小说 · 分享链接导入") {
-                    TextField("粘贴分享文案、书籍链接或数字书籍 ID", text: $fanqieLink, axis: .vertical)
-                        .lineLimit(2...4).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Button("识别番茄小说并获取目录", systemImage: "link") { importFanqie() }
-                        .disabled(searching || fanqieLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || online.locked)
-                    Text("通用链接识别，无需另找书源。获取官网公开信息；正文使用特殊网页字体或需验证时，可通过官方网页阅读。")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
                 if !available.isEmpty {
                     Section("搜索小说") {
                         Picker("使用书源", selection: $selectedSource) {
@@ -42,6 +34,7 @@ struct SourceHubView: View {
                         Button { performSearch() } label: {
                             if searching { ProgressView("正在获取网页…") } else { Label("搜索", systemImage: "magnifyingglass") }
                         }.disabled(searching || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        if searching { Button("取消搜索", role: .cancel) { searchTask?.cancel(); searching = false } }
                     }
                     Section("通过小说链接打开") {
                         TextField("https://… 小说详情页或目录页", text: $directURL)
@@ -67,37 +60,23 @@ struct SourceHubView: View {
                         Text("当前获取搜索结果的第一页，最多 100 本。").font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                Section("我的书源 · \(online.sources.count)") {
-                    if online.sources.isEmpty {
-                        ContentUnavailableView("还没有书源", systemImage: "link.badge.plus",
-                                               description: Text("点击右上角加号，粘贴阅读 JSON 书源链接，或导入 JSON 文件。"))
-                    }
-                    ForEach(online.sources) { source in
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(source.bookSourceName).font(.headline)
-                            Text(source.bookSourceUrl).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                            if let reason = source.incompatibility {
-                                Label(reason, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange)
-                            } else {
-                                Label("规则可识别 · 可用性需联网验证", systemImage: "checkmark.circle").font(.caption).foregroundStyle(.secondary)
-                            }
-                        }.swipeActions {
-                            Button("删除", role: .destructive) { online.deleteSource(source) }
-                        }
-                    }
+                Section("书源") {
+                    Text("已导入 \(online.sources.count) 个书源。可到下方“书源”页进行多选删除、编辑、禁用和校验。")
+                        .font(.subheadline).foregroundStyle(.secondary)
                 }
                 Section("隐私与兼容性") {
                     Text("搜索和阅读会直接访问你选择的网站，对方可看到网络请求和搜索词。墨屿不提供内置书源，也不上传书架。")
-                    Text("暂不支持 JS、XPath、JSONPath、POST、登录、验证码或付费内容解锁。书源失效和网站改版会导致解析失败。HTTP 书源采用未加密连接，建议优先使用 HTTPS。")
+                    Text("复杂 JS、XPath、登录、验证码和付费解锁尚未实现。书源失效和网站改版会导致解析失败。HTTP 书源采用未加密连接，建议优先使用 HTTPS。")
                     Button("清空已读章节缓存", role: .destructive) { online.clearCache() }
                 }.font(.caption)
-            }.navigationTitle("书源")
+            }.navigationTitle("找书")
                 .toolbar { ToolbarItem(placement: .topBarTrailing) {
                     Button { showImport = true } label: { Image(systemName: "plus.circle.fill") }
                         .accessibilityLabel("导入阅读书源").disabled(online.locked)
                 } }
                 .sheet(isPresented: $showImport) { SourceImportView() }
                 .sheet(item: $selection) { NovelDetailView(novel: $0) }
+                .onDisappear { searchTask?.cancel() }
                 .onAppear { chooseDefault() }
                 .onChange(of: online.sources) { _, _ in chooseDefault() }
         }
@@ -107,25 +86,17 @@ struct SourceHubView: View {
         if !available.contains(where: { $0.id == selectedSource }) { selectedSource = available.first?.id ?? "" }
     }
 
-    private func importFanqie() {
-        guard !searching else { return }
-        searching = true; failure = nil
-        Task {
-            do { selection = try await online.client.fanqieShare(fanqieLink) }
-            catch { failure = error.localizedDescription }
-            searching = false
-        }
-    }
-
     private func performSearch() {
         guard !searching, let source = available.first(where: { $0.id == selectedSource }) else { return }
         let keyword = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !keyword.isEmpty else { return }
         searching = true; failure = nil; results = []; didSearch = true
-        Task {
-            do { results = try await online.client.search(keyword, source: source) }
-            catch { failure = error.localizedDescription }
-            searching = false
+        searchTask = Task {
+            do {
+                let found = try await online.client.search(keyword, source: source)
+                try Task.checkCancellation(); results = found
+            } catch { if !Task.isCancelled { failure = "搜索失败：" + error.localizedDescription } }
+            if !Task.isCancelled { searching = false }
         }
     }
 
@@ -150,6 +121,7 @@ struct SourceImportView: View {
     @State private var importingFile = false
     @State private var busy = false
     @State private var importStatus = ""
+    @State private var importTask: Task<Void, Never>?
     @State private var preview: SourceImport?
     @State private var failure: String?
 
@@ -171,7 +143,10 @@ struct SourceImportView: View {
                         .accessibilityLabel("粘贴 JSON 书源文本")
                     Button("解析粘贴的 JSON") { parse(Data(json.utf8)) }.disabled(busy || json.isEmpty)
                 }
-                if busy { ProgressView(importStatus.isEmpty ? "正在解析书源…" : importStatus) }
+                if busy {
+                    ProgressView(importStatus.isEmpty ? "正在解析书源…" : importStatus)
+                    Button("取消导入", role: .cancel) { importTask?.cancel(); busy = false; importStatus = "" }
+                }
                 if let failure { Section("提示") { Text(failure).foregroundStyle(.red).textSelection(.enabled) } }
                 if let preview {
                     Section("预览 · \(preview.sources.count) 个书源") {
@@ -196,7 +171,7 @@ struct SourceImportView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }.navigationTitle("导入书源").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() }.disabled(busy) } }
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { importTask?.cancel(); dismiss() } } }
                 .fileImporter(isPresented: $importingFile, allowedContentTypes: [.json]) { result in
                     do {
                         let url = try result.get()
@@ -216,10 +191,11 @@ struct SourceImportView: View {
         guard !links.isEmpty else { return }
         guard links.count <= 20 else { failure = "一次最多处理 20 个书源链接，请分批导入。"; return }
         busy = true; failure = nil; preview = nil
-        Task {
+        importTask = Task {
             var merged: [BookSource] = []
             var issues: [String] = []
             for (number, entry) in links.enumerated() {
+                if Task.isCancelled { return }
                 importStatus = "正在获取第 \(number + 1) / \(links.count) 个链接…"
                 do {
                     var raw = entry
@@ -235,8 +211,12 @@ struct SourceImportView: View {
                         if let index = merged.firstIndex(where: { $0.id == source.id }) { merged[index] = source }
                         else { merged.append(source) }
                     }
-                } catch { issues.append("链接 \(number + 1)：\(error.localizedDescription)") }
+                } catch {
+                    if Task.isCancelled { return }
+                    issues.append("链接 \(number + 1)：\(error.localizedDescription)")
+                }
             }
+            guard !Task.isCancelled else { return }
             if merged.isEmpty {
                 failure = issues.isEmpty ? "没有读取到书源。" : issues.joined(separator: "\n")
             } else {
@@ -273,9 +253,6 @@ struct NovelDetailView: View {
             List {
                 Section {
                     Text(loaded?.title ?? novel.title).font(.title2.bold())
-                    if novel.sourceID == Fanqie.sourceID {
-                        Button("在番茄官方网页打开", systemImage: "safari") { official = true }
-                    }
                     if let loaded {
                         if !loaded.author.isEmpty { Text(loaded.author).foregroundStyle(.secondary) }
                         if !loaded.intro.isEmpty { Text(loaded.intro).font(.subheadline) }
@@ -315,14 +292,13 @@ struct NovelDetailView: View {
     private func load() {
         guard !loading else { return }
         let source = online.sources.first(where: { $0.id == novel.sourceID })
-        guard source != nil || novel.sourceID == Fanqie.sourceID else { failure = "找不到对应书源。"; return }
+        guard let source else { failure = "对应书源已删除或旧版专用接口已移除。已缓存章节仍可从书架阅读；请导入新书源后重新搜索此书。"; return }
         loading = true; failure = nil
         saved = online.novels.contains { $0.id == novel.id && $0.sourceID == novel.sourceID }
         Task {
             do {
                 let current = online.novels.first(where: { $0.id == novel.id && $0.sourceID == novel.sourceID }) ?? novel
-                if novel.sourceID == Fanqie.sourceID { loaded = try await online.client.fanqieCatalog(current) }
-                else if let source { loaded = try await online.client.catalog(current, source: source) }
+                loaded = try await online.client.catalog(current, source: source)
             } catch { failure = error.localizedDescription }
             loading = false
         }

@@ -109,7 +109,7 @@ struct ShelfView: View {
                         ContentUnavailableView {
                             Label(query.isEmpty ? "你的下一段故事" : "没有找到这本书", systemImage: "books.vertical")
                         } description: {
-                            Text(query.isEmpty ? "导入一本 TXT 小说，开始阅读。" : "试试其他书名。")
+                            Text(query.isEmpty ? "导入 TXT、EPUB、PDF 等书籍，开始阅读。" : "试试其他书名。")
                         } actions: {
                             if query.isEmpty { Button("导入小说") { importing = true }.buttonStyle(.borderedProminent) }
                         }
@@ -142,10 +142,10 @@ struct ShelfView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { importing = true } label: {
                         if library.isImporting { ProgressView() } else { Image(systemName: "plus.circle.fill") }
-                    }.disabled(library.isImporting || library.storageLocked).accessibilityLabel("导入 TXT 小说")
+                    }.disabled(library.isImporting || library.storageLocked).accessibilityLabel("导入本地书籍")
                 }
             }
-            .fileImporter(isPresented: $importing, allowedContentTypes: [.plainText], allowsMultipleSelection: true) { result in
+            .fileImporter(isPresented: $importing, allowedContentTypes: [.data], allowsMultipleSelection: true) { result in
                 switch result {
                 case .success(let urls): library.importFiles(urls)
                 case .failure(let error): library.errorMessage = error.localizedDescription
@@ -209,18 +209,18 @@ private struct AboutView: View {
                 Section {
                     Label("墨屿 Moyu", systemImage: "book.pages.fill").font(.title2)
                     Text("把日子，读慢一点。").foregroundStyle(.secondary)
-                    Text("版本 1.0.0 · MIT 开源许可")
+                    Text("版本 2.0.0 · MIT 开源许可")
                 }
                 Section("支持的格式") {
-                    Text("TXT：UTF-8、带 BOM 的 UTF-16、GB18030 / 常见 GBK 编码，单文件不超过 20 MB。")
-                    Text("自动识别中文章节和 Chapter 标题。阅读页是固定文本分段，大字号时可上下滚动。")
+                    Text("TXT、EPUB、PDF、Markdown、HTML、RTF、DOCX。单文件 100 MB；TXT 文本 20 MB。")
+                    Text("EPUB/DOCX/HTML/RTF 提取文字重排；PDF 按原页提取文字，不保留插图与原版式。扫描 PDF 无 OCR，DRM 正文不支持。")
                 }
                 Section("数据与隐私") {
                     Text("小说、进度、书源与章节缓存保存在本机，没有账号、广告或统计。使用书源时会直接访问相应网站。删除 App 会删除本地数据。")
                     Text("可以通过“文件 → 我的 iPhone → 墨屿”备份 Moyu 和 MoyuOnline 两个文件夹。")
                 }
                 Section("当前范围") {
-                    Text("提供 TXT 本地阅读、阅读 3.x 部分 CSS 书源导入、搜索、目录和在线阅读。已读章节自动缓存，在线进度保存到章。EPUB、JS 规则、听书和跨设备同步尚未实现。")
+                    Text("支持文字书导入、CSS/基础 JSONPath 书源、GET/POST、搜索、目录与章节缓存。复杂 JS、XPath、MOBI/AZW3、仿真翻页和跨设备同步尚未完成，不等同 Legado 完整版。")
                 }
             }.navigationTitle("关于墨屿").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }

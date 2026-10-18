@@ -23,53 +23,6 @@ struct ReaderLoader: View {
     }
 }
 
-enum Paper: String, CaseIterable, Identifiable {
-    case cream, white, green, night
-    var id: String { rawValue }
-    var name: String {
-        switch self { case .cream: return "纸白"; case .white: return "纯白"; case .green: return "青瓷"; case .night: return "夜读" }
-    }
-    var background: Color {
-        switch self {
-        case .cream: return Color(red: 0.96, green: 0.94, blue: 0.88)
-        case .white: return .white
-        case .green: return Color(red: 0.87, green: 0.93, blue: 0.87)
-        case .night: return Color(red: 0.10, green: 0.12, blue: 0.13)
-        }
-    }
-    var ink: Color { self == .night ? Color(white: 0.78) : Color(white: 0.17) }
-}
-
-struct ReadingStyle: DynamicProperty {
-    @AppStorage("reader.fontSize") var fontSize = 21.0
-    @AppStorage("reader.lineSpacing") var lineSpacing = 10.0
-    @AppStorage("reader.paper") var paperName = Paper.cream.rawValue
-    @AppStorage("reader.serif") var serif = true
-    var paper: Paper { Paper(rawValue: paperName) ?? .cream }
-}
-
-struct ReadingPreferences: View {
-    private var style = ReadingStyle()
-    var body: some View {
-        Form {
-            Section("纸张") {
-                Picker("阅读主题", selection: Binding(get: { style.paperName }, set: { style.paperName = $0 })) {
-                    ForEach(Paper.allCases) { Text($0.name).tag($0.rawValue) }
-                }.pickerStyle(.segmented)
-            }
-            Section("排版") {
-                HStack { Text("字号"); Spacer(); Text("\(Int(style.fontSize))").monospacedDigit() }
-                Slider(value: Binding(get: { style.fontSize }, set: { style.fontSize = $0 }), in: 16...34, step: 1).accessibilityLabel("字号")
-                HStack { Text("行距"); Spacer(); Text("\(Int(style.lineSpacing))").monospacedDigit() }
-                Slider(value: Binding(get: { style.lineSpacing }, set: { style.lineSpacing = $0 }), in: 4...22, step: 1).accessibilityLabel("行距")
-                Toggle("衬线字体", isOn: Binding(get: { style.serif }, set: { style.serif = $0 }))
-            }
-            Text("每页采用固定文本分段，调整字号不影响阅读位置。内容较长时可上下滚动。")
-                .font(.caption).foregroundStyle(.secondary)
-        }.navigationTitle("阅读设置").navigationBarTitleDisplayMode(.inline)
-    }
-}
-
 private enum ReaderPanel: String, Identifiable {
     case contents, search, settings
     var id: String { rawValue }
@@ -83,6 +36,7 @@ struct ReaderView: View {
     @State private var page = 0
     @State private var panel: ReaderPanel?
     @State private var search = ""
+    @StateObject private var speech = ReaderSpeech()
     private var style = ReadingStyle()
     private var liveBook: Book { library.books.first { $0.id == book.id } ?? book }
     private var current: ReadingPage { document.pages[page] }
@@ -97,14 +51,11 @@ struct ReaderView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    Text(document.chapters[current.chapter].title)
-                        .font(.caption).opacity(0.6)
-                    Text(current.text)
-                        .font(.system(size: style.fontSize, design: style.serif ? .serif : .default))
-                        .lineSpacing(style.lineSpacing)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }.padding(.horizontal, 26).padding(.vertical, 24).frame(maxWidth: 760)
+                    if style.showChapterTitle {
+                        Text(document.chapters[current.chapter].title).font(.caption).opacity(0.6)
+                    }
+                    ReadingParagraphs(text: current.text)
+                }.padding(.horizontal, style.horizontalMargin).padding(.vertical, style.verticalMargin).frame(maxWidth: 760)
                     .frame(maxWidth: .infinity)
             }.id(page)
             HStack {
@@ -118,7 +69,8 @@ struct ReaderView: View {
             }.padding(.horizontal, 16)
         }
         .background(style.paper.background).foregroundStyle(style.paper.ink)
-        .preferredColorScheme(style.paper == .night ? .dark : .light)
+        .preferredColorScheme(style.paper.isDark ? .dark : .light)
+        .modifier(ReadingAppearance())
         .navigationTitle(book.title).navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -129,6 +81,8 @@ struct ReaderView: View {
                     Image(systemName: marked ? "bookmark.fill" : "bookmark")
                 }.accessibilityLabel(marked ? "移除书签" : "添加书签")
                 Menu {
+                    Button(speech.active ? (speech.paused ? "继续朗读" : "暂停朗读") : "朗读当前分段", systemImage: "speaker.wave.2") { speech.play(current.text, rate: style.speechRate) }
+                    if speech.active { Button("停止朗读", systemImage: "stop.circle") { speech.stop() } }
                     Button("目录与书签", systemImage: "list.bullet") { panel = .contents }
                     Button("搜索正文", systemImage: "magnifyingglass") { panel = .search }
                     Button("阅读设置", systemImage: "textformat.size") { panel = .settings }
@@ -139,7 +93,9 @@ struct ReaderView: View {
             page = min(max(0, liveBook.page), document.pages.count - 1)
             library.updatePosition(bookID: book.id, page: page)
         }
-        .onChange(of: page) { _, value in library.updatePosition(bookID: book.id, page: value) }
+        .onChange(of: page) { _, value in speech.stop(); library.updatePosition(bookID: book.id, page: value) }
+        .onDisappear { speech.stop() }
+        .alert("听书提示", isPresented: Binding(get: { speech.message != nil }, set: { if !$0 { speech.message = nil } })) { Button("知道了") { speech.message = nil } } message: { Text(speech.message ?? "") }
         .sheet(item: $panel) { selected in
             NavigationStack {
                 Group {

@@ -9,7 +9,9 @@ struct MoyuApp: App {
         WindowGroup {
             TabView {
                 ShelfView().tabItem { Label("书架", systemImage: "books.vertical") }
-                SourceHubView().tabItem { Label("书源", systemImage: "globe.asia.australia") }
+                SourceHubView().tabItem { Label("找书", systemImage: "magnifyingglass") }
+                SourceManagerView().tabItem { Label("书源", systemImage: "globe.asia.australia") }
+                AppSettingsView().tabItem { Label("设置", systemImage: "gearshape") }
             }
                 .environmentObject(library)
                 .environmentObject(online)

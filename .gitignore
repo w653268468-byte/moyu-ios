@@ -10,3 +10,4 @@ xcuserdata/
 .swiftpm/
 __pycache__/
 dist/
+installers/

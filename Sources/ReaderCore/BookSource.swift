@@ -32,6 +32,8 @@ public struct BookSource: Codable, Identifiable, Equatable, Sendable {
     public var bookSourceName: String
     public var bookSourceUrl: String
     public var bookSourceGroup: String?
+    public var enabled: Bool?
+    public var originalJSON: String?
     public var searchUrl: String?
     public var header: String?
     public var ruleSearch: SourceRule?
@@ -43,12 +45,19 @@ public struct BookSource: Codable, Identifiable, Equatable, Sendable {
         guard let url = URL(string: bookSourceUrl), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else {
             return "书源基础地址不是有效的 HTTP/HTTPS 网址"
         }
-        let rules = [ruleSearch, ruleBookInfo, ruleToc, ruleContent].compactMap { $0 }.flatMap(\.values)
-        if let unsupported = rules.first(where: { !HTMLRule.isSupported($0) }) {
+        let rules = [ruleSearch?.bookList, ruleSearch?.name, ruleSearch?.bookUrl,
+                     ruleBookInfo?.initialization, ruleBookInfo?.tocUrl,
+                     ruleToc?.chapterList, ruleToc?.chapterName, ruleToc?.chapterUrl, ruleToc?.nextTocUrl,
+                     ruleContent?.content, ruleContent?.nextContentUrl].compactMap { $0 }.filter { !$0.isEmpty }
+        if let unsupported = rules.first(where: { !HTMLRule.isSupported($0) && !JSONRule.isSupported($0) }) {
             return "含暂不支持的规则：\(String(unsupported.prefix(65)))"
         }
-        if let searchUrl, searchUrl.contains(",{") || searchUrl.contains("<js>") || searchUrl.contains("@js:") {
-            return "搜索请求需要 POST 或 JavaScript，本版本仅支持 GET 模板"
+        if let searchUrl, searchUrl.contains("<js>") || searchUrl.contains("@js:") {
+            return "搜索请求需要 JavaScript，尚未实现 Legado 的 Java/Android 脚本接口"
+        }
+        if let searchUrl, let base = URL(string: bookSourceUrl) {
+            do { _ = try SourceRequest.make(searchUrl, query: "测试", base: base) }
+            catch { return error.localizedDescription }
         }
         if let header, !header.isEmpty {
             guard let data = header.data(using: .utf8), (try? JSONDecoder().decode([String: String].self, from: data)) != nil else {
@@ -81,7 +90,8 @@ public struct SourceImport: Sendable {
         for (index, entry) in entries.enumerated() {
             do {
                 let json = try JSONSerialization.data(withJSONObject: entry, options: [.fragmentsAllowed])
-                let source = try JSONDecoder().decode(BookSource.self, from: json)
+                var source = try JSONDecoder().decode(BookSource.self, from: json)
+                source.originalJSON = String(data: json, encoding: .utf8)
                 if let existing = sources.firstIndex(where: { $0.id == source.id }) {
                     sources[existing] = source
                     failures.append("第 \(index + 1) 项地址重复，预览保留最后一份规则。")
@@ -89,6 +99,18 @@ public struct SourceImport: Sendable {
             } catch { failures.append("第 \(index + 1) 项格式无法解析：\(error.localizedDescription)") }
         }
         return SourceImport(sources: sources, failures: failures)
+    }
+
+    public static func export(_ sources: [BookSource]) throws -> Data {
+        let entries = try sources.map { source -> [String: Any] in
+            var original = source.originalJSON.flatMap { $0.data(using: .utf8) }
+                .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            let known = try JSONSerialization.jsonObject(with: JSONEncoder().encode(source)) as! [String: Any]
+            for (key, value) in known where key != "originalJSON" { original[key] = value }
+            original.removeValue(forKey: "originalJSON")
+            return original
+        }
+        return try JSONSerialization.data(withJSONObject: entries, options: [.prettyPrinted, .sortedKeys])
     }
 }
 

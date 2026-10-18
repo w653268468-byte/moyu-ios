@@ -12,6 +12,7 @@ struct OnlineReaderView: View {
     @State private var showSettings = false
     @State private var official = false
     @State private var retry = 0
+    @StateObject private var speech = ReaderSpeech()
     private var style = ReadingStyle()
 
     init(novel: OnlineNovel) {
@@ -36,15 +37,13 @@ struct OnlineReaderView: View {
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 18) {
-                            Text(novel.chapters[index].title).font(.title2.weight(.medium)).padding(.bottom, 8)
-                            ForEach(Array(text.components(separatedBy: "\n\n").enumerated()), id: \.offset) { _, paragraph in
-                                Text(paragraph)
-                                    .font(.system(size: style.fontSize, design: style.serif ? .serif : .default))
-                                    .lineSpacing(style.lineSpacing).textSelection(.enabled)
+                            if style.showChapterTitle {
+                                Text(novel.chapters[index].title).font(.title2.weight(.medium)).padding(.bottom, 8)
                             }
+                            ReadingParagraphs(text: text)
                             Text(index == novel.chapters.count - 1 ? "已到目录最后一章" : "本章完 · 点击右下角继续")
                                 .font(.caption).opacity(0.5).frame(maxWidth: .infinity).padding(.vertical, 25)
-                        }.padding(26).frame(maxWidth: 760).frame(maxWidth: .infinity, alignment: .center)
+                        }.padding(.horizontal, style.horizontalMargin).padding(.vertical, style.verticalMargin).frame(maxWidth: 760).frame(maxWidth: .infinity, alignment: .center)
                     }.id(index)
                 }
                 HStack {
@@ -58,13 +57,18 @@ struct OnlineReaderView: View {
                         .disabled(index >= novel.chapters.count - 1)
                 }.font(.subheadline).padding(.horizontal, 18)
             }.background(style.paper.background).foregroundStyle(style.paper.ink)
-                .preferredColorScheme(style.paper == .night ? .dark : .light)
+                .preferredColorScheme(style.paper.isDark ? .dark : .light)
+                .modifier(ReadingAppearance())
                 .navigationTitle(novel.title).navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Button { dismiss() } label: { Image(systemName: "chevron.down") }.accessibilityLabel("返回书架")
                     }
                     ToolbarItemGroup(placement: .topBarTrailing) {
+                        Menu {
+                            Button(speech.active ? (speech.paused ? "继续朗读" : "暂停朗读") : "朗读当前章节", systemImage: "speaker.wave.2") { speech.play(text, rate: style.speechRate) }.disabled(loading || text.isEmpty)
+                            if speech.active { Button("停止朗读", systemImage: "stop.circle") { speech.stop() } }
+                        } label: { Image(systemName: "speaker.wave.2") }
                         Button { official = true } label: { Image(systemName: "safari") }.accessibilityLabel("打开官方网页")
                         Button { showContents = true } label: { Image(systemName: "list.bullet") }.accessibilityLabel("章节目录")
                         Button { showSettings = true } label: { Image(systemName: "textformat.size") }.accessibilityLabel("阅读设置")
@@ -72,6 +76,7 @@ struct OnlineReaderView: View {
                 }
                 .task(id: "\(index)-\(retry)") {
                     guard novel.chapters.indices.contains(index) else { loading = false; return }
+                    speech.stop()
                     let target = index
                     loading = true; failure = nil; text = ""
                     do {
@@ -87,6 +92,8 @@ struct OnlineReaderView: View {
                         loading = false
                     }
                 }
+                .onDisappear { speech.stop() }
+                .alert("听书提示", isPresented: Binding(get: { speech.message != nil }, set: { if !$0 { speech.message = nil } })) { Button("知道了") { speech.message = nil } } message: { Text(speech.message ?? "") }
                 .sheet(isPresented: $showSettings) {
                     NavigationStack {
                         ReadingPreferences().toolbar {

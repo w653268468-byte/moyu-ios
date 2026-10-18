@@ -58,12 +58,24 @@ final class OnlineStore: ObservableObject {
     }
 
     func deleteSource(_ source: BookSource) {
-        guard !novels.contains(where: { $0.sourceID == source.id }) else {
-            errorMessage = "书架中还有使用此书源的小说，请先移除这些小说。"; return
-        }
+        deleteSources([source.id])
+    }
+
+    func deleteSources(_ ids: Set<String>) {
         let old = sources
-        sources.removeAll { $0.id == source.id }
+        sources.removeAll { ids.contains($0.id) }
         do { try save() } catch { sources = old; errorMessage = error.localizedDescription }
+    }
+
+    func setEnabled(_ ids: Set<String>, enabled: Bool) {
+        let old = sources
+        for index in sources.indices where ids.contains(sources[index].id) { sources[index].enabled = enabled }
+        do { try save() } catch { sources = old; errorMessage = error.localizedDescription }
+    }
+
+    func replaceSource(_ oldID: String, with source: BookSource) throws {
+        guard source.id == oldID else { throw SourceError.message("编辑时请保留书源基础地址；新网站请通过导入添加。") }
+        try addSources([source])
     }
 
     func keep(_ novel: OnlineNovel) throws {
@@ -97,11 +109,10 @@ final class OnlineStore: ObservableObject {
         let cache = cacheURL(chapter, sourceID: sourceID)
         if let text = try? String(contentsOf: cache, encoding: .utf8), !text.isEmpty { return text }
         let text: String
-        if sourceID == Fanqie.sourceID { text = try await client.fanqieChapter(chapter) }
-        else {
-            guard let source = sources.first(where: { $0.id == sourceID }) else { throw SourceError.message("找不到对应书源，请重新导入。") }
-            text = try await client.chapter(chapter, source: source)
+        guard let source = sources.first(where: { $0.id == sourceID }) else {
+            throw SourceError.message("对应书源已删除或专用接口已移除。这一章尚未缓存，请重新导入书源。")
         }
+        text = try await client.chapter(chapter, source: source)
         try Task.checkCancellation()
         // A failed cache write must be visible; never silently claim offline availability.
         try text.write(to: cache, atomically: true, encoding: .utf8)

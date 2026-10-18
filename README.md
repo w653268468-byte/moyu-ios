@@ -1,101 +1,42 @@
-# 墨屿 · Moyu
+# 墨屿 Moyu · iOS 阅读器
 
-面向 iPhone / iPad 的原生 SwiftUI 小说阅读器，参考「阅读 / Legado」的书源使用方式。独立实现，不是安卓版移植，也不隶属于 Legado。
+原生 SwiftUI 小说阅读器，iOS 17+，MIT 开源。以 Android 阅读/Legado 为开发目标；**当前 2.0 重构预览不等同 Legado 完整功能或完整规则兼容性**。
 
-**当前状态：开发版本。已在 GitHub macOS 环境通过 27 项 Swift 测试、iOS 模拟器编译及 iPhone Release 编译，并生成包含番茄导入功能的未签名 IPA。尚未在真实 iPhone 上验证运行；复杂书源和番茄全站正文提取不作保证。**
+## 本次重构
 
-- [项目仓库](https://github.com/w653268468-byte/moyu-ios)
-- [已通过的构建与 IPA 下载入口](https://github.com/w653268468-byte/moyu-ios/actions/runs/39138850107)
-- [验证记录](docs/BUILD_STATUS.md) · [番茄导入说明](docs/FANQIE.md)
+- 四个入口：书架、找书、书源管理、设置。
+- 书源：链接/文件/文本导入；按名称/网址/分组搜索；启用/禁用、JSON 编辑、导出、多选删除；搜索→目录→首章校验，可取消。
+- 删除被小说使用的书源也可执行，书架记录及缓存保留；未缓存章节需重新导入对应书源。
+- CSS/旧式选择器、基础 JSONPath（字段/索引/通配符）、UTF-8 静态 GET/POST、目录和正文分页。导出保留未识别的原始 Legado 字段。
+- HTTP 状态、域名解析、超时、证书错误分别提示。采用移动浏览器 UA 与书源 Referer。
+- 本地 TXT、EPUB、PDF、MD、HTML、RTF、DOCX。EPUB 依阅读顺序读取章节；PDF 按页提取文字；其他富文本转为文字重排。
+- 阅读：八种主题、四种系统字形、字号/字重/字距/行距/段距、上下左右边距、缩进、标题、页面亮度、常亮、预览及重置；本地和在线共用。
+- 听书：系统中文语音，当前分段/章节朗读、暂停、继续、停止、语速调整。
+- 本地目录、书签、正文搜索、阅读进度；在线已读章节缓存。
+- 完整 JSON 备份/恢复：书架、文字书、进度、书签、书源、章节缓存和阅读设置。恢复先校验并暂存原目录用于失败回滚。
+- 按用户要求移除番茄专用入口与解析接口。旧记录保留；已缓存章节仍能读，未缓存章节需重新导入通用书源。
 
-## 已实现
+## 明确的未完成项
 
-- 本地书架：TXT 批量导入，书名搜索、排序、继续阅读和删除。
-- TXT：UTF-8、带 BOM 的 UTF-16、GB18030 / 常见 GBK，单本最大 20 MB。
-- 本地阅读：章节识别、文本分段翻页、字体/行距、四种主题、书签和正文搜索。
-- 书源：通过 HTTP/HTTPS JSON 链接、`legado://…?src=…` 链接、JSON 文件或粘贴文本导入；支持单对象和数组、导入预览与按地址更新。链接可每行一个批量粘贴，一次最多 20 个，单个失败不会中断其余链接。
-- 在线小说：选择书源搜索、粘贴同域名小说详情/目录链接、获取章节目录、加入书架、逐章阅读和本机缓存。
-- 番茄导入：通用识别官方分享文案、详情页、章节页和数字书籍 ID，读取官网公开信息与目录并加入书架，不针对某一本书硬编码。公开纯文本章节可原生阅读；官方字体编码或访问限制会明确提示，可打开内置官方网页继续阅读。不能保证全站所有作品均可提取正文或离线下载。
-- 在线目录和正文分页，限制请求次数并检测循环。在线阅读进度保存到章节；尚不保存章内滚动位置。
-- 数据使用 JSON 原子写入，并保留上一个索引备份。小说和书源保存在本机；使用书源时直接访问目标网站。
+复杂 JavaScript 与 Java/Android 桥、通用 XPath、JSONPath 过滤器、WebView 登录验证、发现分类、自动换源、仿真翻页、全本离线下载、在线精确滚动位置、跨设备/WebDAV 同步、EPUB 图片原版式、扫描 PDF OCR、MOBI/AZW3、DRM 保护正文。
 
-## 书源兼容范围
+导入书源不等于网站可用；“规则可识别”也不代表真实链路已通过。截图中的网易云/17K 等脚本书源目前仍有兼容缺口。
 
-本版本是 **Legado 3.x JSON 结构的 CSS 子集**，不是完整的 Legado 规则解释器。大量现有书源包含脚本，可能无法使用。导入成功只代表 JSON 可读取，不代表网站可访问或规则一定正确。
+## 安装和构建
 
-| 能力 | 当前支持 |
-|---|---|
-| 搜索 | GET 请求，`{{key}}`、`{{page}}` 和 `searchKey` 模板；仅第一页，最多 100 本 |
-| 提取 | CSS、`@css:`、简单 `class.xxx` / `id.xxx` / `tag.xxx`，`@` 后代选择、匹配集合的 `.0` / `.-1` 索引、`children[0]`、简单 `text.下一页` |
-| 元数据 | 简单 `//meta[@property='…']/@content` 与 `//meta[@name='…']/@content` 可转换为 CSS；不支持通用 XPath |
-| 字段 | `@text`、`@ownText`、`@textNodes`（以 ownText 近似）、`@html`、`@href`、其他属性 |
-| 组合 | 字段规则的 `||` 首个非空结果、`##正则##替换` |
-| 章节 | `ruleToc` 及 `nextTocUrl`，最多 30 个目录页 / 20000 章 |
-| 正文 | `ruleContent.content` 及 `nextContentUrl`，最多 20 个分页 / 单章 4 MB |
-| 编码 | UTF-8、带 BOM 的 UTF-16、GB18030 / 常见 GBK；不根据网页 charset 强行转码 |
-| 请求头 | 静态 JSON 字符串；不发送 Cookie、Authorization 和自定义 Host |
-| 暂未支持 | JS、XPath、JSONPath、POST、登录、验证码、动态网页、探索页、跨源聚合搜索、听书、EPUB、整本批量下载、iCloud 同步 |
+在仓库 Releases 下载通过 CI 的 `Moyu-unsigned.ipa`，Windows 使用已配置的 Sideloadly 签名安装。免费 Apple 账号通常需每 7 天续签。同一账号/包名覆盖安装可保留数据；**先导出备份，不要先删除手机 App**。
 
-`Examples/booksource.example.json` 是 **虚构域名的规则模板，不是可以阅读小说的真实书源**。要验证真实兼容性，需要提供你实际使用的书源 JSON 和目标网站。不要将示例地址当作内置资源。
-
-App 不执行书源中的脚本，不实现付费解锁、验证码绕过或网站登录。目标网站可能因规则、网络、反爬或权限而无法读取。支持 HTTP 是为兼容旧书源，HTTP 内容不加密；建议使用 HTTPS。
-
-## 只有 Windows 和 iPhone：安装路径
-
-详见 [Windows 安装指南](docs/WINDOWS_INSTALL.md)。流程是：
-
-1. 将完整项目提交到你自己的 GitHub 仓库（包括 `.github` 文件夹）。
-2. 在仓库 Actions 中运行 **Build iOS IPA**。
-3. 云端 macOS 运行测试和 Xcode 构建，成功后下载 `Moyu-iOS-unsigned` 构建产物并解压出 IPA。
-4. 按 AltStore Classic 的 Windows 官方流程安装 AltServer / AltStore。
-5. 使用 AltStore 以你自己的 Apple ID 签名并安装 IPA。
-
-**未签名 IPA 不能直接点开安装。免费 Apple ID 通常需要每 7 天续签。** Apple ID、密码、签名证书均不需要提交到本项目或 GitHub Actions。
-
-这条云端构建流程已实际运行成功，IPA 签名和真机安装尚未验证。下载构建产物 ZIP 后应解压出 IPA；不要把源码 ZIP 当成安装包。
-
-## 有 Mac：开发与真机安装
-
-- iOS / iPadOS 17.0 及以上，Xcode 16 或更新版本；Swift 5 语言模式。
-- 打开 `Moyu.xcodeproj`，等待 Swift Package Manager 下载 SwiftSoup 2.7.7。
-- 选择 Moyu target，在 Signing & Capabilities 中选择自己的 Team，并设置唯一 Bundle Identifier。
-- 连接 iPhone、信任电脑、按系统提示开启开发者模式，选择手机为运行设备并点击 Run。
-- 无需 XcodeGen、CocoaPods、后端服务器或 API key。
+Actions 在 macOS 上运行测试、模拟器构建、arm64 iPhone Release 构建后打包。Windows 的 `scripts/validate.py` 只做结构检查，不能代替 Swift/Xcode 编译。
 
 ```sh
-# macOS：独立测试文本及书源规则
 swift test --parallel
-
-# macOS：无签名模拟器编译
-xcodebuild -project Moyu.xcodeproj -scheme Moyu \
-  -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
-  CODE_SIGNING_ALLOWED=NO build
-
-# Windows / macOS：结构验证（不能代替编译）
-python scripts/validate.py
+xcodebuild -project Moyu.xcodeproj -scheme Moyu -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 ```
 
-新增/删除 Swift 文件后，运行 `python scripts/generate_project.py` 更新 Xcode 工程。该命令也会重新生成原创 App 图标。
+需求清单见 [docs/REBUILD.md](docs/REBUILD.md)，历史网站检查见 [docs/SOURCE_CHECKS.md](docs/SOURCE_CHECKS.md)。历史记录不代表当前手机网络或新版本验收。
 
-## 数据和备份
+## 格式限制
 
-在 iPhone「文件 → 我的 iPhone → 墨屿」中备份：
+单文件不超过 100 MB；纯文本解码不超过 20 MB。EPUB 解压文字不超过 40 MB、单个章节文件不超过 20 MB。PDF 需要文字层，不保留原版式。MD 保留文字标记。备份内容上限 200 MB。
 
-- `Moyu/`：本地书架索引、备份索引及小说文档。
-- `MoyuOnline/`：书源、在线书架索引、备份索引及已读章节缓存。
-
-完整恢复时，关闭 App 后将两个文件夹放回原处再重新打开。不要混合不同时间的索引与文档。卸载 App 会删除这些数据；免费签名到期时应刷新签名，避免通过卸载解决问题。
-
-## 工程结构
-
-```text
-Sources/ReaderCore/       文本解析、书源数据、CSS 规则、网站请求
-Sources/App/              SwiftUI 书架、书源、阅读器与持久化
-Tests/ReaderCoreTests/    解析、编码、JSON、CSS、URL 和存储序列化测试
-Resources/                Info.plist、隐私清单与原创图标
-Moyu.xcodeproj/           可直接打开的 Xcode 工程和共享 scheme
-.github/workflows/       macOS 测试、模拟器与 iPhone IPA 构建
-scripts/                  工程/图标生成和结构校验
-```
-
-MIT 许可，见 [LICENSE](LICENSE)。第三方依赖 SwiftSoup 的许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。未复制 Legado 的源码、图标或品牌素材。
+依赖 SwiftSoup 2.7.7、ZIPFoundation 0.9.19（均为 MIT）。无内置第三方书源、账号、广告或阅读统计；书源请求直接访问所选网站。

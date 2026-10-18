@@ -38,8 +38,11 @@ def generate_project():
     obj("sources", f'isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = {ids(["build:" + p for p in sources])}; runOnlyForDeploymentPostprocessing = 0;')
     obj("resources", f'isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = {ids(["build:" + p for p in resources])}; runOnlyForDeploymentPostprocessing = 0;')
     obj("soup-build", f'isa = PBXBuildFile; productRef = {uid("soup-product")};')
-    obj("frameworks", f'isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = {ids(["soup-build"])}; runOnlyForDeploymentPostprocessing = 0;')
+    obj("frameworks", f'isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = {ids(["soup-build", "zip-build"])}; runOnlyForDeploymentPostprocessing = 0;')
     obj("soup-package", 'isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/scinfu/SwiftSoup.git"; requirement = { kind = exactVersion; version = 2.7.7; };')
+    obj("zip-build", f'isa = PBXBuildFile; productRef = {uid("zip-product")};')
+    obj("zip-package", 'isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/weichsel/ZIPFoundation.git"; requirement = { kind = exactVersion; version = 0.9.19; };')
+    obj("zip-product", f'isa = XCSwiftPackageProductDependency; package = {uid("zip-package")}; productName = ZIPFoundation;')
     obj("soup-product", f'isa = XCSwiftPackageProductDependency; package = {uid("soup-package")}; productName = SwiftSoup;')
 
     common = {
@@ -51,7 +54,7 @@ def generate_project():
         "INFOPLIST_FILE": "Resources/Info.plist", "GENERATE_INFOPLIST_FILE": "NO",
         "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon", "CODE_SIGN_STYLE": "Automatic",
         "TARGETED_DEVICE_FAMILY": "1,2", "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator",
-        "SUPPORTS_MACCATALYST": "NO", "CURRENT_PROJECT_VERSION": "1", "MARKETING_VERSION": "1.0.0",
+        "SUPPORTS_MACCATALYST": "NO", "CURRENT_PROJECT_VERSION": "2", "MARKETING_VERSION": "2.0.0",
         "SWIFT_EMIT_LOC_STRINGS": "YES", "ENABLE_PREVIEWS": "YES",
     }
     for config in ["Debug", "Release"]:
@@ -66,8 +69,8 @@ def generate_project():
     for scope in ["project", "app"]:
         obj(scope + "-config", f'isa = XCConfigurationList; buildConfigurations = {ids([scope + "-Debug", scope + "-Release"])}; defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;')
 
-    obj("target", f'isa = PBXNativeTarget; buildConfigurationList = {uid("app-config")}; buildPhases = {ids(["sources", "frameworks", "resources"])}; buildRules = (); dependencies = (); name = Moyu; packageProductDependencies = {ids(["soup-product"])}; productName = Moyu; productReference = {uid("product")}; productType = "com.apple.product-type.application";')
-    obj("project", f'isa = PBXProject; attributes = {{ BuildIndependentTargetsInParallel = YES; LastUpgradeCheck = 1600; TargetAttributes = {{ {uid("target")} = {{ CreatedOnToolsVersion = 16.0; }}; }}; }}; buildConfigurationList = {uid("project-config")}; compatibilityVersion = "Xcode 14.0"; developmentRegion = zh-Hans; hasScannedForEncodings = 0; knownRegions = ("zh-Hans", en, Base,); mainGroup = {uid("main")}; packageReferences = {ids(["soup-package"])}; productRefGroup = {uid("products")}; projectDirPath = ""; projectRoot = ""; targets = {ids(["target"])};')
+    obj("target", f'isa = PBXNativeTarget; buildConfigurationList = {uid("app-config")}; buildPhases = {ids(["sources", "frameworks", "resources"])}; buildRules = (); dependencies = (); name = Moyu; packageProductDependencies = {ids(["soup-product", "zip-product"])}; productName = Moyu; productReference = {uid("product")}; productType = "com.apple.product-type.application";')
+    obj("project", f'isa = PBXProject; attributes = {{ BuildIndependentTargetsInParallel = YES; LastUpgradeCheck = 1600; TargetAttributes = {{ {uid("target")} = {{ CreatedOnToolsVersion = 16.0; }}; }}; }}; buildConfigurationList = {uid("project-config")}; compatibilityVersion = "Xcode 14.0"; developmentRegion = zh-Hans; hasScannedForEncodings = 0; knownRegions = ("zh-Hans", en, Base,); mainGroup = {uid("main")}; packageReferences = {ids(["soup-package", "zip-package"])}; productRefGroup = {uid("products")}; projectDirPath = ""; projectRoot = ""; targets = {ids(["target"])};')
     folder = ROOT / "Moyu.xcodeproj"
     folder.mkdir(exist_ok=True)
     (folder / "project.pbxproj").write_text("// !$*UTF8*$!\n{\n\tarchiveVersion = 1;\n\tclasses = {};\n\tobjectVersion = 56;\n\tobjects = {\n" + "\n".join(objects) + f"\n\t}};\n\trootObject = {uid('project')};\n}}\n", encoding="utf-8")
