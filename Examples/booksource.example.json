@@ -1,0 +1,28 @@
+{
+  "bookSourceName": "示例模板（不是实际书站）",
+  "bookSourceUrl": "https://books.example.org",
+  "bookSourceGroup": "开发示例",
+  "searchUrl": "/search?q={{key}}&page={{page}}",
+  "ruleSearch": {
+    "bookList": ".book",
+    "name": "a@text",
+    "author": ".author@text",
+    "bookUrl": "a@href",
+    "intro": ".intro@text"
+  },
+  "ruleBookInfo": {
+    "name": "h1@text",
+    "author": ".author@text",
+    "intro": ".intro@text",
+    "tocUrl": ".catalog@href"
+  },
+  "ruleToc": {
+    "chapterList": "#list a",
+    "chapterName": "text",
+    "chapterUrl": "href",
+    "nextTocUrl": "a.next@href"
+  },
+  "ruleContent": {
+    "content": "#content@html"
+  }
+}

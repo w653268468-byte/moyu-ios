@@ -1,0 +1,12 @@
+.DS_Store
+.build/
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.ipa
+*.p12
+*.mobileprovision
+.swiftpm/
+__pycache__/
+dist/
