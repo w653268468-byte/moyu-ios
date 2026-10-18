@@ -66,15 +66,22 @@ struct ReaderView: View {
                 }.padding(.horizontal, style.horizontalMargin).padding(.vertical, style.verticalMargin).frame(maxWidth: 760)
                     .frame(maxWidth: .infinity)
             }.id(page).onTapGesture(count: 2) { style.fullScreen.toggle() } }
-            if !style.fullScreen { HStack {
-                Button { jump(page - 1) } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
-                    .disabled(page == 0).accessibilityLabel("上一页")
-                Spacer()
-                Text("\(page + 1) / \(document.pages.count)").font(.caption).monospacedDigit()
-                Spacer()
-                Button { jump(page + 1) } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }
-                    .disabled(page == document.pages.count - 1).accessibilityLabel("下一页")
-            }.padding(.horizontal, 16) }
+            if !style.fullScreen {
+                HStack {
+                    Button {
+                        if style.paged { chapterJump(current.chapter - 1, atEnd: true) } else { jump(page - 1) }
+                    } label: { Label(style.paged ? "上一章" : "上一段", systemImage: "chevron.left").frame(minHeight: 44) }
+                        .disabled(style.paged ? current.chapter == 0 : page == 0)
+                    Spacer()
+                    Text(style.paged ? "\(current.chapter + 1) / \(document.chapters.count) 章" : "\(page + 1) / \(document.pages.count) 段")
+                        .font(.caption).monospacedDigit()
+                    Spacer()
+                    Button {
+                        if style.paged { chapterJump(current.chapter + 1) } else { jump(page + 1) }
+                    } label: { Label(style.paged ? "下一章" : "下一段", systemImage: "chevron.right").frame(minHeight: 44) }
+                        .disabled(style.paged ? current.chapter == document.chapters.count - 1 : page == document.pages.count - 1)
+                }.font(.subheadline).padding(.horizontal, 16)
+            }
         }
         .background(style.paper.background).foregroundStyle(style.paper.ink)
         .preferredColorScheme(style.paper.isDark ? .dark : .light)

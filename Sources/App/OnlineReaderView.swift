@@ -13,6 +13,7 @@ struct OnlineReaderView: View {
     @State private var official = false
     @State private var retry = 0
     @State private var resumeOffset = 0
+    @State private var openAtEnd = false
     @StateObject private var speech = ReaderSpeech()
     private var style = ReadingStyle()
 
@@ -37,8 +38,8 @@ struct OnlineReaderView: View {
                     }
                 } else if style.paged {
                     PagedReadingView(text: text, title: novel.chapters[index].title, resumeOffset: resumeOffset,
-                        onOffset: { online.position(novel, index: index, textOffset: $0) },
-                        previousChapter: { if index > 0 { index -= 1 } },
+                        onOffset: { resumeOffset = $0; online.position(novel, index: index, textOffset: $0) },
+                        previousChapter: { if index > 0 { openAtEnd = true; index -= 1 } },
                         nextChapter: { if index + 1 < novel.chapters.count { index += 1 } },
                         toggleChrome: { style.fullScreen.toggle() }).id(index)
                 } else {
@@ -94,7 +95,8 @@ struct OnlineReaderView: View {
                         try Task.checkCancellation()
                         guard target == index else { return }
                         let saved = online.novels.first { $0.id == novel.id } ?? novel
-                        resumeOffset = saved.chapterIndex == target ? (saved.textOffset ?? 0) : 0
+                        resumeOffset = openAtEnd ? Int.max : (saved.chapterIndex == target ? (saved.textOffset ?? 0) : 0)
+                        openAtEnd = false
                         text = fetched
                         online.position(novel, index: target)
                         loading = false
