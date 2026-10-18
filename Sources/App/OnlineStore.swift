@@ -96,8 +96,12 @@ final class OnlineStore: ObservableObject {
     func chapter(_ chapter: OnlineChapter, sourceID: String) async throws -> String {
         let cache = cacheURL(chapter, sourceID: sourceID)
         if let text = try? String(contentsOf: cache, encoding: .utf8), !text.isEmpty { return text }
-        guard let source = sources.first(where: { $0.id == sourceID }) else { throw SourceError.message("找不到对应书源，请重新导入。") }
-        let text = try await client.chapter(chapter, source: source)
+        let text: String
+        if sourceID == Fanqie.sourceID { text = try await client.fanqieChapter(chapter) }
+        else {
+            guard let source = sources.first(where: { $0.id == sourceID }) else { throw SourceError.message("找不到对应书源，请重新导入。") }
+            text = try await client.chapter(chapter, source: source)
+        }
         try Task.checkCancellation()
         // A failed cache write must be visible; never silently claim offline availability.
         try text.write(to: cache, atomically: true, encoding: .utf8)

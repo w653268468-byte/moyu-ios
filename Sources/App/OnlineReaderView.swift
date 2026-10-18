@@ -10,6 +10,7 @@ struct OnlineReaderView: View {
     @State private var loading = true
     @State private var showContents = false
     @State private var showSettings = false
+    @State private var official = false
     @State private var retry = 0
     private var style = ReadingStyle()
 
@@ -28,7 +29,10 @@ struct OnlineReaderView: View {
                 } else if let failure {
                     ContentUnavailableView {
                         Label("无法读取这一章", systemImage: "wifi.exclamationmark")
-                    } description: { Text(failure) } actions: { Button("重试") { retry += 1 } }
+                    } description: { Text(failure) } actions: {
+                        Button("重试") { retry += 1 }
+                        Button("官方网页", systemImage: "safari") { official = true }
+                    }
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 18) {
@@ -61,6 +65,7 @@ struct OnlineReaderView: View {
                         Button { dismiss() } label: { Image(systemName: "chevron.down") }.accessibilityLabel("返回书架")
                     }
                     ToolbarItemGroup(placement: .topBarTrailing) {
+                        Button { official = true } label: { Image(systemName: "safari") }.accessibilityLabel("打开官方网页")
                         Button { showContents = true } label: { Image(systemName: "list.bullet") }.accessibilityLabel("章节目录")
                         Button { showSettings = true } label: { Image(systemName: "textformat.size") }.accessibilityLabel("阅读设置")
                     }
@@ -88,6 +93,9 @@ struct OnlineReaderView: View {
                             ToolbarItem(placement: .confirmationAction) { Button("完成") { showSettings = false } }
                         }
                     }
+                }
+                .sheet(isPresented: $official) {
+                    OfficialWebView(url: novel.chapters.indices.contains(index) ? novel.chapters[index].url : novel.url)
                 }
                 .sheet(isPresented: $showContents) {
                     NavigationStack {

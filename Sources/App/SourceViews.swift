@@ -12,6 +12,7 @@ struct SourceHubView: View {
     @State private var searching = false
     @State private var failure: String?
     @State private var didSearch = false
+    @State private var fanqieLink = ""
     private var available: [BookSource] { online.sources.filter { $0.incompatibility == nil } }
 
     var body: some View {
@@ -24,6 +25,14 @@ struct SourceHubView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if online.locked { Section { Button("重新读取在线书架") { online.reload() } } }
+                Section("番茄小说 · 分享链接导入") {
+                    TextField("粘贴分享文案、书籍链接或数字书籍 ID", text: $fanqieLink, axis: .vertical)
+                        .lineLimit(2...4).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    Button("识别番茄小说并获取目录", systemImage: "link") { importFanqie() }
+                        .disabled(searching || fanqieLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || online.locked)
+                    Text("通用链接识别，无需另找书源。获取官网公开信息；正文使用特殊网页字体或需验证时，可通过官方网页阅读。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 if !available.isEmpty {
                     Section("搜索小说") {
                         Picker("使用书源", selection: $selectedSource) {
@@ -96,6 +105,16 @@ struct SourceHubView: View {
 
     private func chooseDefault() {
         if !available.contains(where: { $0.id == selectedSource }) { selectedSource = available.first?.id ?? "" }
+    }
+
+    private func importFanqie() {
+        guard !searching else { return }
+        searching = true; failure = nil
+        Task {
+            do { selection = try await online.client.fanqieShare(fanqieLink) }
+            catch { failure = error.localizedDescription }
+            searching = false
+        }
     }
 
     private func performSearch() {
@@ -247,12 +266,16 @@ struct NovelDetailView: View {
     @State private var loading = false
     @State private var reading: OnlineNovel?
     @State private var saved = false
+    @State private var official = false
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     Text(loaded?.title ?? novel.title).font(.title2.bold())
+                    if novel.sourceID == Fanqie.sourceID {
+                        Button("在番茄官方网页打开", systemImage: "safari") { official = true }
+                    }
                     if let loaded {
                         if !loaded.author.isEmpty { Text(loaded.author).foregroundStyle(.secondary) }
                         if !loaded.intro.isEmpty { Text(loaded.intro).font(.subheadline) }
@@ -285,18 +308,21 @@ struct NovelDetailView: View {
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
                 .task { load() }
                 .fullScreenCover(item: $reading) { OnlineReaderView(novel: $0) }
+                .sheet(isPresented: $official) { OfficialWebView(url: novel.url) }
         }
     }
 
     private func load() {
         guard !loading else { return }
-        guard let source = online.sources.first(where: { $0.id == novel.sourceID }) else { failure = "找不到对应书源。"; return }
+        let source = online.sources.first(where: { $0.id == novel.sourceID })
+        guard source != nil || novel.sourceID == Fanqie.sourceID else { failure = "找不到对应书源。"; return }
         loading = true; failure = nil
         saved = online.novels.contains { $0.id == novel.id && $0.sourceID == novel.sourceID }
         Task {
             do {
                 let current = online.novels.first(where: { $0.id == novel.id && $0.sourceID == novel.sourceID }) ?? novel
-                loaded = try await online.client.catalog(current, source: source)
+                if novel.sourceID == Fanqie.sourceID { loaded = try await online.client.fanqieCatalog(current) }
+                else if let source { loaded = try await online.client.catalog(current, source: source) }
             } catch { failure = error.localizedDescription }
             loading = false
         }
