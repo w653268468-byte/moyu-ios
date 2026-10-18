@@ -4,14 +4,21 @@ import SwiftUI
 struct MoyuApp: App {
     @StateObject private var library = LibraryStore()
     @StateObject private var online = OnlineStore()
+    @State private var selectedTab: Int = {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if let flag = arguments.firstIndex(of: "--ui-tab"), arguments.indices.contains(flag + 1), let tab = Int(arguments[flag + 1]), (0...3).contains(tab) { return tab }
+        #endif
+        return 0
+    }()
 
     var body: some Scene {
         WindowGroup {
-            TabView {
-                ShelfView().tabItem { Label("书架", systemImage: "books.vertical") }
-                SourceHubView().tabItem { Label("找书", systemImage: "magnifyingglass") }
-                SourceManagerView().tabItem { Label("书源", systemImage: "globe.asia.australia") }
-                AppSettingsView().tabItem { Label("设置", systemImage: "gearshape") }
+            TabView(selection: $selectedTab) {
+                ShelfView().tabItem { Label("书架", systemImage: "books.vertical") }.tag(0)
+                SourceHubView().tabItem { Label("找书", systemImage: "magnifyingglass") }.tag(1)
+                SourceManagerView().tabItem { Label("书源", systemImage: "globe.asia.australia") }.tag(2)
+                AppSettingsView().tabItem { Label("设置", systemImage: "gearshape") }.tag(3)
             }
                 .environmentObject(library)
                 .environmentObject(online)

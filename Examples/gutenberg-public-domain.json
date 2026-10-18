@@ -1,0 +1,12 @@
+[
+  {
+    "bookSourceName": "Project Gutenberg · 公版文字验证",
+    "bookSourceUrl": "https://www.gutenberg.org",
+    "bookSourceGroup": "公开文字 · 仅英文搜索",
+    "searchUrl": "/ebooks/search/?query={{key}}",
+    "ruleSearch": {"bookList": "li.booklink", "name": ".title@text", "author": ".subtitle@text", "bookUrl": "a.link@href"},
+    "ruleBookInfo": {"name": "h1@text"},
+    "ruleToc": {"chapterList": "a.read-online-button", "chapterName": "text", "chapterUrl": "href"},
+    "ruleContent": {"content": ".chapter@text"}
+  }
+]
