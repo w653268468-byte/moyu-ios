@@ -2,7 +2,11 @@
 
 面向 iPhone / iPad 的原生 SwiftUI 小说阅读器，参考「阅读 / Legado」的书源使用方式。独立实现，不是安卓版移植，也不隶属于 Legado。
 
-**当前状态：开发版本。已提供源码、Xcode 工程、解析测试和云端 IPA 工作流；当前 Windows 环境仅完成工程结构检查，尚未运行 Swift 编译、单元测试、真实网站联调或真机安装。仓库中没有已签名 IPA。**
+**当前状态：开发版本。已在 GitHub macOS 环境通过 27 项 Swift 测试、iOS 模拟器编译及 iPhone Release 编译，并生成包含番茄导入功能的未签名 IPA。尚未在真实 iPhone 上验证运行；复杂书源和番茄全站正文提取不作保证。**
+
+- [项目仓库](https://github.com/w653268468-byte/moyu-ios)
+- [已通过的构建与 IPA 下载入口](https://github.com/w653268468-byte/moyu-ios/actions/runs/39138850107)
+- [验证记录](docs/BUILD_STATUS.md) · [番茄导入说明](docs/FANQIE.md)
 
 ## 已实现
 
@@ -48,7 +52,7 @@ App 不执行书源中的脚本，不实现付费解锁、验证码绕过或网�
 
 **未签名 IPA 不能直接点开安装。免费 Apple ID 通常需要每 7 天续签。** Apple ID、密码、签名证书均不需要提交到本项目或 GitHub Actions。
 
-这条流程尚未在当前会话实际运行。若构建失败，请保留 Actions 的错误日志以便修复；不要把源码 ZIP 当成 IPA。
+这条云端构建流程已实际运行成功，IPA 签名和真机安装尚未验证。下载构建产物 ZIP 后应解压出 IPA；不要把源码 ZIP 当成安装包。
 
 ## 有 Mac：开发与真机安装
 

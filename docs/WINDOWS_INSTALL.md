@@ -1,6 +1,8 @@
 # Windows + iPhone 安装墨屿
 
-本项目是原生 iOS App，需要先在 macOS 编译，再对 IPA 签名。可以使用 GitHub 云端 macOS，因此不要求你自己拥有 Mac。**项目当前未产出 IPA，也未完成实际安装验证。**
+本项目是原生 iOS App，需要先编译，再对 IPA 签名。已经在 GitHub 云端 macOS 成功生成包含番茄导入功能的 IPA，你不需要自己拥有 Mac。**IPA 尚未签名，实际真机安装仍需你自己的 Apple ID，当前尚未完成真机运行验证。**
+
+已有仓库和安装包：[打开成功构建](https://github.com/w653268468-byte/moyu-ios/actions/runs/39138850107)，在页面底部 Artifacts 下载 `Moyu-iOS-unsigned`，解压出 IPA，然后直接从本文“二、在 Windows 上安装 AltStore Classic”继续。以下第一部分用于以后自行重新构建。
 
 ## 一、使用 GitHub 云端生成 IPA
 
@@ -44,6 +46,8 @@ GitHub Actions 的可用额度和权限以你的账号为准。工作流只读�
 5. 打开结果 → 查看目录 → 继续阅读或加入书架。已读正文会缓存，可离线重读。
 
 本版本只兼容部分 CSS 规则。如果提示 JS/XPath/JSONPath 不支持，换用兼容书源或为该站编写 CSS 规则；如果正文为空，检查网站改版、网络和访问权限。`Examples` 内的 JSON 是开发模板，不是真实书源。
+
+番茄小说可直接使用「书源 → 番茄小说 · 分享链接导入」，无需先导入第三方番茄 JSON 书源。详见 [番茄导入说明](FANQIE.md)。
 
 ## 常见问题
 
