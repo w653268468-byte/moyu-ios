@@ -3,6 +3,13 @@ import CoreText
 import CoreGraphics
 
 public enum TextPagination {
+    /// Paragraph spacing is controlled by the reader, rather than extra empty lines.
+    public static func readingText(_ text: String) -> String {
+        text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }.joined(separator: "\n")
+    }
+
     /// Uses the same CoreText frames rendered on screen. Ranges are UTF-16 offsets.
     public static func ranges(_ text: NSAttributedString, size: CGSize) throws -> [NSRange] {
         guard size.width >= 40, size.height >= 40 else { throw SourceError.message("阅读区域太小，请减小边距。") }

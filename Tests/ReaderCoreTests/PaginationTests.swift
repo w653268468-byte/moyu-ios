@@ -25,6 +25,11 @@ final class PaginationTests: XCTestCase {
         XCTAssertGreaterThan(try layout(32, 320).count, normal.count)
         XCTAssertGreaterThan(try layout(20, 180).count, normal.count)
     }
+    func testParagraphNormalizationIsStableForSavedOffsets() {
+        let text = "  第一段\r\n\r\n   第二段  \n\n"
+        XCTAssertEqual(TextPagination.readingText(text), "第一段\n第二段")
+        XCTAssertEqual(TextPagination.readingText(TextPagination.readingText(text)), TextPagination.readingText(text))
+    }
     func testEmptyTextAndInvalidViewport() throws {
         XCTAssertEqual(try TextPagination.ranges(NSAttributedString(string: ""), size: CGSize(width: 320, height: 500)), [NSRange(location: 0, length: 0)])
         XCTAssertThrowsError(try TextPagination.ranges(NSAttributedString(string: "a"), size: CGSize(width: 10, height: 500)))

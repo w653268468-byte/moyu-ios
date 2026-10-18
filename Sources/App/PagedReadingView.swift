@@ -60,10 +60,11 @@ struct PagedReadingView: View {
 
     var body: some View {
         GeometryReader { geometry in
+            let showTitle = style.showChapterTitle && !text.hasPrefix(title)
             let width = max(40, min(760, geometry.size.width) - style.horizontalMargin * 2)
-            let height = max(40, geometry.size.height - style.verticalMargin * 2 - 26 - (style.showChapterTitle ? 28 : 0))
+            let height = max(40, geometry.size.height - style.verticalMargin * 2 - 26 - (showTitle ? 28 : 0))
             VStack(spacing: 0) {
-                if style.showChapterTitle { Text(title).font(.caption).lineLimit(1).opacity(0.6).frame(height: 28, alignment: .topLeading).frame(maxWidth: .infinity, alignment: .leading) }
+                if showTitle { Text(title).font(.caption).lineLimit(1).opacity(0.6).frame(height: 28, alignment: .topLeading).frame(maxWidth: .infinity, alignment: .leading) }
                 ZStack {
                     if let failure { Text(failure).font(.callout) }
                     else if pages.indices.contains(page) {
@@ -103,7 +104,7 @@ struct PagedReadingView: View {
             paragraph.firstLineHeadIndent = style.indent ? style.fontSize * 2 : 0
             paragraph.lineBreakMode = .byWordWrapping
             let font = CTFontCreateWithName(style.uiFont.fontName as CFString, style.fontSize, nil)
-            let value = NSAttributedString(string: text, attributes: [
+            let value = NSAttributedString(string: TextPagination.readingText(text), attributes: [
                 NSAttributedString.Key(kCTFontAttributeName as String): font,
                 NSAttributedString.Key(kCTForegroundColorAttributeName as String): UIColor(style.paper.ink).cgColor,
                 .paragraphStyle: paragraph, .kern: style.letterSpacing

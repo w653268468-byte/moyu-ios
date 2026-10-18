@@ -133,12 +133,12 @@ struct ReaderView: View {
     }
 
     private var chapterSegments: [ReadingPage] { document.pages.filter { $0.chapter == current.chapter } }
-    private var chapterText: String { chapterSegments.map(\.text).joined(separator: "\n\n") }
+    private var chapterText: String { chapterSegments.map { TextPagination.readingText($0.text) }.joined(separator: "\n") }
 
     private func offsetForSegment(_ target: Int) -> Int {
         let chapter = document.pages[target].chapter
         return document.pages.filter { $0.chapter == chapter && $0.id < target }
-            .reduce(0) { $0 + ($1.text as NSString).length + 2 }
+            .reduce(0) { $0 + (TextPagination.readingText($1.text) as NSString).length + 1 }
     }
     private func saveOffset(_ offset: Int) {
         var start = 0
@@ -146,7 +146,7 @@ struct ReaderView: View {
         for item in chapterSegments {
             if start > offset { break }
             segment = item.id
-            start += (item.text as NSString).length + 2
+            start += (TextPagination.readingText(item.text) as NSString).length + 1
         }
         page = segment
         library.updatePosition(bookID: book.id, page: segment, textOffset: offset)
