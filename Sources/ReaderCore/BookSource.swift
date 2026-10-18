@@ -1,6 +1,7 @@
 import Foundation
 
 public struct SourceRule: Codable, Equatable, Sendable {
+    public var initialization: String?
     public var bookList: String?
     public var name: String?
     public var author: String?
@@ -14,8 +15,14 @@ public struct SourceRule: Codable, Equatable, Sendable {
     public var nextTocUrl: String?
     public var nextContentUrl: String?
 
+    enum CodingKeys: String, CodingKey {
+        case initialization = "init"
+        case bookList, name, author, bookUrl, intro, tocUrl, chapterList, chapterName, chapterUrl
+        case content, nextTocUrl, nextContentUrl
+    }
+
     var values: [String] {
-        [bookList, name, author, bookUrl, intro, tocUrl, chapterList, chapterName,
+        [initialization, bookList, name, author, bookUrl, intro, tocUrl, chapterList, chapterName,
          chapterUrl, content, nextTocUrl, nextContentUrl].compactMap { $0 }
     }
 }

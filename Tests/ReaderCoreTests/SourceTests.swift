@@ -58,6 +58,26 @@ final class SourceTests: XCTestCase {
         XCTAssertEqual(try HTMLRule.value("h1@text##^书名：##", in: doc), "山海")
     }
 
+    func testLegacyIndexesUseMatchedCollection() throws {
+        let doc = try SwiftSoup.parse("<h1>标题</h1><div class='book'>甲</div><p>间隔</p><div class='book'>乙</div>")
+        XCTAssertEqual(try HTMLRule.value("class.book.0@text", in: doc), "甲")
+        XCTAssertEqual(try HTMLRule.value("class.book.-1@text", in: doc), "乙")
+        XCTAssertEqual(try HTMLRule.value("class.book.8@text", in: doc), "")
+    }
+
+    func testCommonMetadataXPathShape() throws {
+        let rule = "//meta[@property='og:novel:author']/@content"
+        let doc = try SwiftSoup.parse("<meta property='og:novel:author' content='林屿'>")
+        XCTAssertTrue(HTMLRule.isSupported(rule))
+        XCTAssertEqual(try HTMLRule.value(rule, in: doc), "林屿")
+        XCTAssertFalse(HTMLRule.isSupported("//div[@id='content']/p"))
+    }
+
+    func testTextSelectorForNextPage() throws {
+        let doc = try SwiftSoup.parse("<div class='nav'><span><a href='/prev'>上一页</a><a href='/next'>下一页</a></span></div>")
+        XCTAssertEqual(try HTMLRule.value("class.nav.0@tag.span.-1@text.下一页.0@href", in: doc), "/next")
+    }
+
     func testURLResolutionAndRejectedSchemes() throws {
         let base = URL(string: "https://books.example.org/novel/1/")!
         XCTAssertEqual(try SourceClient.resolve("../2.html", base: base).absoluteString, "https://books.example.org/novel/2.html")

@@ -88,6 +88,11 @@ struct ReaderView: View {
     private var current: ReadingPage { document.pages[page] }
     private var marked: Bool { liveBook.bookmarks.contains { $0.page == page } }
 
+    init(book: Book, document: BookDocument) {
+        self.book = book
+        self.document = document
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
