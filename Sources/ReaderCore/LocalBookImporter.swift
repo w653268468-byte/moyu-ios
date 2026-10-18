@@ -1,6 +1,11 @@
 import Foundation
 import SwiftSoup
 import ZIPFoundation
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 #if canImport(FoundationXML)
 import FoundationXML
 #endif
@@ -45,7 +50,14 @@ public enum LocalBookImporter {
             #else
             throw SourceError.message("当前平台不支持 PDF 解析。")
             #endif
-        case "rtf": throw SourceError.message("RTF 请通过 iPhone 文件导入。")
+        case "rtf":
+            #if canImport(UIKit) || canImport(AppKit)
+            guard data.count <= TextParser.maximumBytes else { throw TextImportError.tooLarge }
+            let text = try NSAttributedString(data: data, options: [.documentType: NSAttributedString.DocumentType.rtf], documentAttributes: nil).string
+            return try TextParser.parse(text)
+            #else
+            throw SourceError.message("当前平台不支持 RTF。")
+            #endif
         default: throw SourceError.message("暂不支持 .\(ext) 格式。可导入 TXT、EPUB、PDF、Markdown、HTML、RTF、DOCX；MOBI/AZW3 尚未实现。")
         }
     }

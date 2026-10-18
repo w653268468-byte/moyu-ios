@@ -1,6 +1,10 @@
 import Foundation
 import XCTest
 import ZIPFoundation
+#if canImport(CoreGraphics)
+import CoreGraphics
+import CoreText
+#endif
 @testable import ReaderCore
 
 final class RebuildTests: XCTestCase {
@@ -95,4 +99,38 @@ final class RebuildTests: XCTestCase {
         XCTAssertThrowsError(try LocalBookImporter.parse(Data(), filename: "test.azw3"))
         XCTAssertThrowsError(try LocalBookImporter.parse(Data("not a zip".utf8), filename: "broken.epub"))
     }
+
+    func testRTFImport() throws {
+        let data = Data(#"{\rtf1\ansi Gavin local book\par Second paragraph}"#.utf8)
+        let book = try LocalBookImporter.parse(data, filename: "test.rtf")
+        XCTAssertTrue(book.pages[0].text.contains("Gavin local book"))
+        XCTAssertTrue(book.pages[0].text.contains("Second paragraph"))
+    }
+
+    #if canImport(CoreGraphics) && canImport(PDFKit)
+    private func pdf(withText text: String?) throws -> Data {
+        let bytes = NSMutableData()
+        let consumer = try XCTUnwrap(CGDataConsumer(data: bytes as CFMutableData))
+        var box = CGRect(x: 0, y: 0, width: 300, height: 400)
+        let context = try XCTUnwrap(CGContext(consumer: consumer, mediaBox: &box, nil))
+        context.beginPDFPage(nil)
+        if let text {
+            let font = CTFontCreateWithName("Helvetica" as CFString, 18, nil)
+            let attributed = NSAttributedString(string: text, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font])
+            context.textPosition = CGPoint(x: 20, y: 300)
+            CTLineDraw(CTLineCreateWithAttributedString(attributed), context)
+        }
+        context.endPDFPage(); context.closePDF()
+        return bytes as Data
+    }
+
+    func testPDFTextLayerAndScanDiagnostic() throws {
+        let book = try LocalBookImporter.parse(pdf(withText: "Gavin PDF import"), filename: "test.pdf")
+        XCTAssertEqual(book.chapters.count, 1)
+        XCTAssertTrue(book.pages[0].text.contains("Gavin PDF import"))
+        XCTAssertThrowsError(try LocalBookImporter.parse(pdf(withText: nil), filename: "scan.pdf")) { error in
+            XCTAssertTrue(error.localizedDescription.contains("OCR"))
+        }
+    }
+    #endif
 }

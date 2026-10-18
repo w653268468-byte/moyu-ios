@@ -92,11 +92,6 @@ final class LibraryStore: ObservableObject {
                         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
                         guard size <= LocalBookImporter.maximumFileBytes else { throw SourceError.message("单本文件不能超过 100 MB。") }
                         let data = try Data(contentsOf: url, options: .mappedIfSafe)
-                        if url.pathExtension.lowercased() == "rtf" {
-                            guard data.count <= TextParser.maximumBytes else { throw TextImportError.tooLarge }
-                            let text = try NSAttributedString(data: data, options: [.documentType: NSAttributedString.DocumentType.rtf], documentAttributes: nil).string
-                            return try TextParser.parse(text)
-                        }
                         return try LocalBookImporter.parse(data, filename: url.lastPathComponent)
                     }.value
                     try add(title: url.deletingPathExtension().lastPathComponent, document: document)
