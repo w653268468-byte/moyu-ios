@@ -35,6 +35,8 @@ final class SourceScriptTests: XCTestCase {
         XCTAssertEqual(try rows[0].value("@js:java.get('shared')"), "kept")
         let json = try RuleDocument.parse(Data(#"{"books":[{"name":"A"},{"name":"B"}]}"#.utf8), base: base)
         XCTAssertEqual(try json.value("$.books@js:JSON.parse(result).map(b => b.name).join(',')"), "A,B")
+        let single = try RuleDocument.parse(Data(#"{"books":[{"name":"A"}]}"#.utf8), base: base)
+        XCTAssertEqual(try single.value("$.books[*]@js:JSON.parse(result).map(b => b.name).join(',')"), "A")
     }
     func testScriptURLAndInlineTemplates() throws {
         let script = try SourceScript()

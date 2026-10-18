@@ -41,7 +41,7 @@ struct RuleDocument {
                 else { input = try value(parts.prefix, body: body) }
             case .json(let value):
                 let nodes = try JSONPath.select(parts.prefix, from: value)
-                let selected: Any = nodes.count == 1 ? nodes[0] : nodes
+                let selected: Any = try JSONPath.isPlural(parts.prefix) ? nodes : (nodes.count == 1 ? nodes[0] : nodes)
                 input = try (selected as? String) ?? String(decoding: JSONSerialization.data(withJSONObject: selected, options: .fragmentsAllowed), as: UTF8.self)
             }
         }
