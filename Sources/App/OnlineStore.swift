@@ -95,8 +95,10 @@ final class OnlineStore: ObservableObject {
         do { try save() } catch { novels = old; errorMessage = error.localizedDescription }
     }
 
-    func position(_ novel: OnlineNovel, index: Int, textOffset: Int? = nil) {
+    func position(_ novel: OnlineNovel, index: Int, textOffset: Int? = nil, scrollFraction: Double? = nil) {
         var updated = novels.first { $0.id == novel.id } ?? novel
+        if textOffset != nil { updated.scrollFraction = scrollFraction }
+        else if updated.chapterIndex != index { updated.scrollFraction = nil }
         updated.textOffset = textOffset ?? (updated.chapterIndex == index ? updated.textOffset : 0)
         updated.chapterIndex = index
         updated.lastReadAt = Date()

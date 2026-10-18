@@ -134,6 +134,7 @@ public struct OnlineNovel: Codable, Identifiable, Equatable, Sendable {
     public var chapterIndex = 0
     public var lastReadAt: Date?
     public var textOffset: Int?
+    public var scrollFraction: Double?
 
     public init(title: String, author: String = "", intro: String = "", url: URL, sourceID: String) {
         self.title = title

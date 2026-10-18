@@ -13,6 +13,7 @@ struct OnlineReaderView: View {
     @State private var official = false
     @State private var retry = 0
     @State private var resumeOffset = 0
+    @State private var resumeFraction = 0.0
     @State private var openAtEnd = false
     @StateObject private var speech = ReaderSpeech()
     private var style = ReadingStyle()
@@ -43,16 +44,13 @@ struct OnlineReaderView: View {
                         nextChapter: { if index + 1 < novel.chapters.count { index += 1 } },
                         toggleChrome: { style.fullScreen.toggle() }).id(index)
                 } else {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 18) {
-                            if style.showChapterTitle {
-                                Text(novel.chapters[index].title).font(.title2.weight(.medium)).padding(.bottom, 8)
-                            }
-                            ReadingParagraphs(text: text)
-                            Text(index == novel.chapters.count - 1 ? "已到目录最后一章" : "本章完 · 点击右下角继续")
-                                .font(.caption).opacity(0.5).frame(maxWidth: .infinity).padding(.vertical, 25)
-                        }.padding(.horizontal, style.horizontalMargin).padding(.vertical, style.verticalMargin).frame(maxWidth: 760).frame(maxWidth: .infinity, alignment: .center)
-                    }.id(index).onTapGesture(count: 2) { style.fullScreen.toggle() }
+                    let readingIndex = index
+                    ScrollReadingView(text: text, resumeOffset: resumeOffset, resumeFraction: resumeFraction,
+                        onPosition: { offset, fraction in
+                            guard index == readingIndex else { return }
+                            resumeOffset = offset; resumeFraction = fraction
+                            online.position(novel, index: index, textOffset: offset, scrollFraction: fraction)
+                        }, toggleChrome: { style.fullScreen.toggle() }).id(index)
                 }
                 if !style.fullScreen { HStack {
                     Button { index -= 1 } label: { Label("上一章", systemImage: "chevron.left").frame(minHeight: 44) }
@@ -96,6 +94,7 @@ struct OnlineReaderView: View {
                         guard target == index else { return }
                         let saved = online.novels.first { $0.id == novel.id } ?? novel
                         resumeOffset = openAtEnd ? Int.max : (saved.chapterIndex == target ? (saved.textOffset ?? 0) : 0)
+                        resumeFraction = !openAtEnd && saved.chapterIndex == target ? (saved.scrollFraction ?? 0) : 0
                         openAtEnd = false
                         text = fetched
                         online.position(novel, index: target)

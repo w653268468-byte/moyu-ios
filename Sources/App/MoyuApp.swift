@@ -30,7 +30,8 @@ struct MoyuApp: App {
                         Task { await BrowserSessions.checkCookieSharing(client: online.client) }
                     }
                     if ProcessInfo.processInfo.arguments.contains("--ui-preferences") { showReaderPreferences = true }
-                    if ProcessInfo.processInfo.arguments.contains("--ui-reading") {
+                    if ProcessInfo.processInfo.arguments.contains("--ui-reading") || ProcessInfo.processInfo.arguments.contains("--ui-scroll") {
+                        UserDefaults.standard.set(!ProcessInfo.processInfo.arguments.contains("--ui-scroll"), forKey: "reader.paged")
                         UserDefaults.standard.set(true, forKey: "reader.fullScreen")
                         showReadingPreview = true
                     }

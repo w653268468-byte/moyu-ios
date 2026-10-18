@@ -35,6 +35,7 @@ struct ReaderView: View {
     let document: BookDocument
     @State private var page = 0
     @State private var resumeOffset = 0
+    @State private var resumeFraction = 0.0
     @State private var navigationID = UUID()
     @State private var panel: ReaderPanel?
     @State private var search = ""
@@ -50,36 +51,36 @@ struct ReaderView: View {
     }
 
     var body: some View {
+        let readingID = navigationID
         VStack(spacing: 0) {
             if style.paged {
                 PagedReadingView(text: chapterText, title: document.chapters[current.chapter].title,
-                    resumeOffset: resumeOffset, onOffset: saveOffset,
+                    resumeOffset: resumeOffset, onOffset: { saveOffset($0) },
                     previousChapter: { chapterJump(current.chapter - 1, atEnd: true) },
                     nextChapter: { chapterJump(current.chapter + 1) },
                     toggleChrome: { style.fullScreen.toggle() }).id("\(current.chapter)-\(navigationID)")
-            } else { ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    if style.showChapterTitle {
-                        Text(document.chapters[current.chapter].title).font(.caption).opacity(0.6)
-                    }
-                    ReadingParagraphs(text: current.text)
-                }.padding(.horizontal, style.horizontalMargin).padding(.vertical, style.verticalMargin).frame(maxWidth: 760)
-                    .frame(maxWidth: .infinity)
-            }.id(page).onTapGesture(count: 2) { style.fullScreen.toggle() } }
+            } else {
+                ScrollReadingView(text: chapterText, resumeOffset: resumeOffset, resumeFraction: resumeFraction,
+                    onPosition: { offset, fraction in
+                        guard readingID == navigationID else { return }
+                        saveOffset(offset, fraction: fraction)
+                    }, toggleChrome: { style.fullScreen.toggle() })
+                    .id("\(current.chapter)-\(navigationID)")
+            }
             if !style.fullScreen {
                 HStack {
                     Button {
-                        if style.paged { chapterJump(current.chapter - 1, atEnd: true) } else { jump(page - 1) }
-                    } label: { Label(style.paged ? "上一章" : "上一段", systemImage: "chevron.left").frame(minHeight: 44) }
-                        .disabled(style.paged ? current.chapter == 0 : page == 0)
+                        chapterJump(current.chapter - 1, atEnd: true)
+                    } label: { Label("上一章", systemImage: "chevron.left").frame(minHeight: 44) }
+                        .disabled(current.chapter == 0)
                     Spacer()
-                    Text(style.paged ? "\(current.chapter + 1) / \(document.chapters.count) 章" : "\(page + 1) / \(document.pages.count) 段")
+                    Text("\(current.chapter + 1) / \(document.chapters.count) 章")
                         .font(.caption).monospacedDigit()
                     Spacer()
                     Button {
-                        if style.paged { chapterJump(current.chapter + 1) } else { jump(page + 1) }
-                    } label: { Label(style.paged ? "下一章" : "下一段", systemImage: "chevron.right").frame(minHeight: 44) }
-                        .disabled(style.paged ? current.chapter == document.chapters.count - 1 : page == document.pages.count - 1)
+                        chapterJump(current.chapter + 1)
+                    } label: { Label("下一章", systemImage: "chevron.right").frame(minHeight: 44) }
+                        .disabled(current.chapter == document.chapters.count - 1)
                 }.font(.subheadline).padding(.horizontal, 16)
             }
         }
@@ -110,13 +111,17 @@ struct ReaderView: View {
         .onAppear {
             page = min(max(0, liveBook.page), document.pages.count - 1)
             resumeOffset = liveBook.textOffset ?? offsetForSegment(page)
+            resumeFraction = liveBook.scrollFraction ?? 0
             navigationID = UUID()
         }
-        .onChange(of: page) { _, value in
-            speech.stop()
-            if !style.paged { library.updatePosition(bookID: book.id, page: value) }
+        .onChange(of: page) { old, value in
+            if document.pages[old].chapter != document.pages[value].chapter { speech.stop() }
         }
-        .onChange(of: style.paged) { _, _ in resumeOffset = liveBook.textOffset ?? offsetForSegment(page); navigationID = UUID() }
+        .onChange(of: style.paged) { _, _ in
+            resumeOffset = liveBook.textOffset ?? offsetForSegment(page)
+            resumeFraction = liveBook.scrollFraction ?? 0
+            navigationID = UUID()
+        }
         .onDisappear { speech.stop() }
         .alert("听书提示", isPresented: Binding(get: { speech.message != nil }, set: { if !$0 { speech.message = nil } })) { Button("知道了") { speech.message = nil } } message: { Text(speech.message ?? "") }
         .sheet(item: $panel) { selected in
@@ -140,7 +145,7 @@ struct ReaderView: View {
         return document.pages.filter { $0.chapter == chapter && $0.id < target }
             .reduce(0) { $0 + (TextPagination.readingText($1.text) as NSString).length + 1 }
     }
-    private func saveOffset(_ offset: Int) {
+    private func saveOffset(_ offset: Int, fraction: Double? = nil) {
         var start = 0
         var segment = chapterSegments.first?.id ?? page
         for item in chapterSegments {
@@ -149,16 +154,18 @@ struct ReaderView: View {
             start += (TextPagination.readingText(item.text) as NSString).length + 1
         }
         page = segment
-        library.updatePosition(bookID: book.id, page: segment, textOffset: offset)
+        library.updatePosition(bookID: book.id, page: segment, textOffset: offset, scrollFraction: fraction)
     }
     private func chapterJump(_ chapter: Int, atEnd: Bool = false) {
         guard document.chapters.indices.contains(chapter) else { return }
         page = document.chapters[chapter].firstPage
+        resumeFraction = 0
         resumeOffset = atEnd ? Int.max : 0
         navigationID = UUID()
     }
     private func jump(_ target: Int) {
         page = min(max(0, target), document.pages.count - 1)
+        resumeFraction = 0
         resumeOffset = offsetForSegment(page)
         navigationID = UUID()
         library.updatePosition(bookID: book.id, page: page, textOffset: resumeOffset)

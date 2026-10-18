@@ -117,11 +117,12 @@ final class LibraryStore: ObservableObject {
 
     func cancelImport() { parseTask?.cancel(); importTask?.cancel() }
 
-    func updatePosition(bookID: UUID, page: Int, textOffset: Int? = nil) {
+    func updatePosition(bookID: UUID, page: Int, textOffset: Int? = nil, scrollFraction: Double? = nil) {
         update(bookID) {
             $0.page = min(max(0, page), max(0, $0.pageCount - 1))
             $0.lastReadAt = Date()
             $0.textOffset = textOffset
+            $0.scrollFraction = scrollFraction
         }
     }
 

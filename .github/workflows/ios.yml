@@ -83,6 +83,9 @@ jobs:
           xcrun simctl launch --terminate-running-process "$DEVICE_ID" org.moyu.reader --ui-reading
           sleep 4
           xcrun simctl io "$DEVICE_ID" screenshot build/ui/reading-fullscreen.png
+          xcrun simctl launch --terminate-running-process "$DEVICE_ID" org.moyu.reader --ui-scroll
+          sleep 4
+          xcrun simctl io "$DEVICE_ID" screenshot build/ui/reading-scroll.png
           xcrun simctl terminate "$DEVICE_ID" org.moyu.reader
       - name: Upload simulator screens
         if: always()
