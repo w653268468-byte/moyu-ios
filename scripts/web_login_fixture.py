@@ -1,5 +1,5 @@
 """Loopback-only CI fixture for WKWebView -> URLSession cookie interoperability."""
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -15,6 +15,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(401)
             body = b"Authentication required"
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
 
@@ -22,4 +24,4 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-HTTPServer(("127.0.0.1", 18765), Handler).serve_forever()
+ThreadingHTTPServer(("127.0.0.1", 18765), Handler).serve_forever()

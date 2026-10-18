@@ -34,13 +34,15 @@ struct RuleDocument {
     private func scripted(_ parts: ScriptRule.Parts, list: Bool, body: Bool = false) throws -> Any {
         let input: Any
         if parts.prefix.isEmpty { input = try rawText }
-        else if list { input = try elements(parts.prefix).map { try $0.scriptInput } }
         else {
             switch node {
-            case .html: input = try value(parts.prefix, body: body)
+            case .html:
+                if list { input = try elements(parts.prefix).map { try $0.scriptInput } }
+                else { input = try value(parts.prefix, body: body) }
             case .json(let value):
                 let nodes = try JSONPath.select(parts.prefix, from: value)
-                input = nodes.count == 1 ? nodes[0] : nodes
+                let selected: Any = nodes.count == 1 ? nodes[0] : nodes
+                input = try (selected as? String) ?? String(decoding: JSONSerialization.data(withJSONObject: selected, options: .fragmentsAllowed), as: UTF8.self)
             }
         }
         return try scope.evaluate(parts.code, input: input, document: rawText)

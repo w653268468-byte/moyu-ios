@@ -65,6 +65,7 @@ public final class SourceScript: @unchecked Sendable {
         input = document ?? (result as? String ?? String(decoding: data, as: UTF8.self)); base = baseURL
         context.setGlobalProperty(name: "__gavinInput", value: String(decoding: data, as: UTF8.self))
         context.setGlobalProperty(name: "baseUrl", value: baseURL.absoluteString)
+        context.setGlobalProperty(name: "src", value: input)
         for (name, value) in globals { context.setGlobalProperty(name: name, value: value) }
         do {
             try context.evaluate("globalThis.result = JSON.parse(__gavinInput, (_, v) => v && typeof v.__gavinHTML === 'string' ? new GavinElement(v.__gavinHTML) : v)")
@@ -171,6 +172,12 @@ public final class SourceScript: @unchecked Sendable {
         size: {value: function() { return this.length; }},
         first: {value: function() { return this[0] ?? null; }},
         last: {value: function() { return this[this.length - 1] ?? null; }}
+        ,text: {value: function() { return this.map(e => e instanceof GavinElement ? e.text() : String(e)).join(' '); }}
+        ,html: {value: function() { return this.map(e => e instanceof GavinElement ? e.html() : String(e)).join('\n'); }}
+        ,attr: {value: function(name) { return this[0] instanceof GavinElement ? this[0].attr(name) : ''; }}
+        ,select: {value: function(css) { return this.flatMap(e => e instanceof GavinElement ? e.select(css) : []); }}
+        ,isEmpty: {value: function() { return this.length === 0; }}
+        ,eachText: {value: function() { return this.map(e => e instanceof GavinElement ? e.text() : String(e)); }}
     });
     globalThis.java = new Proxy({}, {get: (_, name) => (...args) => gavinCall(String(name), args)});
     globalThis.org = {jsoup: {Jsoup: {parse: html => new GavinElement(String(html))}}};

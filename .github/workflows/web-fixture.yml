@@ -1,0 +1,24 @@
+name: Browser fixture diagnostics
+on:
+  push:
+    branches: [codex/js-runtime]
+permissions:
+  contents: read
+jobs:
+  fixture:
+    runs-on: macos-15
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify loopback login fixture
+        run: |
+          python3 -u scripts/web_login_fixture.py > fixture.log 2>&1 &
+          FIXTURE_PID=$!
+          trap 'kill "$FIXTURE_PID" 2>/dev/null || true' EXIT
+          if ! curl --noproxy '*' --retry 5 --retry-connrefused --connect-timeout 2 --max-time 5 -fsS -D headers.txt http://127.0.0.1:18765/login; then
+            cat fixture.log
+            ps -p "$FIXTURE_PID" -o pid,stat,command || true
+            exit 1
+          fi
+          cat headers.txt
+          curl --noproxy '*' --connect-timeout 2 --max-time 5 -f -H 'Cookie: gavin_fixture=verified' http://127.0.0.1:18765/private

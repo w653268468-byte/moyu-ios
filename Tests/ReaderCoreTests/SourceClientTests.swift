@@ -14,6 +14,8 @@ private final class FixtureProtocol: URLProtocol {
             "/api/book": #"{"name":"三国","toc":"/api/toc"}"#,
             "/api/toc": #"{"chapters":[{"title":"第一回","url":"/api/chapter"}]}"#,
             "/api/chapter": #"{"text":"滚滚长江东逝水。"}"#,
+            "/api/script-search": #"{"data":{"books":[{"title":"公版故事","sourceUuid":"one"}]}}"#,
+            "/source/one": "<div class='m-book-recent'><a>最新章</a></div>",
             "/search": "<div class='book'><a href='/book/1'>山海来信</a><span class='author'>Gavin</span></div>",
             "/book/1": "<h1>山海来信</h1><a class='catalog' href='/toc/1'>目录</a>",
             "/toc/1": "<div id='list'><a href='/chapter/1'>第一章</a></div><a class='next' href='/toc/2'>下一页</a>",
@@ -109,6 +111,17 @@ final class SourceClientTests: XCTestCase {
         XCTAssertNil(source.incompatibility)
         let found = try await makeClient().search("中文 空格", source: source)
         XCTAssertEqual(found.first?.title, "山海来信")
+    }
+    func testJSONPrefixAndJsoupCollectionPatternUsedByImportedSources() async throws {
+        var source = try source()
+        source.searchUrl = "/api/script-search"
+        source.ruleSearch?.bookList = "data.books[*]@js:JSON.parse(result).map(o => ({name:o.title,url:'/api/book',author:org.jsoup.Jsoup.parse(java.ajax('/source/'+o.sourceUuid)).select('.m-book-recent a').text()}))"
+        source.ruleSearch?.name = "name"
+        source.ruleSearch?.bookUrl = "url"
+        source.ruleSearch?.author = "author"
+        let books = try await makeClient().search("故事", source: source)
+        XCTAssertEqual(books.first?.title, "公版故事")
+        XCTAssertEqual(books.first?.author, "最新章")
     }
 
     func testStreamingResponseLimit() async throws {
