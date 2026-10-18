@@ -90,7 +90,7 @@ public actor SourceClient {
     }
 
     private func scriptEngine(for source: BookSource) throws -> SourceScript? {
-        let rules = [source.ruleSearch, source.ruleBookInfo, source.ruleToc, source.ruleContent].compactMap { $0 }.flatMap(\.values) + [source.searchUrl, source.header].compactMap { $0 }
+        let rules = [source.ruleSearch, source.ruleExplore, source.ruleBookInfo, source.ruleToc, source.ruleContent].compactMap { $0 }.flatMap(\.values) + [source.searchUrl, source.exploreUrl, source.header].compactMap { $0 }
         guard rules.contains(where: { ScriptTemplate.needsScript($0) }) else { return nil }
         if let cached = scriptEngines[source.id], cached.0 == source { return cached.1 }
         let engine = try SourceScript(configuration: session.configuration)
@@ -142,15 +142,15 @@ public actor SourceClient {
         catch { throw SourceError.message("书源链接下载成功，但内容不是有效的阅读 JSON。可能返回了网页或验证页。\(error.localizedDescription)") }
     }
 
-    public func search(_ query: String, source: BookSource) async throws -> [OnlineNovel] {
+    public func search(_ query: String, source: BookSource, page: Int = 1) async throws -> [OnlineNovel] {
         if let reason = source.incompatibility { throw SourceError.message(reason) }
         guard let template = source.searchUrl, !template.isEmpty, let rule = source.ruleSearch,
               let list = rule.bookList, let name = rule.name, let bookURL = rule.bookUrl else {
             throw SourceError.message("此书源没有完整的搜索规则，可以尝试直接粘贴小说详情页链接。")
         }
         let base = try Self.resolve(source.bookSourceUrl, base: URL(string: "https://example.com")!)
-        let request = try SourceRequest.make(template, query: query, base: base, script: scriptEngine(for: source))
-        let (doc, url) = try await document(request, source: source, globals: ["key": query])
+        let request = try SourceRequest.make(template, query: query, base: base, script: scriptEngine(for: source), page: page)
+        let (doc, url) = try await document(request, source: source, globals: ["key": query, "page": String(page)])
         var seen: Set<String> = []
         var results: [OnlineNovel] = []
         for element in try doc.elements(list).prefix(100) {
@@ -163,6 +163,34 @@ public actor SourceClient {
                                        intro: try element.optionalValue(rule.intro), url: resolved, sourceID: source.id))
         }
         return results
+    }
+
+    public func categories(source: BookSource) throws -> [ExploreCategory] {
+        guard source.enabledExplore != false, let raw = source.exploreUrl, !raw.isEmpty,
+              let base = URL(string: source.bookSourceUrl) else { return [] }
+        let text = try ScriptTemplate.expand(raw, using: scriptEngine(for: source), query: "", base: base)
+        return try ExploreCategory.parse(text)
+    }
+
+    public func explore(_ category: ExploreCategory, page: Int, source: BookSource) async throws -> [OnlineNovel] {
+        guard !category.isHeading, (1...10000).contains(page), let base = URL(string: source.bookSourceUrl) else { throw SourceError.message("分类网址或页码无效。") }
+        if let reason = source.incompatibility { throw SourceError.message(reason) }
+        let specific = source.ruleExplore
+        let rule = (specific?.bookList?.isEmpty == false) ? specific : source.ruleSearch
+        guard let rule, let list = rule.bookList, let name = rule.name, let bookURL = rule.bookUrl else { throw SourceError.message("书源没有完整的发现列表规则。") }
+        let request = try SourceRequest.make(category.url, query: "", base: base, script: scriptEngine(for: source), page: page)
+        let (doc, url) = try await document(request, source: source, globals: ["page": String(page)])
+        var seen = Set<String>()
+        var novels: [OnlineNovel] = []
+        for element in try doc.elements(list).prefix(100) {
+            let title = try element.value(name)
+            let raw = try element.value(bookURL)
+            guard !title.isEmpty, !raw.isEmpty else { continue }
+            let link = try Self.resolve(raw, base: url)
+            guard seen.insert(link.absoluteString).inserted else { continue }
+            novels.append(OnlineNovel(title: title, author: try element.optionalValue(rule.author), intro: try element.optionalValue(rule.intro), url: link, sourceID: source.id))
+        }
+        return novels
     }
 
     public func catalog(_ novel: OnlineNovel, source: BookSource) async throws -> OnlineNovel {

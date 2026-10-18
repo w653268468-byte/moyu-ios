@@ -35,8 +35,11 @@ public struct BookSource: Codable, Identifiable, Equatable, Sendable {
     public var enabled: Bool?
     public var originalJSON: String?
     public var searchUrl: String?
+    public var exploreUrl: String?
+    public var enabledExplore: Bool?
     public var header: String?
     public var ruleSearch: SourceRule?
+    public var ruleExplore: SourceRule?
     public var ruleBookInfo: SourceRule?
     public var ruleToc: SourceRule?
     public var ruleContent: SourceRule?

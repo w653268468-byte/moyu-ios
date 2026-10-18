@@ -1,5 +1,15 @@
 """Loopback-only CI fixture for WKWebView -> URLSession cookie interoperability."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from socketserver import TCPServer
+
+
+class FixtureServer(ThreadingHTTPServer):
+    def server_bind(self):
+        # HTTPServer normally does a reverse DNS lookup even for 127.0.0.1.
+        # This loopback-only fixture has no need to consult external DNS.
+        TCPServer.server_bind(self)
+        self.server_name = "localhost"
+        self.server_port = self.server_address[1]
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -25,6 +35,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-server = ThreadingHTTPServer(("127.0.0.1", 18765), Handler)
+print("SERVER_STARTING", flush=True)
+server = FixtureServer(("127.0.0.1", 18765), Handler)
 print("SERVER_READY", server.server_address, flush=True)
 server.serve_forever()

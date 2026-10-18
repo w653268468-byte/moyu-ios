@@ -123,6 +123,18 @@ final class SourceClientTests: XCTestCase {
         XCTAssertEqual(books.first?.title, "公版故事")
         XCTAssertEqual(books.first?.author, "最新章")
     }
+    func testExploreCategoriesAndPagedBookList() async throws {
+        var source = try source()
+        source.exploreUrl = "@js:JSON.stringify([{title:'推荐',url:'/search?page={{page}}'}])"
+        source.ruleExplore = source.ruleSearch
+        source.ruleExplore?.name = "a@text@js:result + (page === 2 ? '第二页' : '错误')"
+        let client = makeClient()
+        let categories = try await client.categories(source: source)
+        XCTAssertEqual(categories.map(\.title), ["推荐"])
+        let found = try await client.explore(categories[0], page: 2, source: source)
+        XCTAssertEqual(found.first?.title, "山海来信第二页")
+        XCTAssertEqual(found.first?.url.absoluteString, "https://fixture.example/book/1")
+    }
 
     func testStreamingResponseLimit() async throws {
         do {

@@ -4,7 +4,14 @@ public enum SourceRequest {
     public static func make(_ template: String, query: String, base: URL, script: SourceScript? = nil, page: Int = 1) throws -> URLRequest {
         let template = try ScriptTemplate.expand(template, using: script, query: query, base: base, page: page)
         let split = template.range(of: #",\s*\{"#, options: .regularExpression)
-        let path = split.map { String(template[..<$0.lowerBound]) } ?? template
+        var path = split.map { String(template[..<$0.lowerBound]) } ?? template
+        // Legado's <first-page,later-pages> URL alternative.
+        let alternatives = try NSRegularExpression(pattern: #"<([^<>]*?),([^<>]*?)>"#)
+        for match in alternatives.matches(in: path, range: NSRange(path.startIndex..., in: path)).reversed() {
+            guard let full = Range(match.range, in: path), let part = Range(match.range(at: page == 1 ? 1 : 2), in: path) else { continue }
+            let selected = String(path[part])
+            path.replaceSubrange(full, with: selected)
+        }
         var options: [String: Any] = [:]
         if let split {
             let json = String(template[template.index(after: split.lowerBound)...])

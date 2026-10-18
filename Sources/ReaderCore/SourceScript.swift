@@ -66,7 +66,10 @@ public final class SourceScript: @unchecked Sendable {
         context.setGlobalProperty(name: "__gavinInput", value: String(decoding: data, as: UTF8.self))
         context.setGlobalProperty(name: "baseUrl", value: baseURL.absoluteString)
         context.setGlobalProperty(name: "src", value: input)
-        for (name, value) in globals { context.setGlobalProperty(name: name, value: value) }
+        for (name, value) in globals {
+            if name == "page", let page = Int(value) { context.setGlobalProperty(name: name, value: page) }
+            else { context.setGlobalProperty(name: name, value: value) }
+        }
         do {
             try context.evaluate("globalThis.result = JSON.parse(__gavinInput, (_, v) => v && typeof v.__gavinHTML === 'string' ? new GavinElement(v.__gavinHTML) : v)")
             let value = try context.evaluate(code)
