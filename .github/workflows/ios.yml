@@ -115,6 +115,13 @@ jobs:
           done
           cp "$CONTAINER/Documents/source-import-check.json" build/ui/source-import-check.json || true
           python3 -c 'import json,pathlib,sys; d=json.loads(pathlib.Path(sys.argv[1]).read_text()); print(d); assert d["status"] == "passed"' "$CONTAINER/Documents/source-import-check.json"
+          xcrun simctl launch --terminate-running-process "$DEVICE_ID" org.moyu.reader --ui-search-model-check
+          for ATTEMPT in $(seq 1 40); do
+            if [ -f "$CONTAINER/Documents/search-model-check.json" ]; then break; fi
+            sleep 1
+          done
+          cp "$CONTAINER/Documents/search-model-check.json" build/ui/search-model-check.json || true
+          python3 -c 'import json,pathlib,sys; d=json.loads(pathlib.Path(sys.argv[1]).read_text()); print(d); assert d["status"] == "passed"' "$CONTAINER/Documents/search-model-check.json"
           xcrun simctl launch --terminate-running-process "$DEVICE_ID" org.moyu.reader --ui-import-preview
           sleep 4
           xcrun simctl io "$DEVICE_ID" screenshot build/ui/source-import-preview.png

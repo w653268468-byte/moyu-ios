@@ -136,6 +136,18 @@ final class SourceClientTests: XCTestCase {
         let second = try await client.searchIndependent("另一本", source: source)
         XCTAssertEqual(second.first?.title, "山海来信1")
     }
+    func testRepeatedKeywordUsesFreshSessionButResumeKeepsVariables() async throws {
+        var source = try source()
+        source.searchUrl = "@js:java.put('visits',String(Number(java.get('visits')||0)+1)); '/search'"
+        source.ruleSearch?.name = "a@text@js:result + java.get('visits')"
+        let client = makeClient(), firstSession = UUID()
+        let first = try await client.searchIndependent("同一个词", source: source, sessionID: firstSession)
+        let next = try await client.searchIndependent("同一个词", source: source, page: 2, sessionID: firstSession)
+        let restarted = try await client.searchIndependent("同一个词", source: source, sessionID: UUID())
+        XCTAssertEqual(first.first?.title, "山海来信1")
+        XCTAssertEqual(next.first?.title, "山海来信2")
+        XCTAssertEqual(restarted.first?.title, "山海来信1")
+    }
     func testSearchIsNotBlockedByUnsupportedBodyRule() async throws {
         var source = try source()
         source.ruleContent?.content = "{{java.get()}"

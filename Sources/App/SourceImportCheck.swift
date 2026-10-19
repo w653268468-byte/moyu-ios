@@ -1,6 +1,64 @@
 #if DEBUG
 import Foundation
 
+private actor SearchCheckGate {
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    var waitingCount: Int { waiters.count }
+    func hold() async { await withCheckedContinuation { waiters.append($0) } }
+    func release() { let held = waiters; waiters.removeAll(); for waiter in held { waiter.resume() } }
+}
+
+@MainActor enum SearchModelCheck {
+    private static func waitFor(_ condition: @escaping @MainActor () async -> Bool) async throws {
+        let deadline = ContinuousClock.now + .seconds(10)
+        while !(await condition()) {
+            guard ContinuousClock.now < deadline else { throw SourceError.message("搜索状态检查等待超时") }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+    static func run() async {
+        let gate = SearchCheckGate(), model = SearchViewModel()
+        defer { model.cancel(); Task { await gate.release() } }
+        let file = URL.documentsDirectory.appendingPathComponent("search-model-check.json")
+        do {
+            let definitions: [[String: Any]] = ["fast", "slow"].map { name in [
+                "bookSourceName": name, "bookSourceUrl": "https://\(name).example",
+                "searchUrl": "/result?q={{key}},{\"webView\":true}",
+                "ruleSearch": ["bookList": ".book", "name": "a@text", "bookUrl": "a@href"]
+            ] }
+            let sources = try SourceImport.parse(JSONSerialization.data(withJSONObject: definitions)).sources
+            guard sources.count == 2, let fast = sources.first(where: { $0.bookSourceName == "fast" }), let slow = sources.first(where: { $0.bookSourceName == "slow" }) else { throw SourceError.message("搜索检查书源无效") }
+            let client = SourceClient(webRenderer: { request, _ in
+                guard let url = request.url else { throw SourceError.message("检查请求没有网址") }
+                if url.host == "slow.example" { await gate.hold() }
+                let keyword = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "q" })?.value ?? ""
+                let html = "<div class='book'><a href='/book'>\(keyword)-\(url.host ?? "")</a></div>"
+                return (Data(html.utf8), url)
+            })
+            model.start("保留结果", sources: sources, client: client, concurrency: 2)
+            try await waitFor { guard model.completed == 1 else { return false }; return await gate.waitingCount == 1 }
+            model.cancel()
+            guard model.state.hits.count == 1, model.pendingCount == 1, !model.searching else { throw SourceError.message("停止未保留已完成结果及待处理任务") }
+            model.resume(client: client)
+            try await waitFor { await gate.waitingCount == 2 }
+            await gate.release()
+            try await waitFor { !model.searching && model.pendingCount == 0 }
+            guard model.state.hits.count == 2, model.completed == 1, model.state.failures.isEmpty else { throw SourceError.message("继续搜索重复处理已完成书源，或旧回调污染新批次") }
+            model.start("旧查询", sources: [slow], client: client)
+            try await waitFor { await gate.waitingCount == 1 }
+            model.start("新查询", sources: [fast], client: client)
+            try await waitFor { !model.searching && model.state.hits.count == 1 }
+            await gate.release()
+            try await Task.sleep(for: .milliseconds(150))
+            guard model.keyword == "新查询", model.state.hits.count == 1, model.state.hits.first?.novel.title == "新查询-fast.example", model.pendingCount == 0 else { throw SourceError.message("旧查询返回后污染新查询") }
+            let report: [String: Any] = ["status": "passed", "stopPreservesResults": true, "resumeOnlyPending": true, "oldBatchIgnored": true, "oldQueryIgnored": true]
+            try JSONSerialization.data(withJSONObject: report).write(to: file, options: .atomic)
+        } catch {
+            try? JSONSerialization.data(withJSONObject: ["status": "failed", "error": error.localizedDescription]).write(to: file, options: .atomic)
+        }
+    }
+}
+
 @MainActor enum SourceImportCheck {
     static func run() async {
         let root = URL.documentsDirectory.appendingPathComponent("import-check-" + UUID().uuidString, isDirectory: true)

@@ -12,6 +12,7 @@ public actor SourceClient {
     private var searchWorkers: [String: (BookSource, SourceClient)] = [:]
     private var searchWorkerUsers: [String: Int] = [:]
     private var searchQuery: String?
+    private var searchSessionID: UUID?
     private var searchGeneration = UUID()
     private var searchVariables: [String: (BookSource, [String: String])] = [:]
     private var searchVariableBytes = 0
@@ -258,9 +259,10 @@ public actor SourceClient {
 
     /// Synchronous java.ajax runs inside its source interpreter. Give each global-
     /// search job its own actor so a slow script cannot block unrelated websites.
-    public func searchIndependent(_ query: String, source: BookSource, page: Int = 1) async throws -> [OnlineNovel] {
+    public func searchIndependent(_ query: String, source: BookSource, page: Int = 1, sessionID: UUID? = nil) async throws -> [OnlineNovel] {
         try Task.checkCancellation()
-        if searchQuery != query {
+        if searchQuery != query || searchSessionID != sessionID {
+            searchSessionID = sessionID
             searchQuery = query; searchGeneration = UUID()
             searchVariables.removeAll(); searchVariableBytes = 0
             for key in Array(searchWorkers.keys) where searchWorkerUsers[key] == nil { searchWorkers.removeValue(forKey: key) }

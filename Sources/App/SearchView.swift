@@ -34,6 +34,7 @@ import SwiftUI
     private var sources: [BookSource] = []
     private var pending: [SourceSearchRequest] = []
     private var generation = UUID()
+    private var sessionID = UUID()
     private var task: Task<Void, Never>?
     private var concurrency = 6, timeout = 15.0
     var canLoadMore: Bool { !state.limitReached && sources.contains { state.failures[$0.id] == nil && !state.exhausted.contains($0.id) && (state.nextPages[$0.id] ?? 1) <= 10000 } }
@@ -55,7 +56,7 @@ import SwiftUI
     }
     func cancel() { task?.cancel(); generation = UUID(); searching = false; pendingCount = pending.count }
     func reset() {
-        cancel(); state = SourceSearchState(); sources = []; pending = []; pendingCount = 0; keyword = ""; message = nil
+        cancel(); sessionID = UUID(); state = SourceSearchState(); sources = []; pending = []; pendingCount = 0; keyword = ""; message = nil
         didSearch = false; completed = 0; total = 0; resultRevision += 1
     }
     private func receive(_ outcome: SourceSearchOutcome, token: UUID) -> Bool {
@@ -68,14 +69,14 @@ import SwiftUI
     private func batch(_ jobs: [SourceSearchRequest], client: SourceClient) {
         guard !searching, !jobs.isEmpty, !state.limitReached else { return }
         let token = UUID(); generation = token
-        let query = keyword, workers = concurrency, seconds = timeout
+        let query = keyword, workers = concurrency, seconds = timeout, session = sessionID
         let scheduled = Set(jobs.map { $0.source.id })
         let remaining = pending.filter { !scheduled.contains($0.source.id) }
         searching = true; completed = 0; total = jobs.count; message = nil; pending = jobs + remaining; pendingCount = pending.count
         task = Task { [weak self] in
             do {
                 try await SourceSearch.run(requests: jobs, concurrency: workers, timeoutSeconds: seconds, search: { source, page in
-                    try await client.searchIndependent(query, source: source, page: page)
+                    try await client.searchIndependent(query, source: source, page: page, sessionID: session)
                 }, onResult: { [weak self] outcome in
                     guard let self else { return false }; return await self.receive(outcome, token: token)
                 })

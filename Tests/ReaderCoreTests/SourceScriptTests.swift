@@ -11,6 +11,36 @@ private final class ScriptThreadResult: @unchecked Sendable {
 
 final class SourceScriptTests: XCTestCase {
     let base = URL(string: "https://books.example/book/1")!
+    func testDigestAndHMacKnownVectors() throws {
+        let engine = try SourceScript()
+        XCTAssertEqual(try engine.evaluate("java.digestHex('abc','SHA-1')", result: "", baseURL: base) as? String, "a9993e364706816aba3e25717850c26c9cd0d89d")
+        XCTAssertEqual(try engine.evaluate("java.digestBase64Str('abc','SHA-256')", result: "", baseURL: base) as? String, "ungWv48Bz+pBQUDeXa4iI7ADYaOWF3qctBD/YfIAFa0=")
+        XCTAssertEqual(try engine.evaluate("java.md5Encode16('abc')", result: "", baseURL: base) as? String, "3cd24fb0d6963f7d")
+        XCTAssertEqual(try engine.evaluate("java.HMacHex('The quick brown fox jumps over the lazy dog','HmacSHA256','key')", result: "", baseURL: base) as? String, "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8")
+        let encoded = try engine.evaluate("java.HMacBase64('The quick brown fox jumps over the lazy dog','HmacSHA256','key')", result: "", baseURL: base) as? String ?? ""
+        XCTAssertEqual(Data(base64Encoded: encoded)?.map { String(format: "%02x", $0) }.joined(), "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8")
+        XCTAssertThrowsError(try engine.evaluate("java.digestHex('abc','not-an-algorithm')", result: "", baseURL: base))
+        XCTAssertThrowsError(try engine.evaluate("java.HMacHex('abc','SHA256','key')", result: "", baseURL: base))
+    }
+    func testBase64BinaryPreservesJavaSignedBytes() throws {
+        let engine = try SourceScript()
+        XCTAssertEqual(try engine.evaluate("java.base64DecodeToByteArray('AP+A')", result: "", baseURL: base) as? [Int], [0, -1, -128])
+        XCTAssertThrowsError(try engine.evaluate("java.base64Decode('AP+A')", result: "", baseURL: base))
+    }
+    func testEverySupportedDigestAndHMacAlgorithmAgainstIndependentVectors() throws {
+        let vectors = [
+            ("MD5", "900150983cd24fb0d6963f7d28e17f72", "d2fe98063f876b03193afb49b4979591"),
+            ("SHA1", "a9993e364706816aba3e25717850c26c9cd0d89d", "4fd0b215276ef12f2b3e4c8ecac2811498b656fc"),
+            ("SHA256", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "9c196e32dc0175f86f4b1cb89289d6619de6bee699e4c378e68309ed97a1a6ab"),
+            ("SHA384", "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7", "30ddb9c8f347cffbfb44e519d814f074cf4047a55d6f563324f1c6a33920e5edfb2a34bac60bdc96cd33a95623d7d638"),
+            ("SHA512", "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f", "3926a207c8c42b0c41792cbd3e1a1aaaf5f7a25704f62dfc939c4987dd7ce060009c5bb1c2447355b3216f10b537e9afa7b64a4e5391b0d631172d07939e087a")
+        ]
+        let engine = try SourceScript()
+        for (name, digest, mac) in vectors {
+            XCTAssertEqual(try engine.evaluate("java.digestHex('abc','\(name)')", result: "", baseURL: base) as? String, digest, name)
+            XCTAssertEqual(try engine.evaluate("java.HMacHex('abc','Hmac\(name)','key')", result: "", baseURL: base) as? String, mac, name)
+        }
+    }
     func testRulesHaveFreshLexicalBindingsWhileLibrariesAndPutRemainShared() throws {
         let engine = try SourceScript()
         _ = try engine.evaluate("function sharedName(value) { return value + '共享'; }; void 0", result: "", baseURL: base, persistentDefinitions: true)

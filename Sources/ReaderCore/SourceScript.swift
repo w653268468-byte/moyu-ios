@@ -172,10 +172,33 @@ public final class SourceScript: @unchecked Sendable {
             for cookie in HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": string(1)], for: url) { configuration.httpCookieStorage?.setCookie(cookie) }
             result = NSNull()
         case "base64Encode": result = Data(string(0).utf8).base64EncodedString()
-        case "base64Decode":
-            guard let bytes = Data(base64Encoded: string(0), options: .ignoreUnknownCharacters), let text = String(data: bytes, encoding: .utf8) else { throw SourceError.message("Base64 文本无效或不是 UTF-8。") }
-            result = text
-        case "md5Encode": result = Insecure.MD5.hash(data: Data(string(0).utf8)).map { String(format: "%02x", $0) }.joined()
+        case "base64Decode", "base64DecodeToByteArray":
+            guard let bytes = Data(base64Encoded: string(0), options: .ignoreUnknownCharacters) else { throw SourceError.message("Base64 数据无效。") }
+            if method == "base64DecodeToByteArray" { result = bytes.map { Int(Int8(bitPattern: $0)) } }
+            else { guard let text = String(data: bytes, encoding: .utf8) else { throw SourceError.message("Base64 结果不是 UTF-8 文本。") }; result = text }
+        case "md5Encode", "md5Encode16":
+            let hex = Insecure.MD5.hash(data: Data(string(0).utf8)).map { String(format: "%02x", $0) }.joined()
+            result = method == "md5Encode16" ? String(hex.dropFirst(8).prefix(16)) : hex
+        case "digestHex", "digestBase64Str", "HMacHex", "HMacBase64":
+            let input = Data(string(0).utf8)
+            let algorithm = string(1).uppercased().replacingOccurrences(of: "-", with: "")
+            let keyed = method.hasPrefix("HMac")
+            let key = SymmetricKey(data: Data(string(2).utf8))
+            let digest: Data
+            switch (keyed, algorithm) {
+            case (false, "MD5"): digest = Data(Insecure.MD5.hash(data: input))
+            case (false, "SHA1"): digest = Data(Insecure.SHA1.hash(data: input))
+            case (false, "SHA256"): digest = Data(SHA256.hash(data: input))
+            case (false, "SHA384"): digest = Data(SHA384.hash(data: input))
+            case (false, "SHA512"): digest = Data(SHA512.hash(data: input))
+            case (true, "HMACMD5"): digest = Data(HMAC<Insecure.MD5>.authenticationCode(for: input, using: key))
+            case (true, "HMACSHA1"): digest = Data(HMAC<Insecure.SHA1>.authenticationCode(for: input, using: key))
+            case (true, "HMACSHA256"): digest = Data(HMAC<SHA256>.authenticationCode(for: input, using: key))
+            case (true, "HMACSHA384"): digest = Data(HMAC<SHA384>.authenticationCode(for: input, using: key))
+            case (true, "HMACSHA512"): digest = Data(HMAC<SHA512>.authenticationCode(for: input, using: key))
+            default: throw SourceError.message("尚未支持的摘要或 HMAC 算法：\(string(1))")
+            }
+            result = method == "digestBase64Str" || method == "HMacBase64" ? digest.base64EncodedString() : digest.map { String(format: "%02x", $0) }.joined()
         case "sha256Encode": result = SHA256.hash(data: Data(string(0).utf8)).map { String(format: "%02x", $0) }.joined()
         case "hexEncodeToString": result = Data(string(0).utf8).map { String(format: "%02x", $0) }.joined()
         case "hexDecodeToString", "hexDecodeToByteArray":
