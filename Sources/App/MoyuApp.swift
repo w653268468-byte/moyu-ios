@@ -27,11 +27,13 @@ struct MoyuApp: App {
                 .onAppear {
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("--ui-scroll-check") { ScrollReadingView.checkPositionRecovery() }
+                    if ProcessInfo.processInfo.arguments.contains("--ui-curl-check") { CurlReadingView.checkTurning() }
                     if ProcessInfo.processInfo.arguments.contains("--ui-cookie-check") {
                         Task { await BrowserSessions.checkCookieSharing(client: online.client) }
                     }
                     if ProcessInfo.processInfo.arguments.contains("--ui-preferences") { showReaderPreferences = true }
                     if ProcessInfo.processInfo.arguments.contains("--ui-reading") || ProcessInfo.processInfo.arguments.contains("--ui-scroll") {
+                        UserDefaults.standard.set(ProcessInfo.processInfo.arguments.contains("--ui-curl") ? "curl" : "slide", forKey: "reader.pageAnimation")
                         UserDefaults.standard.set(!ProcessInfo.processInfo.arguments.contains("--ui-scroll"), forKey: "reader.paged")
                         UserDefaults.standard.set(true, forKey: "reader.fullScreen")
                         showReadingPreview = true

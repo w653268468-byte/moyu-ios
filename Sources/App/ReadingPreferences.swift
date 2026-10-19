@@ -45,6 +45,7 @@ struct ReadingStyle: DynamicProperty {
     @AppStorage("reader.brightness") var brightness = 1.0
     @AppStorage("reader.speechRate") var speechRate = 0.5
     @AppStorage("reader.paged") var paged = true
+    @AppStorage("reader.pageAnimation") var pageAnimation = "slide"
     @AppStorage("reader.fullScreen") var fullScreen = false
     @AppStorage("reader.autoChangeSource") var autoChangeSource = false
     var paper: Paper { Paper(rawValue: paperName) ?? .cream }
@@ -66,6 +67,7 @@ struct ReadingStyle: DynamicProperty {
         horizontalMargin = 26; verticalMargin = 24; indent = true; showChapterTitle = true
         keepAwake = false; brightness = 1; speechRate = 0.5; paged = true; fullScreen = false
         autoChangeSource = false
+        pageAnimation = "slide"
     }
 }
 
@@ -134,6 +136,12 @@ struct ReadingPreferences: View {
             }
             Section("页面") {
                 Toggle("左右翻页", isOn: Binding(get: { style.paged }, set: { style.paged = $0 }))
+                if style.paged {
+                    Picker("翻页动画", selection: Binding(get: { style.pageAnimation }, set: { style.pageAnimation = $0 })) {
+                        Text("平移").tag("slide")
+                        Text("仿真卷页").tag("curl")
+                    }
+                }
                 Toggle("全屏阅读", isOn: Binding(get: { style.fullScreen }, set: { style.fullScreen = $0 }))
                 Toggle("正文失败时自动换源", isOn: Binding(get: { style.autoChangeSource }, set: { style.autoChangeSource = $0 }))
                 Text("自动换源只接受同书名、同作者且能匹配当前章节的结果；信息不足时请手动选择。").font(.caption).foregroundStyle(.secondary)

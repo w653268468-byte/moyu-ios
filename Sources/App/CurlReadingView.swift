@@ -1,0 +1,141 @@
+import SwiftUI
+import UIKit
+
+/// UIKit owns interactive curl progress. Reading position changes only after a completed turn.
+struct CurlReadingView: UIViewControllerRepresentable {
+    let text: NSAttributedString
+    let ranges: [NSRange]
+    let page: Int
+    let paper: UIColor
+    let onPage: (Int) -> Void
+    let previousChapter: () -> Void
+    let nextChapter: () -> Void
+    let toggleChrome: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    func makeUIViewController(context: Context) -> UIPageViewController {
+        let controller = UIPageViewController(transitionStyle: .pageCurl, navigationOrientation: .horizontal,
+            options: [.spineLocation: UIPageViewController.SpineLocation.min.rawValue])
+        controller.isDoubleSided = false
+        controller.dataSource = context.coordinator; controller.delegate = context.coordinator
+        controller.view.backgroundColor = paper
+        context.coordinator.controller = controller
+        controller.setViewControllers([context.coordinator.content(page)], direction: .forward, animated: false)
+        // Preserve native edge taps and drags; the middle third opens the reader controls.
+        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tap(_:)))
+        tap.delegate = context.coordinator
+        tap.cancelsTouchesInView = false
+        controller.view.addGestureRecognizer(tap)
+        return controller
+    }
+    func updateUIViewController(_ controller: UIPageViewController, context: Context) {
+        context.coordinator.parent = self
+        guard !context.coordinator.turning,
+              (controller.viewControllers?.first as? CurlPageController)?.index != page else { return }
+        controller.setViewControllers([context.coordinator.content(page)], direction: .forward, animated: false)
+    }
+    static func dismantleUIViewController(_ controller: UIPageViewController, coordinator: Coordinator) {
+        controller.delegate = nil; controller.dataSource = nil
+        coordinator.controller = nil
+    }
+    final class Coordinator: NSObject, UIPageViewControllerDataSource, UIPageViewControllerDelegate, UIGestureRecognizerDelegate {
+        var parent: CurlReadingView
+        weak var controller: UIPageViewController?
+        var turning = false
+        init(_ parent: CurlReadingView) { self.parent = parent }
+        func content(_ index: Int) -> CurlPageController {
+            CurlPageController(index: index, text: parent.text,
+                range: parent.ranges.indices.contains(index) ? parent.ranges[index] : nil,
+                paper: parent.paper, boundary: index < 0 ? "上一章" : "下一章")
+        }
+        func pageViewController(_ pageViewController: UIPageViewController, viewControllerBefore viewController: UIViewController) -> UIViewController? {
+            guard let current = viewController as? CurlPageController, current.index >= 0 else { return nil }
+            return content(current.index - 1)
+        }
+        func pageViewController(_ pageViewController: UIPageViewController, viewControllerAfter viewController: UIViewController) -> UIViewController? {
+            guard let current = viewController as? CurlPageController, current.index < parent.ranges.count else { return nil }
+            return content(current.index + 1)
+        }
+        func pageViewController(_ pageViewController: UIPageViewController, willTransitionTo pendingViewControllers: [UIViewController]) { turning = true }
+        func pageViewController(_ pageViewController: UIPageViewController, didFinishAnimating finished: Bool,
+                                previousViewControllers: [UIViewController], transitionCompleted completed: Bool) {
+            turning = false
+            guard completed, let visible = pageViewController.viewControllers?.first as? CurlPageController else { return }
+            if parent.ranges.indices.contains(visible.index) { parent.onPage(visible.index) }
+            else {
+                // Boundary callbacks may be a no-op at the beginning/end of the book.
+                pageViewController.setViewControllers([content(parent.page)], direction: .forward, animated: false)
+                if visible.index < 0 { parent.previousChapter() } else { parent.nextChapter() }
+            }
+        }
+        func pageViewController(_ pageViewController: UIPageViewController, spineLocationFor orientation: UIInterfaceOrientation) -> UIPageViewController.SpineLocation { .min }
+        @objc func tap(_ gesture: UITapGestureRecognizer) { if gesture.state == .ended { parent.toggleChrome() } }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard let view = gestureRecognizer.view else { return false }
+            let fraction = touch.location(in: view).x / max(1, view.bounds.width)
+            return !turning && fraction > 0.34 && fraction < 0.66
+        }
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool { true }
+    }
+}
+
+final class CurlPageController: UIViewController {
+    let index: Int
+    private let text: NSAttributedString
+    private let range: NSRange?
+    private let paper: UIColor
+    private let boundary: String
+    init(index: Int, text: NSAttributedString, range: NSRange?, paper: UIColor, boundary: String) {
+        self.index = index; self.text = text; self.range = range; self.paper = paper; self.boundary = boundary
+        super.init(nibName: nil, bundle: nil)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func loadView() {
+        if let range {
+            let page = CoreTextPage()
+            page.text = text; page.range = range; page.backgroundColor = paper; page.isOpaque = true
+            page.isAccessibilityElement = true; page.accessibilityLabel = text.attributedSubstring(from: range).string
+            view = page
+        } else {
+            let label = UILabel(); label.text = boundary; label.textAlignment = .center
+            label.backgroundColor = paper; label.textColor = .secondaryLabel; view = label
+        }
+    }
+}
+
+#if DEBUG
+extension CurlReadingView {
+    @MainActor static func checkTurning() {
+        Task { @MainActor in
+            guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+            var offsets: [Int] = [], boundaries = 0
+            let parent = CurlReadingView(text: NSAttributedString(string: "第一页第二页"), ranges: [NSRange(location: 0, length: 3), NSRange(location: 3, length: 3)],
+                page: 0, paper: .white, onPage: { offsets.append($0) }, previousChapter: { boundaries += 1 }, nextChapter: { boundaries += 1 }, toggleChrome: {})
+            let coordinator = Coordinator(parent)
+            let controller = UIPageViewController(transitionStyle: .pageCurl, navigationOrientation: .horizontal,
+                options: [.spineLocation: UIPageViewController.SpineLocation.min.rawValue])
+            coordinator.controller = controller; controller.dataSource = coordinator; controller.delegate = coordinator
+            controller.setViewControllers([coordinator.content(0)], direction: .forward, animated: false)
+            let window = UIWindow(windowScene: scene); window.rootViewController = controller; window.isHidden = false
+            coordinator.pageViewController(controller, willTransitionTo: [coordinator.content(1)])
+            coordinator.pageViewController(controller, didFinishAnimating: true, previousViewControllers: [], transitionCompleted: false)
+            let cancelledPreserved = offsets.isEmpty && boundaries == 0
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            let animationCompleted = await withCheckedContinuation { continuation in
+                controller.setViewControllers([coordinator.content(1)], direction: .forward, animated: true) { continuation.resume(returning: $0) }
+            }
+            coordinator.pageViewController(controller, didFinishAnimating: true, previousViewControllers: [], transitionCompleted: true)
+            let advanced = offsets == [1]
+            controller.setViewControllers([coordinator.content(2)], direction: .forward, animated: false)
+            coordinator.pageViewController(controller, didFinishAnimating: true, previousViewControllers: [], transitionCompleted: true)
+            let boundaryReset = boundaries == 1 && (controller.viewControllers?.first as? CurlPageController)?.index == 0
+            let report: [String: Any] = ["status": cancelledPreserved && advanced && boundaryReset && animationCompleted ? "passed" : "failed",
+                "cancelledPreserved": cancelledPreserved, "advanced": advanced, "boundaryReset": boundaryReset, "animationCompleted": animationCompleted]
+            if let data = try? JSONSerialization.data(withJSONObject: report, options: .prettyPrinted) {
+                try? data.write(to: URL.documentsDirectory.appendingPathComponent("curl-check.json"), options: .atomic)
+            }
+            window.isHidden = true
+        }
+    }
+}
+#endif

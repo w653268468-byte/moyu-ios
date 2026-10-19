@@ -18,6 +18,13 @@ jobs:
       - name: Start browser login fixture
         run: |
           mkdir -p build/ui
+          xcrun simctl launch --terminate-running-process "$DEVICE_ID" org.moyu.reader --ui-curl-check
+          for ATTEMPT in $(seq 1 20); do
+            if [ -f "$CONTAINER/Documents/curl-check.json" ]; then break; fi
+            sleep 1
+          done
+          cp "$CONTAINER/Documents/curl-check.json" build/ui/curl-check.json || true
+          python3 -c 'import json,pathlib,sys; d=json.loads(pathlib.Path(sys.argv[1]).read_text()); print(d); assert d["status"] == "passed"' "$CONTAINER/Documents/curl-check.json"
           python3 -u scripts/web_login_fixture.py > build/ui/web-login-fixture.log 2>&1 &
           FIXTURE_PID=$!
           echo "$FIXTURE_PID" > build/web-login-fixture.pid
@@ -94,6 +101,9 @@ jobs:
           xcrun simctl launch --terminate-running-process "$DEVICE_ID" org.moyu.reader --ui-reading
           sleep 4
           xcrun simctl io "$DEVICE_ID" screenshot build/ui/reading-fullscreen.png
+          xcrun simctl launch --terminate-running-process "$DEVICE_ID" org.moyu.reader --ui-reading --ui-curl
+          sleep 4
+          xcrun simctl io "$DEVICE_ID" screenshot build/ui/reading-curl.png
           xcrun simctl launch --terminate-running-process "$DEVICE_ID" org.moyu.reader --ui-scroll
           sleep 4
           xcrun simctl io "$DEVICE_ID" screenshot build/ui/reading-scroll.png

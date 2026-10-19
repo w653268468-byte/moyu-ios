@@ -19,7 +19,7 @@ private struct PageDrawing: UIViewRepresentable {
     }
 }
 
-private final class CoreTextPage: UIView {
+final class CoreTextPage: UIView {
     var text = NSAttributedString(string: "")
     var range = NSRange(location: 0, length: 0)
     override func draw(_ rect: CGRect) {
@@ -51,6 +51,7 @@ struct PagedReadingView: View {
     @State private var failure: String?
     @State private var anchor: Int?
     @State private var forward = true
+    @State private var layoutID = UUID()
 
     init(text: String, title: String, resumeOffset: Int, onOffset: @escaping (Int) -> Void,
          previousChapter: @escaping () -> Void, nextChapter: @escaping () -> Void, toggleChrome: @escaping () -> Void) {
@@ -67,25 +68,30 @@ struct PagedReadingView: View {
                 if showTitle { Text(title).font(.caption).lineLimit(1).opacity(0.6).frame(height: 28, alignment: .topLeading).frame(maxWidth: .infinity, alignment: .leading) }
                 ZStack {
                     if let failure { Text(failure).font(.callout) }
-                    else if pages.indices.contains(page) {
+                    else if style.pageAnimation == "curl", !pages.isEmpty {
+                        CurlReadingView(text: attributed, ranges: pages, page: page, paper: UIColor(style.paper.background),
+                            onPage: selectPage, previousChapter: previousChapter, nextChapter: nextChapter,
+                            toggleChrome: toggleChrome).id(layoutID)
+                    } else if pages.indices.contains(page) {
                         PageDrawing(text: attributed, range: pages[page], ink: UIColor(style.paper.ink))
                             .id(page)
                             .transition(.asymmetric(insertion: .move(edge: forward ? .trailing : .leading), removal: .move(edge: forward ? .leading : .trailing)))
                     } else { ProgressView("正在分页…") }
                 }.frame(width: width, height: height).clipped()
                     .overlay {
-                        GeometryReader { _ in
+                        if style.pageAnimation != "curl" { GeometryReader { _ in
                             HStack(spacing: 0) {
                                 Color.clear.contentShape(Rectangle()).onTapGesture { move(-1) }.accessibilityLabel("上一页").accessibilityAddTraits(.isButton)
                                 Color.clear.contentShape(Rectangle()).onTapGesture { toggleChrome() }.accessibilityLabel("显示或隐藏阅读菜单").accessibilityAddTraits(.isButton)
                                 Color.clear.contentShape(Rectangle()).onTapGesture { move(1) }.accessibilityLabel("下一页").accessibilityAddTraits(.isButton)
                             }
-                        }
+                        } }
                     }
                     .gesture(DragGesture(minimumDistance: 25).onEnded { value in
+                        guard style.pageAnimation != "curl" else { return }
                         guard abs(value.translation.width) > abs(value.translation.height) else { return }
                         move(value.translation.width < 0 ? 1 : -1)
-                    })
+                    }, including: style.pageAnimation == "curl" ? .none : .all)
                 Text(pages.isEmpty ? "" : "\(page + 1) / \(pages.count)").font(.caption2).monospacedDigit().opacity(0.6).frame(height: 26, alignment: .bottom)
             }.frame(width: width).padding(.vertical, style.verticalMargin)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -111,7 +117,7 @@ struct PagedReadingView: View {
             ])
             let layout = try await Task.detached(priority: .userInitiated) { try TextPagination.ranges(value, size: size) }.value
             try Task.checkCancellation()
-            attributed = value; pages = layout
+            attributed = value; pages = layout; layoutID = UUID()
             page = layout.lastIndex(where: { $0.location <= offset }) ?? 0
             failure = nil
             anchor = layout[page].location
@@ -128,5 +134,9 @@ struct PagedReadingView: View {
         withAnimation(.easeOut(duration: 0.18)) { page = target }
         anchor = pages[target].location
         onOffset(pages[target].location)
+    }
+    private func selectPage(_ target: Int) {
+        guard pages.indices.contains(target) else { return }
+        page = target; anchor = pages[target].location; onOffset(pages[target].location)
     }
 }
