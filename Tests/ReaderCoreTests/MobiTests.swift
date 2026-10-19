@@ -17,8 +17,11 @@ final class MobiTests: XCTestCase {
             XCTAssertFalse(publication.navigation.isEmpty, name)
             let document = try LocalBookImporter.parse(converted, filename: "converted.epub")
             XCTAssertGreaterThan(document.wordCount, 0, name)
+            if name == "sample-cp1252.mobi" {
+                XCTAssertTrue(publication.resources.keys.contains { ["jpg", "jpeg", "png", "gif"].contains(($0 as NSString).pathExtension) }, "MOBI images must survive conversion")
+            }
             if name == "sample-obfuscated-fonts.mobi" {
-                XCTAssertTrue(publication.resources.keys.contains { ["jpg", "jpeg", "png", "gif"].contains(($0 as NSString).pathExtension) }, "KF8 images must survive conversion")
+                XCTAssertTrue(publication.resources.keys.contains { ["ttf", "otf"].contains(($0 as NSString).pathExtension) }, "KF8 fonts must survive conversion")
             }
         }
     }
