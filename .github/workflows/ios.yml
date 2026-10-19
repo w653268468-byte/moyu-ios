@@ -34,7 +34,10 @@ jobs:
       - name: Test parser and source rules
         env:
           GAVIN_CI_OCR: '1'
-        run: swift test --parallel -Xcc "-I$(xcrun --show-sdk-path)/usr/include/libxml2"
+          GAVIN_MOBI_FIXTURES: '1'
+        run: |
+          python3 scripts/fetch_mobi_fixtures.py
+          swift test --parallel -Xcc "-I$(xcrun --show-sdk-path)/usr/include/libxml2"
       - name: Live public-domain source check
         continue-on-error: true
         env:
@@ -60,7 +63,7 @@ jobs:
       - name: Capture simulator screens
         run: |
           FIXTURE_PID=$(cat build/web-login-fixture.pid)
-          trap 'kill "$FIXTURE_PID" 2>/dev/null || true' EXIT
+          trap 'cp -R "$HOME/Library/Logs/DiagnosticReports" build/ui/crashes 2>/dev/null || true; kill "$FIXTURE_PID" 2>/dev/null || true' EXIT
           DEVICE_ID=$(xcrun simctl list devices available --json | python3 -c 'import sys,json; d=json.load(sys.stdin); print(next(v["udid"] for k,vs in d["devices"].items() if "iOS" in k for v in vs if v["name"].startswith("iPhone")))')
           xcrun simctl boot "$DEVICE_ID"
           xcrun simctl bootstatus "$DEVICE_ID" -b

@@ -143,8 +143,8 @@ struct AppSettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("导入格式") {
-                    Text("TXT · EPUB · PDF · Markdown · HTML · RTF · DOCX")
-                    Text("EPUB 保留原文件、图片和 CSS，可切换原书样式与重排。旧版已导入的 EPUB 需重新导入原文件。DOCX 与富文本以文字重排；扫描 PDF 尝试本机 OCR；MOBI/AZW3 尚待实现。")
+                    Text("TXT · EPUB · PDF · Markdown · HTML · RTF · DOCX · MOBI · AZW3")
+                    Text("EPUB 保留原文件、图片和 CSS，可切换原书样式与重排。旧版已导入的 EPUB 需重新导入原文件。DOCX 与富文本以文字重排；扫描 PDF 尝试本机 OCR；未加密 MOBI/AZW3 转为保留图片与目录的 EPUB。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("兼容性") {
@@ -154,7 +154,8 @@ struct AppSettingsView: View {
                 }
                 Section("Gavin 2.0") {
                     Link("项目源码与安装包", destination: URL(string: "https://github.com/w653268468-byte/moyu-ios")!)
-                    Text("MIT 开源许可 · 无广告 · 书籍保存在本机")
+                    Text("主程序 MIT · libmobi LGPL-3.0-or-later · 无广告")
+                    Link("第三方许可与重新编译说明", destination: URL(string: "https://github.com/w653268468-byte/moyu-ios/blob/main/THIRD_PARTY_NOTICES.md")!)
                     Text("免费 Apple 账号签名通常需每 7 天续签。用 Sideloadly 覆盖安装同一包名；不要先删 App，以免丢失本地数据。")
                         .font(.caption).foregroundStyle(.secondary)
                 }

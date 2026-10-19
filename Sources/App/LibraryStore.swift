@@ -105,10 +105,11 @@ final class LibraryStore: ObservableObject {
                         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
                         guard size <= LocalBookImporter.maximumFileBytes else { throw SourceError.message("单本文件不能超过 100 MB。") }
                         let data = try Data(contentsOf: url, options: .mappedIfSafe)
-                        let document = try LocalBookImporter.parse(data, filename: url.lastPathComponent) { [weak self] completed, total in
+                        let converted = MobiConverter.extensions.contains(url.pathExtension.lowercased()) ? try MobiConverter.epub(data) : nil
+                        let document = try LocalBookImporter.parse(converted ?? data, filename: converted == nil ? url.lastPathComponent : "converted.epub") { [weak self] completed, total in
                             Task { @MainActor [weak self] in self?.importProgress = "\(url.lastPathComponent) · PDF / OCR \(completed)/\(total) 页" }
                         }
-                        return ImportedBook(document: document, epub: url.pathExtension.lowercased() == "epub" ? data : nil)
+                        return ImportedBook(document: document, epub: converted ?? (url.pathExtension.lowercased() == "epub" ? data : nil))
                     }
                     parseTask = parser
                     let imported = try await parser.value

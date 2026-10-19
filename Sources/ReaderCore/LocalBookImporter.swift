@@ -15,7 +15,7 @@ import PDFKit
 
 public enum LocalBookImporter {
     public static let maximumFileBytes = 100 * 1024 * 1024
-    public static let extensions = ["txt", "epub", "pdf", "md", "markdown", "html", "htm", "xhtml", "rtf", "docx"]
+    public static let extensions = ["txt", "epub", "pdf", "md", "markdown", "html", "htm", "xhtml", "rtf", "docx"] + MobiConverter.extensions
 
     public static func parse(_ data: Data, filename: String, progress: (@Sendable (Int, Int) -> Void)? = nil) throws -> BookDocument {
         guard data.count <= maximumFileBytes else { throw SourceError.message("单本文件不能超过 100 MB。") }
@@ -24,6 +24,7 @@ public enum LocalBookImporter {
         case "txt", "md", "markdown": return try TextParser.parse(TextParser.decode(data))
         case "html", "htm", "xhtml": return try TextParser.parse(htmlText(data))
         case "epub": return try epub(data)
+        case "mobi", "azw", "azw3", "prc", "pdb": return try epub(MobiConverter.epub(data))
         case "docx":
             let archive = try Archive(data: data, accessMode: .read)
             let xml = try read("word/document.xml", archive: archive)
@@ -66,7 +67,7 @@ public enum LocalBookImporter {
             #else
             throw SourceError.message("当前平台不支持 RTF。")
             #endif
-        default: throw SourceError.message("暂不支持 .\(ext) 格式。可导入 TXT、EPUB、PDF、Markdown、HTML、RTF、DOCX；MOBI/AZW3 尚未实现。")
+        default: throw SourceError.message("暂不支持 .\(ext) 格式。可导入 TXT、EPUB、PDF、Markdown、HTML、RTF、DOCX 和未加密的 MOBI/AZW3。")
         }
     }
 

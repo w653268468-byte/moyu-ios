@@ -102,3 +102,12 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## libmobi 0.12 (LGPL-3.0-or-later)
+
+Copyright (c) 2014–2022 Bartek Fabiszewski and contributors.
+Source: https://github.com/bfabiszewski/libmobi/tree/906274205c11944b628da1c553b255acb1af7c55
+
+Library sources and full license texts are in Sources/CReaderMobi/Vendor. The application uses unencrypted MOBI/KF8 parsing only; encryption support is disabled. Local modifications are documented in Vendor/UPSTREAM.md.
+
+You may modify and relink libmobi. The matching Gavin source distribution includes the full application source, selected library sources, dependency pins and Xcode build configuration. Modify Vendor files and run the documented xcodebuild command (or GitHub Actions) to rebuild; sign the resulting app with your own Apple account. Gavin imposes no additional restriction on reverse engineering for debugging modifications to this library. The main application remains MIT licensed; the bundled library retains its LGPL license.

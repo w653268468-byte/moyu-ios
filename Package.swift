@@ -12,7 +12,8 @@ let package = Package(
     ],
     targets: [
         .target(name: "CReaderXML", path: "Sources/CReaderXML", publicHeadersPath: "include", linkerSettings: [.linkedLibrary("xml2")]),
-        .target(name: "ReaderCore", dependencies: ["SwiftSoup", "ZIPFoundation", "CReaderXML", .product(name: "QuickJS", package: "QuickJS-Swift")], path: "Sources/ReaderCore"),
+        .target(name: "CReaderMobi", path: "Sources/CReaderMobi", exclude: ["Vendor/COPYING", "Vendor/UPSTREAM.md", "Vendor/GPL-3.0.txt"], publicHeadersPath: "include", linkerSettings: [.linkedLibrary("xml2"), .linkedLibrary("z")]),
+        .target(name: "ReaderCore", dependencies: ["SwiftSoup", "ZIPFoundation", "CReaderXML", "CReaderMobi", .product(name: "QuickJS", package: "QuickJS-Swift")], path: "Sources/ReaderCore"),
         .testTarget(name: "ReaderCoreTests", dependencies: ["ReaderCore"], path: "Tests/ReaderCoreTests")
     ]
 )

@@ -1,0 +1,4 @@
+module CReaderMobi {
+    header "GavinMobi.h"
+    export *
+}
