@@ -3,6 +3,23 @@ import XCTest
 @testable import ReaderCore
 
 final class RuleCompositionTests: XCTestCase {
+    func testURLPreludeCanClearCookiesBeforeLiteralPOSTAndPreserveSearchVariables() throws {
+        let script = try SourceScript()
+        let template = "<js>java.put('prelude','ran');cookie.removeCookie('https://fixture.example');</js>/search/,{\"method\":\"POST\",\"body\":\"searchkey={{key}}&page={{page}}\"}"
+        let request = try SourceRequest.make(template, query: "我的故事", base: URL(string: "https://fixture.example")!, script: script, page: 3)
+        XCTAssertEqual(request.url?.absoluteString, "https://fixture.example/search/")
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(String(data: request.httpBody!, encoding: .utf8), "searchkey=%E6%88%91%E7%9A%84%E6%95%85%E4%BA%8B&page=3")
+        XCTAssertEqual(script.variable("prelude"), "ran")
+        XCTAssertThrowsError(try SourceRequest.make("<js>'value'</js>$.title", query: "", base: request.url!, script: script))
+    }
+    func testCSSAttributeRegexContainingAbsoluteURLIsNotRejectedAsXPath() throws {
+        let rule = #"@css:a[href~=^/book/[0-9]+\.html$]:matchesOwn(.+),a[href~=^https?://(www\.)?biquge\.tw/book/[0-9]+\.html$]:matchesOwn(.+)"#
+        let html = "<a href='/book/12.html'>相对</a><a href='https://www.biquge.tw/book/34.html'>绝对</a><a href='https://other.example/book/56.html'>其他</a><a href='/book/78.html'></a>"
+        let doc = try RuleDocument.parse(Data(html.utf8), base: URL(string: "https://www.biquge.tw")!)
+        XCTAssertTrue(HTMLRule.isSupported(rule))
+        XCTAssertEqual(try doc.elements(rule).map { try $0.value("text") }, ["相对", "绝对"])
+    }
     func testLegacyScriptThenLiteralURLUsesScriptResultAndOriginalJSONSelectors() throws {
         let engine = try SourceScript()
         let doc = try RuleDocument.parse(Data(#"{"Id":1234,"name":"正常书名"}"#.utf8), base: URL(string: "https://fixture.example")!, script: engine)
