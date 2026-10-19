@@ -26,8 +26,13 @@ struct MoyuApp: App {
                 .environmentObject(online)
                 .onAppear {
                     #if DEBUG
-                    if ProcessInfo.processInfo.arguments.contains("--ui-scroll-check") { ScrollReadingView.checkPositionRecovery() }
-                    if ProcessInfo.processInfo.arguments.contains("--ui-curl-check") { CurlReadingView.checkTurning() }
+                    try? Data("onAppear".utf8).write(to: URL.documentsDirectory.appendingPathComponent("ui-startup.txt"), options: .atomic)
+                    if ProcessInfo.processInfo.arguments.contains("--ui-scroll-check") {
+                        Task { @MainActor in try? await Task.sleep(for: .milliseconds(700)); ScrollReadingView.checkPositionRecovery() }
+                    }
+                    if ProcessInfo.processInfo.arguments.contains("--ui-curl-check") {
+                        Task { @MainActor in try? await Task.sleep(for: .milliseconds(700)); CurlReadingView.checkTurning() }
+                    }
                     if ProcessInfo.processInfo.arguments.contains("--ui-cookie-check") {
                         Task { await BrowserSessions.checkCookieSharing(client: online.client) }
                     }

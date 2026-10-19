@@ -48,7 +48,7 @@ public actor SourceClient {
             request.setValue(source.bookSourceUrl, forHTTPHeaderField: "Referer")
             if let header = source.header, !header.isEmpty {
                 let expanded = try ScriptTemplate.expand(header, using: scriptEngine(for: source), query: "", base: url)
-                let headers = try JSONDecoder().decode([String: String].self, from: Data(expanded.utf8))
+                let headers = try SourceHeaders.parse(expanded)
                 for (key, value) in headers where !["cookie", "authorization", "host"].contains(key.lowercased()) {
                     request.setValue(value, forHTTPHeaderField: key)
                 }
@@ -154,13 +154,16 @@ public actor SourceClient {
         var seen: Set<String> = []
         var results: [OnlineNovel] = []
         for element in try doc.elements(list).prefix(100) {
+            for metadata in [rule.wordCount, rule.kind, rule.coverUrl, rule.lastChapter].compactMap({ $0 }) where metadata.contains("@put:") { _ = try element.value(metadata) }
             let title = try element.value(name)
             let link = try element.value(bookURL)
             guard !title.isEmpty, !link.isEmpty else { continue }
             let resolved = try Self.resolve(link, base: url)
             guard seen.insert(resolved.absoluteString).inserted else { continue }
-            results.append(OnlineNovel(title: title, author: try element.optionalValue(rule.author),
-                                       intro: try element.optionalValue(rule.intro), url: resolved, sourceID: source.id))
+            var novel = OnlineNovel(title: title, author: try element.optionalValue(rule.author),
+                                    intro: try element.optionalValue(rule.intro), url: resolved, sourceID: source.id)
+            novel.ruleVariables = try scriptEngine(for: source)?.snapshotVariables()
+            results.append(novel)
         }
         return results
     }
@@ -196,6 +199,7 @@ public actor SourceClient {
     public func catalog(_ novel: OnlineNovel, source: BookSource) async throws -> OnlineNovel {
         if let reason = source.incompatibility { throw SourceError.message(reason) }
         var result = novel
+        if let variables = novel.ruleVariables { try scriptEngine(for: source)?.restoreVariables(variables) }
         let (detail, detailURL) = try await document(novel.url, source: source)
         if let initialization = source.ruleBookInfo?.initialization, !initialization.isEmpty { _ = try detail.value(initialization) }
         if let info = source.ruleBookInfo {
@@ -223,7 +227,7 @@ public actor SourceClient {
                 let raw = try element.value(rule.chapterUrl)
                 guard !title.isEmpty, !raw.isEmpty else { continue }
                 let link = try Self.resolve(raw, base: pageURL)
-                if seenChapters.insert(link.absoluteString).inserted { chapters.append(OnlineChapter(title: title, url: link)) }
+                if seenChapters.insert(link.absoluteString).inserted { chapters.append(OnlineChapter(title: title, url: link, ruleVariables: try scriptEngine(for: source)?.snapshotVariables())) }
                 guard chapters.count <= 20000 else { throw SourceError.message("目录超过 20000 章，暂不支持。") }
             }
             let next = try doc.value(rule.nextTocUrl)
@@ -234,10 +238,12 @@ public actor SourceClient {
         guard !chapters.isEmpty else { throw SourceError.message("没有解析到章节。请检查目录规则、网站结构或访问限制。") }
         result.chapters = chapters
         result.chapterIndex = min(max(0, novel.chapterIndex), chapters.count - 1)
+        result.ruleVariables = try scriptEngine(for: source)?.snapshotVariables()
         return result
     }
 
     public func chapter(_ chapter: OnlineChapter, source: BookSource) async throws -> String {
+        if let variables = chapter.ruleVariables { try scriptEngine(for: source)?.restoreVariables(variables) }
         guard let rule = source.ruleContent, let content = rule.content else { throw SourceError.message("缺少正文规则。") }
         var nextURL = chapter.url
         var visited: Set<String> = []
@@ -247,7 +253,8 @@ public actor SourceClient {
             try Task.checkCancellation()
             guard visited.count <= 20 else { throw SourceError.message("正文分页超过 20 页，已停止请求。") }
             let (doc, pageURL) = try await document(nextURL, source: source)
-            let text = try doc.value(content, body: true)
+            var text = try doc.value(content, body: true)
+            if let replacement = rule.replaceRegex, !replacement.isEmpty { text = try RuleReplacement.apply(text, suffix: replacement) }
             guard !text.isEmpty else { throw SourceError.message("正文为空，请检查书源规则或网站是否需要验证。") }
             total += text.utf8.count
             guard total <= 4 * 1024 * 1024 else { throw SourceError.message("单章正文超过 4 MB。") }

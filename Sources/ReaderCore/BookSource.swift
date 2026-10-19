@@ -14,16 +14,22 @@ public struct SourceRule: Codable, Equatable, Sendable {
     public var content: String?
     public var nextTocUrl: String?
     public var nextContentUrl: String?
+    public var coverUrl: String?
+    public var wordCount: String?
+    public var kind: String?
+    public var lastChapter: String?
+    public var replaceRegex: String?
 
     enum CodingKeys: String, CodingKey {
         case initialization = "init"
         case bookList, name, author, bookUrl, intro, tocUrl, chapterList, chapterName, chapterUrl
         case content, nextTocUrl, nextContentUrl
+        case coverUrl, wordCount, kind, lastChapter, replaceRegex
     }
 
     var values: [String] {
         [initialization, bookList, name, author, bookUrl, intro, tocUrl, chapterList, chapterName,
-         chapterUrl, content, nextTocUrl, nextContentUrl].compactMap { $0 }
+         chapterUrl, content, nextTocUrl, nextContentUrl, coverUrl, wordCount, kind, lastChapter, replaceRegex].compactMap { $0 }
     }
 }
 
@@ -52,7 +58,7 @@ public struct BookSource: Codable, Identifiable, Equatable, Sendable {
                      ruleBookInfo?.initialization, ruleBookInfo?.tocUrl,
                      ruleToc?.chapterList, ruleToc?.chapterName, ruleToc?.chapterUrl, ruleToc?.nextTocUrl,
                      ruleContent?.content, ruleContent?.nextContentUrl].compactMap { $0 }.filter { !$0.isEmpty }
-        if let unsupported = rules.first(where: { !HTMLRule.isSupported($0) && !JSONRule.isSupported($0) && !ScriptRule.isSupported($0) }) {
+        if let unsupported = rules.first(where: { !HTMLRule.isSupported($0) && !JSONRule.isSupported($0) && !ScriptRule.isSupported($0) && !RuleComposition.isSupported($0) }) {
             return "含暂不支持的规则：\(String(unsupported.prefix(65)))"
         }
         if let searchUrl, !ScriptTemplate.needsScript(searchUrl), let base = URL(string: bookSourceUrl) {
@@ -60,9 +66,7 @@ public struct BookSource: Codable, Identifiable, Equatable, Sendable {
             catch { return error.localizedDescription }
         }
         if let header, !header.isEmpty, !ScriptTemplate.needsScript(header) {
-            guard let data = header.data(using: .utf8), (try? JSONDecoder().decode([String: String].self, from: data)) != nil else {
-                return "header 必须是静态 JSON 字符串，暂不支持脚本请求头"
-            }
+            do { _ = try SourceHeaders.parse(header) } catch { return error.localizedDescription }
         }
         guard let toc = ruleToc, !(toc.chapterList ?? "").isEmpty,
               !(toc.chapterName ?? "").isEmpty, !(toc.chapterUrl ?? "").isEmpty,
@@ -124,6 +128,7 @@ public struct OnlineChapter: Codable, Identifiable, Equatable, Sendable {
     public var id: String { url.absoluteString }
     public var title: String
     public var url: URL
+    public var ruleVariables: [String: String]?
 }
 
 public struct OnlineNovel: Codable, Identifiable, Equatable, Sendable {
@@ -139,6 +144,7 @@ public struct OnlineNovel: Codable, Identifiable, Equatable, Sendable {
     public var lastReadAt: Date?
     public var textOffset: Int?
     public var scrollFraction: Double?
+    public var ruleVariables: [String: String]?
 
     public init(title: String, author: String = "", intro: String = "", url: URL, sourceID: String) {
         self.title = title

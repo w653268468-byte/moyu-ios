@@ -10,7 +10,7 @@ private final class FixtureProtocol: URLProtocol {
             client?.urlProtocol(self, didFailWithError: URLError(.timedOut)); return
         }
         let routes: [String: String] = [
-            "/api/search": #"{"data":{"books":[{"name":"三国","url":"/api/book"}]}}"#,
+            "/api/search": #"{"data":{"books":[{"name":"三国","url":"/api/book","bid":42}]}}"#,
             "/api/book": #"{"name":"三国","toc":"/api/toc"}"#,
             "/api/toc": #"{"chapters":[{"title":"第一回","url":"/api/chapter"}]}"#,
             "/api/chapter": #"{"text":"滚滚长江东逝水。"}"#,
@@ -36,6 +36,26 @@ private final class FixtureProtocol: URLProtocol {
 }
 
 final class SourceClientTests: XCTestCase {
+    func testTemplateBookURLAndVariablesSurviveReaderRestart() async throws {
+        var source = try source()
+        source.searchUrl = "/api/search"
+        source.ruleSearch?.bookList = "$.data.books[*]"
+        source.ruleSearch?.name = "$.name"
+        source.ruleSearch?.bookUrl = "{{$.url}}?bid=@get:{bid}"
+        source.ruleSearch?.wordCount = "@put:{bid:$.bid}"
+        source.ruleBookInfo?.name = "$.name"
+        source.ruleBookInfo?.tocUrl = "https://fixture.example/api/toc?bid=@get:{bid}"
+        source.ruleToc?.chapterList = "$.chapters[*]"; source.ruleToc?.chapterName = "title"; source.ruleToc?.chapterUrl = "url"; source.ruleToc?.nextTocUrl = nil
+        source.ruleContent?.content = "$.text"; source.ruleContent?.nextContentUrl = nil
+        let books = try await makeClient().search("三国", source: source)
+        XCTAssertEqual(books.first?.ruleVariables?["bid"], "42")
+        XCTAssertEqual(books.first?.url.query, "bid=42")
+        let restored = try JSONDecoder().decode(OnlineNovel.self, from: JSONEncoder().encode(books[0]))
+        let catalog = try await makeClient().catalog(restored, source: source)
+        XCTAssertEqual(catalog.chapters.first?.ruleVariables?["bid"], "42")
+        let text = try await makeClient().chapter(catalog.chapters[0], source: source)
+        XCTAssertEqual(text, "滚滚长江东逝水。")
+    }
     func testAutomaticSourceSwitchReadsBodyBeforeMigratingIdentity() async throws {
         let client = makeClient()
         let working = try source()

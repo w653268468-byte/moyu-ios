@@ -3,7 +3,7 @@ import Foundation
 enum ScriptTemplate {
     static func needsScript(_ template: String) -> Bool {
         let lower = template.lowercased()
-        return lower.contains("@js:") || lower.contains("<js>") || (template.replacingOccurrences(of: "{{key}}", with: "").replacingOccurrences(of: "{{page}}", with: "").contains("{{"))
+        return lower.contains("@js:") || lower.contains("<js>") || lower.contains("@put:") || lower.contains("@get:") || (template.replacingOccurrences(of: "{{key}}", with: "").replacingOccurrences(of: "{{page}}", with: "").contains("{{"))
     }
     static func expand(_ template: String, using script: SourceScript?, query: String, base: URL, page: Int = 1) throws -> String {
         guard needsScript(template) else { return template }

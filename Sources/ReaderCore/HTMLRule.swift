@@ -19,6 +19,10 @@ public enum HTMLRule {
             var selector = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if selector.isEmpty { continue }
             var index: Int?
+            var excluded: Int?
+            if let range = selector.range(of: #"!(-?\d+)$"#, options: .regularExpression) {
+                excluded = Int(selector[range].dropFirst()); selector = String(selector[..<range.lowerBound])
+            }
             if let range = selector.range(of: #"\.(-?\d+)$"#, options: .regularExpression) {
                 index = Int(selector[range].dropFirst())
                 selector = String(selector[..<range.lowerBound])
@@ -35,7 +39,10 @@ public enum HTMLRule {
                 } else { selected += try parent.select(translate(selector)).array() }
             }
             // Legacy .0 / .-1 index the matched collection, not the node's sibling position.
-            if let index {
+            if let excluded {
+                let resolved = excluded < 0 ? selected.count + excluded : excluded
+                current = selected.enumerated().filter { $0.offset != resolved }.map(\.element)
+            } else if let index {
                 let resolved = index < 0 ? selected.count + index : index
                 current = selected.indices.contains(resolved) ? [selected[resolved]] : []
             } else { current = selected }
@@ -75,9 +82,7 @@ public enum HTMLRule {
                     : try bodyNodes.map { try bodyText($0) }.joined(separator: "\n\n")
             } else { result = values.joined(separator: body ? "\n\n" : "\n") }
             if replacements.count >= 2, !replacements[1].isEmpty {
-                let regex = try NSRegularExpression(pattern: replacements[1])
-                result = regex.stringByReplacingMatches(in: result, range: NSRange(result.startIndex..., in: result),
-                                                        withTemplate: replacements.count >= 3 ? replacements[2] : "")
+                result = try RuleReplacement.apply(result, suffix: "##" + replacements.dropFirst().joined(separator: "##"))
             }
             result = result.trimmingCharacters(in: .whitespacesAndNewlines)
             if !result.isEmpty { return result }

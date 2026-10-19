@@ -47,6 +47,22 @@ public final class SourceScript: @unchecked Sendable {
     }
 
     public func cancel() { limit.stop() }
+    public func variable(_ name: String) -> String { gate.lock(); defer { gate.unlock() }; return variables[name] ?? "" }
+    public func snapshotVariables() -> [String: String] { gate.lock(); defer { gate.unlock() }; return variables }
+    public func restoreVariables(_ values: [String: String]) throws {
+        gate.lock(); defer { gate.unlock() }
+        guard values.count <= 1000, values.reduce(0, { $0 + $1.key.utf8.count + $1.value.utf8.count }) <= 1024 * 1024 else { throw SourceError.message("书源变量超过限制。") }
+        variables = values
+    }
+    func putVariable(_ name: String, value: String) throws {
+        gate.lock(); defer { gate.unlock() }; try storeVariable(name, value: value)
+    }
+    private func storeVariable(_ name: String, value: String) throws {
+        let total = variables.reduce(0, { $0 + $1.key.utf8.count + $1.value.utf8.count }) - (variables[name]?.utf8.count ?? 0)
+        guard name.utf8.count <= 2048, value.utf8.count <= 256 * 1024,
+              (variables[name] != nil || variables.count < 1000), total + value.utf8.count <= 1024 * 1024 else { throw SourceError.message("书源变量超过限制。") }
+        variables[name] = value
+    }
 
     public func setJSONGlobal(_ name: String, json: String) throws {
         gate.lock(); defer { gate.unlock() }
@@ -106,7 +122,7 @@ public final class SourceScript: @unchecked Sendable {
         case "text": result = try SwiftSoup.parse(string(0), base.absoluteString).text()
         case "html": result = try SwiftSoup.parse(string(0), base.absoluteString).body()?.html() ?? ""
         case "attr": result = try SwiftSoup.parse(string(0), base.absoluteString).body()?.children().first()?.attr(string(1)) ?? ""
-        case "put": variables[string(0)] = string(1); result = string(1)
+        case "put": try storeVariable(string(0), value: string(1)); result = string(1)
         case "get" where !(string(0).hasPrefix("https://") || string(0).hasPrefix("http://")): result = variables[string(0)] ?? ""
         case "ajax", "get", "post":
             var request = try SourceRequest.make(string(0), query: "", base: base)
