@@ -79,7 +79,7 @@ jobs:
           mkdir -p build/ui
           codesign --verify --deep --strict build/simulator/Build/Products/Debug-iphonesimulator/Gavin.app
           codesign -d --entitlements - --xml build/simulator/Build/Products/Debug-iphonesimulator/Gavin.app > build/ui/simulator-entitlements.plist 2> build/ui/codesign.log
-          python3 -c 'import plistlib,pathlib; d=plistlib.loads(pathlib.Path("build/ui/simulator-entitlements.plist").read_bytes()); assert d["application-identifier"] == "GAVINCI001.org.moyu.reader"; assert d["keychain-access-groups"] == ["GAVINCI001.org.moyu.reader"]'
+          python3 scripts/verify_simulator_entitlements.py build/simulator/Build/Products/Debug-iphonesimulator/Gavin.app --output build/ui/simulator-entitlements.plist
       - name: Build unsigned iPhone app
         run: >-
           xcodebuild -project Moyu.xcodeproj -scheme Moyu -configuration Release
