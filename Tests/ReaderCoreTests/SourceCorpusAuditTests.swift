@@ -19,9 +19,14 @@ private actor SourceAuditProgress {
     }
     func usedWebView() { value.usedWebView = true }
     func chapter(_ index: Int, title: String, characters: Int? = nil) { value.chapterIndex = index; value.chapterTitle = title; value.characters = characters }
-    func result(_ text: String? = nil, error: String? = nil) -> SourceAuditResult {
+    func passed(_ report: SourceValidationResult) -> SourceAuditResult {
+        var result = value; result.status = "passed"; result.stage = "content"
+        result.keyword = report.keyword; result.title = report.title; result.chapters = report.chapters
+        result.chapterIndex = report.chapterIndex; result.chapterTitle = report.chapterTitle; result.characters = report.characters
+        return result
+    }
+    func result(error: String? = nil) -> SourceAuditResult {
         var result = value
-        if let text { result.status = "passed"; result.stage = "content"; result.characters = text.count }
         if let error {
             result.error = error
             let lower = error.lowercased()
@@ -86,47 +91,18 @@ final class SourceCorpusAuditTests: XCTestCase {
             return result
         }
         do {
-            return try await withThrowingTaskGroup(of: SourceAuditResult.self) { group in
-                group.addTask {
-                    #if os(macOS)
-                    let client = SourceClient(cookieProvider: { await CorpusWebRenderer.cookies($0) }, webRenderer: { request, cookies in
-                        await progress.usedWebView(); return try await CorpusWebRenderer.render(request, cookies: cookies)
-                    })
-                    #else
-                    let client = SourceClient()
-                    #endif
-                    var books: [OnlineNovel] = []
-                    let original = item.source.originalJSON.flatMap { $0.data(using: .utf8) }.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-                    let suggested = (original?["ruleSearch"] as? [String: Any])?["checkKeyWord"] as? String
-                    var keywords: [String] = []
-                    for value in [suggested, "三国演义", "凡人修仙传"].compactMap({ $0 }) where !value.isEmpty && value.count <= 32 && !keywords.contains(value) { keywords.append(value) }
-                    for keyword in keywords {
-                        await progress.update("search", keyword: keyword)
-                        books = try await client.search(keyword, source: item.source)
-                        if !books.isEmpty { break }
-                        try await Task.sleep(for: .milliseconds(500))
-                    }
-                    let keyword = await progress.value.keyword
-                    let exact = books.first { $0.title.trimmingCharacters(in: .whitespacesAndNewlines) == keyword }
-                    guard let book = exact ?? books.first else { throw SourceError.message("测试关键词均没有解析到书籍") }
-                    await progress.update("catalog", title: book.title)
-                    try await Task.sleep(for: .milliseconds(500))
-                    let novel = try await client.catalog(book, source: item.source)
-                    await progress.update("content", chapters: novel.chapters.count)
-                    guard !novel.chapters.isEmpty else { throw SourceError.message("目录为空") }
-                    for (index, chapter) in novel.chapters.prefix(3).enumerated() {
-                        await progress.chapter(index, title: chapter.title)
-                        try await Task.sleep(for: .milliseconds(500))
-                        let text = try await client.chapter(chapter, source: item.source)
-                        await progress.chapter(index, title: chapter.title, characters: text.count)
-                        if text.count >= 200 { return await progress.result(text) }
-                    }
-                    throw SourceError.message("检查前三章正文不足 200 字，暂不认定链路可用")
-                }
-                group.addTask { try await Task.sleep(for: .seconds(45)); throw SourceError.message("单源完整链路检查超过 45 秒") }
-                defer { group.cancelAll() }
-                return try await group.next()!
+            #if os(macOS)
+            let client = SourceClient(cookieProvider: { await CorpusWebRenderer.cookies($0) }, webRenderer: { request, cookies in
+                await progress.usedWebView(); return try await CorpusWebRenderer.render(request, cookies: cookies)
+            })
+            #else
+            let client = SourceClient()
+            #endif
+            let report = try await SourceValidator.validate(item.source, client: client) { update in
+                await progress.update(update.stage, keyword: update.keyword, title: update.title, chapters: update.chapters)
+                if let index = update.chapterIndex, let title = update.chapterTitle { await progress.chapter(index, title: title, characters: update.characters) }
             }
+            return await progress.passed(report)
         } catch { return await progress.result(error: error.localizedDescription) }
     }
 }

@@ -62,7 +62,7 @@ private final class FixtureProtocol: URLProtocol {
             "/toc/2": "<div id='list'><a href='/chapter/1'>第一章</a><a href='/chapter/2'>第二章</a></div>",
             "/chapter/1": "<div id='content'>风从海边来。<br>她打开了信。</div><a class='next' href='/chapter/1_2'>下一页</a>",
             "/chapter/1_2": "<div id='content'><p>故事还没有结束。</p></div><a class='next' href='/chapter/2'>下一章</a>",
-            "/chapter/2": "<div id='content'>第二天，天晴了。</div>"
+            "/chapter/2": "<div id='content'>第二天，天晴了。" + String(repeating: "真实正文测试。", count: 40) + "</div>"
         ]
         guard let url = request.url else { return }
         var body = url.path == "/js-search" && request.value(forHTTPHeaderField: "X-Reader") == "Gavin" ? routes["/search"] : routes[url.path]
@@ -97,6 +97,17 @@ private actor SearchOutcomeRecorder {
 }
 
 final class SourceClientTests: XCTestCase {
+    func testSharedSourceValidatorReadsPastShortPrefaceBeforePassing() async throws {
+        let report = try await SourceValidator.validate(source(), client: makeClient())
+        XCTAssertEqual(report.title, "山海来信"); XCTAssertEqual(report.chapters, 2)
+        XCTAssertEqual(report.chapterIndex, 1)
+        XCTAssertGreaterThanOrEqual(report.characters, SourceValidator.minimumCharacters)
+    }
+    func testSharedSourceValidatorRejectsShortPlaceholderBodies() async throws {
+        var source = try source(); source.ruleContent?.content = "@js:'网站提示文字'"
+        do { _ = try await SourceValidator.validate(source, client: makeClient()); XCTFail("Short placeholder passed") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("正文不足")) }
+    }
     func testOkHttpBuilderSendsBinaryGzipBodyThroughNativePipeline() throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [FixtureProtocol.self]
         let script = try SourceScript(configuration: config)

@@ -103,7 +103,7 @@ struct SourceManagerView: View {
                     }
                 }
                 Section {
-                    Text("校验会尝试搜索“三国”，并读取第一本结果的目录和首章；无结果会单独提示。校验失败不一定代表书源永久失效。删除书源保留书架记录和已缓存章节。")
+                    Text("校验优先使用作者的测试词，再尝试通用书名，优先同名书；读取目录及前三章之一的至少 200 字正文。每个书源最多等待 45 秒。校验失败不一定代表永久失效。删除书源保留书架记录和已缓存章节。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }.navigationTitle("书源管理")
@@ -162,12 +162,8 @@ struct SourceManagerView: View {
                 checkProgress = "\(number + 1)/\(sources.count) · \(source.bookSourceName)"
                 do {
                     if let reason = source.incompatibility { throw SourceError.message("规则不兼容：\(reason)") }
-                    let books = try await online.client.search("三国", source: source)
-                    guard let first = books.first else { checks[source.id] = "搜索请求完成，但“三国”无结果；未验证目录和正文。"; failed.remove(source.id); continue }
-                    let novel = try await online.client.catalog(first, source: source)
-                    guard let firstChapter = novel.chapters.first else { throw SourceError.message("目录为空") }
-                    let text = try await online.client.chapter(firstChapter, source: source)
-                    checks[source.id] = "搜索、目录、首章通过 · \(novel.chapters.count) 章 · 首章 \(text.count) 字"
+                    let report = try await SourceValidator.validate(source, client: online.client)
+                    checks[source.id] = "搜索、目录、正文通过 · \(report.chapters) 章 · \(report.chapterTitle) \(report.characters) 字"
                     failed.remove(source.id)
                 } catch {
                     if Task.isCancelled { break }
