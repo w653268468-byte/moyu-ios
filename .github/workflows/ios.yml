@@ -129,8 +129,8 @@ jobs:
             sleep 1
           done
           cp "$CONTAINER/Documents/epub-check.json" build/ui/epub-check.json || true
-          python3 -c 'import json,pathlib,sys; d=json.loads(pathlib.Path(sys.argv[1]).read_text()); print(d); assert d["status"] == "passed"' "$CONTAINER/Documents/epub-check.json"
           xcrun simctl io "$DEVICE_ID" screenshot build/ui/reading-epub-original.png
+          python3 -c 'import json,pathlib,sys; d=json.loads(pathlib.Path(sys.argv[1]).read_text()); print(d); assert d["status"] == "passed"' "$CONTAINER/Documents/epub-check.json"
           xcrun simctl terminate "$DEVICE_ID" org.moyu.reader
       - name: Upload simulator screens
         if: always()

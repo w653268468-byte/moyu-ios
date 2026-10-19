@@ -206,7 +206,11 @@ private struct EPUBWebPage: UIViewRepresentable {
                         switch result {
                         case .success(let value):
                             if let checks = value as? [String: Bool] { report = checks; report["status"] = checks.values.allSatisfy { $0 } ? "passed" : "failed" }
-                        case .failure(let error): report["error"] = error.localizedDescription
+                        case .failure(let error):
+                            let detail = error as NSError
+                            report["error"] = error.localizedDescription
+                            report["scriptError"] = detail.userInfo["WKJavaScriptExceptionMessage"] as? String ?? ""
+                            report["line"] = detail.userInfo["WKJavaScriptExceptionLineNumber"] as? Int ?? 0
                         }
                         if let data = try? JSONSerialization.data(withJSONObject: report, options: .prettyPrinted) { try? data.write(to: URL.documentsDirectory.appendingPathComponent("epub-check.json"), options: .atomic) }
                     }
