@@ -84,6 +84,7 @@ struct PagedReadingView: View {
                         move(value.translation.width < 0 ? 1 : -1)
                     }, including: style.pageAnimation == "curl" ? .none : .all)
                 Text(pages.isEmpty ? "" : "\(page + 1) / \(pages.count)").font(.caption2).monospacedDigit().opacity(0.6).frame(height: 26, alignment: .bottom)
+                    .accessibilityIdentifier("reader.pageIndicator")
             }.frame(width: width).padding(.vertical, style.verticalMargin)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .contentShape(Rectangle())

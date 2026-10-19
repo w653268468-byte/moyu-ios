@@ -147,6 +147,11 @@ jobs:
           xcrun simctl io "$DEVICE_ID" screenshot build/ui/reading-epub-original.png
           python3 -c 'import json,pathlib,sys; d=json.loads(pathlib.Path(sys.argv[1]).read_text()); print(d); assert d["status"] == "passed"' "$CONTAINER/Documents/epub-check.json"
           xcrun simctl terminate "$DEVICE_ID" org.moyu.reader
+          xcodebuild test -project Moyu.xcodeproj -scheme Moyu -configuration Debug \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build/simulator \
+            -resultBundlePath build/ui/ReaderInteraction.xcresult -parallel-testing-enabled NO \
+            ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO \
+            GAVIN_SIMULATOR_SWIFT="$RUNTIME_SWIFT"
       - name: Upload simulator screens
         if: always()
         uses: actions/upload-artifact@v4

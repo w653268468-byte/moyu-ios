@@ -19,6 +19,7 @@ def quote(value):
 def generate_project():
     sources = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Sources").rglob("*") if p.is_file() and p.suffix in [".swift", ".c"])
     resources = ["Resources/Assets.xcassets", "Resources/PrivacyInfo.xcprivacy"]
+    ui_sources = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Tests/AppUITests").glob("*.swift"))
     objects = []
 
     def obj(name, body):
@@ -27,16 +28,21 @@ def generate_project():
     def ids(names):
         return "(" + ", ".join(uid(n) for n in names) + ",)"
 
-    for path in sources + resources:
+    for path in sources + resources + ui_sources:
         filetype = "sourcecode.swift" if path.endswith(".swift") else "sourcecode.c.c" if path.endswith(".c") else ("folder.assetcatalog" if path.endswith(".xcassets") else "text.xml")
         obj("file:" + path, f"isa = PBXFileReference; lastKnownFileType = {filetype}; path = {quote(path)}; sourceTree = SOURCE_ROOT;")
         obj("build:" + path, f"isa = PBXBuildFile; fileRef = {uid('file:' + path)};")
 
     obj("product", 'isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Gavin.app; sourceTree = BUILT_PRODUCTS_DIR;')
-    obj("products", f'isa = PBXGroup; children = {ids(["product"])}; name = Products; sourceTree = "<group>";')
-    obj("main", f'isa = PBXGroup; children = {ids(["file:" + p for p in sources + resources] + ["products"])}; sourceTree = "<group>";')
+    obj("ui-product", 'isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GavinUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR;')
+    obj("products", f'isa = PBXGroup; children = {ids(["product", "ui-product"])}; name = Products; sourceTree = "<group>";')
+    obj("main", f'isa = PBXGroup; children = {ids(["file:" + p for p in sources + resources + ui_sources] + ["products"])}; sourceTree = "<group>";')
     obj("sources", f'isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = {ids(["build:" + p for p in sources])}; runOnlyForDeploymentPostprocessing = 0;')
     obj("resources", f'isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = {ids(["build:" + p for p in resources])}; runOnlyForDeploymentPostprocessing = 0;')
+    obj("ui-sources", f'isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = {ids(["build:" + p for p in ui_sources])}; runOnlyForDeploymentPostprocessing = 0;')
+    obj("ui-frameworks", 'isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;')
+    obj("ui-proxy", f'isa = PBXContainerItemProxy; containerPortal = {uid("project")}; proxyType = 1; remoteGlobalIDString = {uid("target")}; remoteInfo = Moyu;')
+    obj("ui-dependency", f'isa = PBXTargetDependency; target = {uid("target")}; targetProxy = {uid("ui-proxy")};')
     obj("soup-build", f'isa = PBXBuildFile; productRef = {uid("soup-product")};')
     obj("frameworks", f'isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = {ids(["soup-build", "zip-build", "js-build"])}; runOnlyForDeploymentPostprocessing = 0;')
     obj("soup-package", 'isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/scinfu/SwiftSoup.git"; requirement = { kind = exactVersion; version = 2.7.7; };')
@@ -63,7 +69,11 @@ def generate_project():
         "SWIFT_EMIT_LOC_STRINGS": "YES", "ENABLE_PREVIEWS": "YES",
     }
     for config in ["Debug", "Release"]:
-        for scope, settings in [("project", common), ("app", app)]:
+        for scope, settings in [("project", common), ("app", app), ("ui", {
+            "PRODUCT_NAME": "GavinUITests", "PRODUCT_BUNDLE_IDENTIFIER": "org.moyu.reader.uitests",
+            "GENERATE_INFOPLIST_FILE": "YES", "CODE_SIGN_STYLE": "Automatic", "TEST_TARGET_NAME": "Moyu",
+            "TARGETED_DEVICE_FAMILY": "1,2", "SWIFT_VERSION": "5.0", "IPHONEOS_DEPLOYMENT_TARGET": "17.0"
+        })]:
             settings = dict(settings)
             if scope == "project":
                 settings["SWIFT_OPTIMIZATION_LEVEL"] = "-Onone" if config == "Debug" else "-O"
@@ -71,23 +81,28 @@ def generate_project():
                 if config == "Debug": settings["SWIFT_ACTIVE_COMPILATION_CONDITIONS"] = "DEBUG"
             body = " ".join(f"{k} = {quote(v)};" for k, v in settings.items())
             obj(f"{scope}-{config}", f'isa = XCBuildConfiguration; buildSettings = {{ {body} }}; name = {config};')
-    for scope in ["project", "app"]:
+    for scope in ["project", "app", "ui"]:
         obj(scope + "-config", f'isa = XCConfigurationList; buildConfigurations = {ids([scope + "-Debug", scope + "-Release"])}; defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;')
 
     obj("target", f'isa = PBXNativeTarget; buildConfigurationList = {uid("app-config")}; buildPhases = {ids(["sources", "frameworks", "resources"])}; buildRules = (); dependencies = (); name = Moyu; packageProductDependencies = {ids(["soup-product", "zip-product", "js-product"])}; productName = Gavin; productReference = {uid("product")}; productType = "com.apple.product-type.application";')
+    obj("ui-target", f'isa = PBXNativeTarget; buildConfigurationList = {uid("ui-config")}; buildPhases = {ids(["ui-sources", "ui-frameworks"])}; buildRules = (); dependencies = {ids(["ui-dependency"])}; name = GavinUITests; productName = GavinUITests; productReference = {uid("ui-product")}; productType = "com.apple.product-type.bundle.ui-testing";')
     obj("project", f'isa = PBXProject; attributes = {{ BuildIndependentTargetsInParallel = YES; LastUpgradeCheck = 1600; TargetAttributes = {{ {uid("target")} = {{ CreatedOnToolsVersion = 16.0; }}; }}; }}; buildConfigurationList = {uid("project-config")}; compatibilityVersion = "Xcode 14.0"; developmentRegion = zh-Hans; hasScannedForEncodings = 0; knownRegions = ("zh-Hans", en, Base,); mainGroup = {uid("main")}; packageReferences = {ids(["soup-package", "zip-package", "js-package"])}; productRefGroup = {uid("products")}; projectDirPath = ""; projectRoot = ""; targets = {ids(["target"])};')
+    # Add a separate UI-test target without putting XCTest sources into the app.
+    objects[-1] = objects[-1].replace(f'targets = {ids(["target"])}', f'targets = {ids(["target", "ui-target"])}')
     folder = ROOT / "Moyu.xcodeproj"
     folder.mkdir(exist_ok=True)
     (folder / "project.pbxproj").write_text("// !$*UTF8*$!\n{\n\tarchiveVersion = 1;\n\tclasses = {};\n\tobjectVersion = 56;\n\tobjects = {\n" + "\n".join(objects) + f"\n\t}};\n\trootObject = {uid('project')};\n}}\n", encoding="utf-8")
     schemes = folder / "xcshareddata/xcschemes"
     schemes.mkdir(parents=True, exist_ok=True)
     reference = f'<BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="{uid("target")}" BuildableName="Gavin.app" BlueprintName="Moyu" ReferencedContainer="container:Moyu.xcodeproj"/>'
+    ui_reference = f'<BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="{uid("ui-target")}" BuildableName="GavinUITests.xctest" BlueprintName="GavinUITests" ReferencedContainer="container:Moyu.xcodeproj"/>'
     scheme = f'''<?xml version="1.0" encoding="UTF-8"?>
 <Scheme LastUpgradeVersion="1600" version="1.3">
-  <BuildAction parallelizeBuildables="YES" buildImplicitDependencies="YES"><BuildActionEntries><BuildActionEntry buildForTesting="YES" buildForRunning="YES" buildForProfiling="YES" buildForArchiving="YES" buildForAnalyzing="YES">{reference}</BuildActionEntry></BuildActionEntries></BuildAction>
+  <BuildAction parallelizeBuildables="YES" buildImplicitDependencies="YES"><BuildActionEntries><BuildActionEntry buildForTesting="YES" buildForRunning="YES" buildForProfiling="YES" buildForArchiving="YES" buildForAnalyzing="YES">{reference}</BuildActionEntry><BuildActionEntry buildForTesting="YES" buildForRunning="NO" buildForProfiling="NO" buildForArchiving="NO" buildForAnalyzing="NO">{ui_reference}</BuildActionEntry></BuildActionEntries></BuildAction>
   <LaunchAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" launchStyle="0" useCustomWorkingDirectory="NO" ignoresPersistentStateOnLaunch="NO" debugDocumentVersioning="YES" debugServiceExtension="internal" allowLocationSimulation="YES"><BuildableProductRunnable runnableDebuggingMode="0">{reference}</BuildableProductRunnable></LaunchAction>
   <ProfileAction buildConfiguration="Release" shouldUseLaunchSchemeArgsEnv="YES" savedToolIdentifier="" useCustomWorkingDirectory="NO" debugDocumentVersioning="YES"><BuildableProductRunnable runnableDebuggingMode="0">{reference}</BuildableProductRunnable></ProfileAction>
   <AnalyzeAction buildConfiguration="Debug"/>
+  <TestAction buildConfiguration="Debug" selectedDebuggerIdentifier="Xcode.DebuggerFoundation.Debugger.LLDB" selectedLauncherIdentifier="Xcode.IDEFoundation.Launcher.LLDB" shouldUseLaunchSchemeArgsEnv="YES"><Testables><TestableReference skipped="NO">{ui_reference}</TestableReference></Testables><EnvironmentVariables><EnvironmentVariable key="GAVIN_SIMULATOR_SWIFT" value="$(GAVIN_SIMULATOR_SWIFT)" isEnabled="YES"/></EnvironmentVariables></TestAction>
   <ArchiveAction buildConfiguration="Release" revealArchiveInOrganizer="YES"/>
 </Scheme>
 '''
