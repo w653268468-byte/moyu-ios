@@ -70,7 +70,7 @@ enum RuleComposition {
     }
     static func isSupported(_ rule: String) -> Bool {
         if rule.contains("{{") { return (try? templates(rule)) != nil }
-        if rule.contains("@get:{") || rule.hasPrefix("@put:") || rule.hasPrefix("##") { return true }
+        if rule.contains("@get:{") || split(rule, operator: "@put:").count > 1 || rule.hasPrefix("##") { return true }
         for op in ["||", "&&", "%%"] {
             let parts = split(rule, operator: op)
             if parts.count > 1 { return parts.allSatisfy { HTMLRule.isSupported($0) || JSONRule.isSupported($0) || ScriptRule.isSupported($0) || isSupported($0) } }

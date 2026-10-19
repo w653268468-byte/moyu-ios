@@ -3,13 +3,29 @@ import Foundation
 enum ScriptRule {
     struct Parts { let prefix: String; let code: String; let suffix: String }
     static func parts(_ rule: String) throws -> Parts? {
-        let js = rule.range(of: "@js:", options: .caseInsensitive)
-        let tag = rule.range(of: "<js>", options: .caseInsensitive)
-        let ranges = [js, tag].compactMap { $0 }.sorted { $0.lowerBound < $1.lowerBound }
-        guard let first = ranges.first else { return nil }
+        let chars = Array(rule)
+        var quote: Character?, escaped = false, depth = 0
+        var marker: (offset: Int, tag: Bool)?
+        for index in chars.indices {
+            let char = chars[index]
+            if let current = quote {
+                if escaped { escaped = false } else if char == "\\" { escaped = true } else if char == current { quote = nil }
+                continue
+            }
+            if char == "'" || char == "\"" || char == "`" { quote = char; continue }
+            if depth == 0, index + 4 <= chars.count {
+                let token = String(chars[index..<(index + 4)]).lowercased()
+                if token == "@js:" || token == "<js>" { marker = (index, token == "<js>"); break }
+            }
+            if "([{".contains(char) { depth += 1 }
+            else if ")] }".replacingOccurrences(of: " ", with: "").contains(char) { depth = max(0, depth - 1) }
+        }
+        guard let marker else { return nil }
+        let start = rule.index(rule.startIndex, offsetBy: marker.offset)
+        let first = start..<rule.index(start, offsetBy: 4)
         var code = String(rule[first.upperBound...])
         var suffix = ""
-        if first == tag {
+        if marker.tag {
             if let close = code.range(of: "</js>", options: .caseInsensitive) {
                 suffix = String(code[close.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
                 code = String(code[..<close.lowerBound])

@@ -3,6 +3,26 @@ import XCTest
 @testable import ReaderCore
 
 final class RuleCompositionTests: XCTestCase {
+    func testLegacyScriptThenLiteralURLUsesScriptResultAndOriginalJSONSelectors() throws {
+        let engine = try SourceScript()
+        let doc = try RuleDocument.parse(Data(#"{"Id":1234,"name":"正常书名"}"#.utf8), base: URL(string: "https://fixture.example")!, script: engine)
+        let url = "<js>java.put('cid',Math.floor({{$.Id}}/1000)+1)</js>https://fixture.example/{{result}}/{{$.Id}}/info.html"
+        XCTAssertEqual(try doc.value(url), "https://fixture.example/2/1234/info.html")
+        XCTAssertEqual(engine.variable("cid"), "2")
+        XCTAssertEqual(try doc.value("@js:const item=JSON.parse(result);if(item.name.match(/{{}\\}/)){item.name='encrypted'};item.name"), "正常书名")
+        XCTAssertNil(try ScriptRule.parts("{{'<js>'}}"))
+        XCTAssertEqual(try doc.value("{{'<js>'}}"), "<js>")
+    }
+    func testTrailingAndPrefixPutKeepExtractionAndUseOriginalJSONScope() throws {
+        let script = try SourceScript()
+        let doc = try RuleDocument.parse(Data(#"{"Id":123,"Desc":"故事简介"}"#.utf8), base: URL(string: "https://fixture.example")!, script: script)
+        XCTAssertTrue(RuleComposition.isSupported("$.Desc@put:{bid:$.Id}"))
+        XCTAssertEqual(try doc.value("$.Desc@put:{bid:$.Id}"), "故事简介")
+        XCTAssertEqual(script.variable("bid"), "123")
+        XCTAssertEqual(try doc.value("@put:{one:$.Id}$.Desc@put:{two:$.Id}"), "故事简介")
+        XCTAssertEqual(script.variable("one"), "123"); XCTAssertEqual(script.variable("two"), "123")
+        XCTAssertEqual(try doc.value("@js:'literal @put:{not:rule}'"), "literal @put:{not:rule}")
+    }
     private let base = URL(string: "https://fixture.example")!
     func testInlineSelectorAndJavaScriptTemplatesMatchImportedPatterns() throws {
         let doc = try RuleDocument.parse(Data("<div class='tagList'>科幻</div><div id='novel_intro'><p>故事简介</p></div>".utf8), base: base)

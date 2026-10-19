@@ -56,8 +56,12 @@ struct RuleDocument {
                 input = try (selected as? String) ?? String(decoding: JSONSerialization.data(withJSONObject: selected, options: .fragmentsAllowed), as: UTF8.self)
             }
         }
-        let result = try scope.evaluate(parts.code, input: input, document: rawText)
+        let code = parts.code.contains("{{") && (try? RuleComposition.templates(parts.code)) != nil ? try expandScriptTemplates(parts.code, input: input) : parts.code
+        let result = try scope.evaluate(code, input: input, document: rawText)
         guard !parts.suffix.isEmpty else { return result }
+        if parts.suffix.hasPrefix("https://") || parts.suffix.hasPrefix("http://") || parts.suffix.hasPrefix("/") {
+            return try expandScriptTemplates(parts.suffix, input: result)
+        }
         let documents = try ((result as? [Any]) ?? [result]).map { value -> RuleDocument in
             let html = (value as? [String: Any])?["__gavinHTML"] as? String
             if let html {
@@ -126,6 +130,14 @@ struct RuleDocument {
                 return values.filter { !$0.isEmpty }.joined(separator: "\n")
             }
         }
+        if let parts = try ScriptRule.parts(rule) {
+            let result = try scripted(parts, list: false, body: body)
+            if let html = (result as? [String: Any])?["__gavinHTML"] as? String { return try HTMLRule.value(body ? "text" : "html", in: SwiftSoup.parse(html), body: body) }
+            if let text = result as? String { return text }
+            if let number = result as? NSNumber { return number.stringValue }
+            if result is NSNull { return "" }
+            return String(decoding: try JSONSerialization.data(withJSONObject: result, options: .fragmentsAllowed), as: UTF8.self)
+        }
         if rule.contains("{{") {
             var parts = try RuleComposition.templates(rule), suffix = ""
             if let last = parts.last?.literal, let range = last.range(of: "##") {
@@ -149,14 +161,6 @@ struct RuleDocument {
         if rule.hasPrefix("@get:{") && rule.hasSuffix("}") { return try scope.get(String(rule.dropFirst(6).dropLast())) }
         if rule.contains("@get:{"), rule.hasPrefix("https://") || rule.hasPrefix("http://") { return try interpolateVariables(rule) }
         if rule.hasPrefix("##") { return try RuleReplacement.apply(rawText, suffix: rule) }
-        if let parts = try ScriptRule.parts(rule) {
-            let result = try scripted(parts, list: false, body: body)
-            if let html = (result as? [String: Any])?["__gavinHTML"] as? String { return try HTMLRule.value(body ? "text" : "html", in: SwiftSoup.parse(html), body: body) }
-            if let text = result as? String { return text }
-            if let number = result as? NSNumber { return number.stringValue }
-            if result is NSNull { return "" }
-            return String(decoding: try JSONSerialization.data(withJSONObject: result, options: .fragmentsAllowed), as: UTF8.self)
-        }
         switch node {
         case .html(let element):
             if rule.hasPrefix("$.") || rule.hasPrefix("$[") { throw SourceError.message(emptyResultDiagnostic ?? "书源要求 JSON 数据，但网站返回 HTML 页面；请检查地址是否失效或需要验证。") }
@@ -181,6 +185,23 @@ struct RuleDocument {
         guard let rule, JSONRule.isSupported(rule) || HTMLRule.isSupported(rule) || ScriptRule.isSupported(rule) || RuleComposition.isSupported(rule) else { return "" }
         return try value(rule)
     }
+    private func expandScriptTemplates(_ text: String, input: Any) throws -> String {
+        var output = ""
+        for part in try RuleComposition.templates(text) {
+            if let literal = part.literal { output += try interpolateVariables(literal) }
+            if let expression = part.expression {
+                let code = expression.trimmingCharacters(in: .whitespacesAndNewlines)
+                if code.hasPrefix("@") || code.hasPrefix("$.") || code.hasPrefix("$[") || code.hasPrefix("//") { output += try value(code) }
+                else {
+                    let result = try scope.evaluate(code, input: input, document: rawText)
+                    if let value = result as? String { output += value }
+                    else if let value = result as? NSNumber { output += value.stringValue }
+                }
+            }
+            guard output.utf8.count <= 8 * 1024 * 1024 else { throw SourceError.message("脚本模板结果超过大小限制。") }
+        }
+        return output
+    }
     private func interpolateVariables(_ rule: String) throws -> String {
         let pattern = try NSRegularExpression(pattern: #"@get:\{([^{}]+)\}"#)
         var result = rule
@@ -192,7 +213,14 @@ struct RuleDocument {
     }
     private func prepare(_ input: String) throws -> String {
         var rule = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        while rule.hasPrefix("@put:") {
+        var assignments = 0
+        while RuleComposition.split(rule, operator: "@put:").count > 1 {
+            assignments += 1
+            guard assignments <= 100 else { throw SourceError.message("@put 变量块超过限制。") }
+            let pieces = RuleComposition.split(rule, operator: "@put:")
+            let prefix = pieces[0]
+            rule = pieces.dropFirst().joined(separator: "@put:")
+            guard rule.hasPrefix("{") else { throw SourceError.message("@put 缺少变量对象。") }
             guard let start = rule.firstIndex(of: "{") else { throw SourceError.message("@put 缺少变量对象。") }
             var depth = 0; var quote: Character?; var escaped = false; var end: String.Index?
             for index in rule.indices where index >= start {
@@ -212,7 +240,7 @@ struct RuleDocument {
                 else if extraction.hasPrefix("'"), extraction.hasSuffix("'") { extraction = String(extraction.dropFirst().dropLast()) }
                 try scope.put(key, value: value(extraction))
             }
-            rule = String(rule[rule.index(after: end)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            rule = (prefix + String(rule[rule.index(after: end)...])).trimmingCharacters(in: .whitespacesAndNewlines)
         }
         if rule.hasPrefix("@@") { rule = String(rule.dropFirst(2)) }
         if rule.lowercased().hasPrefix("@json:") { rule = String(rule.dropFirst(6)) }
