@@ -73,6 +73,10 @@ assert icon[:8] == b"\x89PNG\r\n\x1a\n"
 assert struct.unpack(">II", icon[16:24]) == (1024, 1024)
 assert icon[25] == 2, "App icon must have no alpha channel"
 assert 'version = 2.7.7;' in project and 'exact: "2.7.7"' in (ROOT / "Package.swift").read_text()
+assert 'XCLocalSwiftPackageReference' in project and 'Vendor/QuickJS-Swift' in project
+assert (ROOT / 'Vendor/QuickJS-Swift/LICENSE').exists()
+runtime = (ROOT / 'Vendor/QuickJS-Swift/Sources/QuickJS/JSRuntime.swift').read_text()
+assert 'if engineEntryDepth == 0 { JS_UpdateStackTop(jsInstance) }' in runtime
 sample = json.loads((ROOT / "Examples/booksource.example.json").read_text(encoding="utf-8"))
 assert sample["ruleToc"]["chapterList"] and sample["ruleContent"]["content"]
 print(f"PASS: {len(objects)} PBX objects, all source/resource references, plist/scheme XML, icon, dependency pin and example JSON")

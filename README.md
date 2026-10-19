@@ -44,7 +44,7 @@ xcodebuild -project Moyu.xcodeproj -scheme Moyu -sdk iphonesimulator -destinatio
 
 单文件不超过 100 MB；纯文本解码不超过 20 MB。EPUB 解压资源上限 200 MB、文字上限 40 MB、单个资源上限 40 MB。PDF 不保留原版式；扫描页 OCR 的准确率取决于清晰度，不能保证逐字正确。MD 保留文字标记。备份内容上限 200 MB。
 
-依赖 SwiftSoup 2.7.7、ZIPFoundation 0.9.19、QuickJS-Swift 固定提交（MIT），及内置 libmobi 0.12 固定提交（LGPL-3.0-or-later），见 [第三方声明](THIRD_PARTY_NOTICES.md)。无内置第三方书源、账号、广告或阅读统计；书源请求直接访问所选网站。
+依赖 SwiftSoup 2.7.7、ZIPFoundation 0.9.19、内置 QuickJS-Swift 固定提交及跨线程堆栈修复（MIT），及内置 libmobi 0.12 固定提交（LGPL-3.0-or-later），见 [第三方声明](THIRD_PARTY_NOTICES.md)。无内置第三方书源、账号、广告或阅读统计；书源请求直接访问所选网站。
 
 ## 实际联网检查
 

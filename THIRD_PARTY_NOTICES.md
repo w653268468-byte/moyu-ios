@@ -31,6 +31,10 @@ THE SOFTWARE.
 
 Pinned source: https://github.com/zqqf16/QuickJS-Swift/tree/50eb132d6bc89736f478cf8336948fb62133a264
 
+Included at `Vendor/QuickJS-Swift`. Gavin's outermost-entry stack-origin patch
+is documented in `Vendor/QuickJS-Swift/GAVIN_PATCHES.md`; upstream MIT notices
+and the bundled QuickJS C license are retained.
+
 MIT License
 
 Copyright (c) 2021 zqqf16

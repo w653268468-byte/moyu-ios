@@ -2,8 +2,32 @@ import Foundation
 import XCTest
 @testable import ReaderCore
 
+private final class ScriptThreadResult: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Result<String, Error>?
+    func store(_ value: Result<String, Error>) { lock.lock(); self.value = value; lock.unlock() }
+    func load() -> Result<String, Error>? { lock.lock(); defer { lock.unlock() }; return value }
+}
+
 final class SourceScriptTests: XCTestCase {
     let base = URL(string: "https://books.example/book/1")!
+    func testCachedEngineWorksAfterMovingToAnotherOSThread() throws {
+        let engine = try SourceScript(), result = ScriptThreadResult()
+        let url = base, finished = DispatchSemaphore(value: 0)
+        _ = try engine.evaluate("java.put('kept','cross-thread')", result: "", baseURL: url)
+        let thread = Thread {
+            do {
+                let value = try engine.evaluate("java.get('kept')", result: "", baseURL: url)
+                result.store(.success(value as? String ?? "missing"))
+            } catch { result.store(.failure(error)) }
+            finished.signal()
+        }
+        thread.start()
+        guard finished.wait(timeout: .now() + 10) == .success else { return XCTFail("Script thread did not finish") }
+        XCTAssertEqual(try XCTUnwrap(result.load()).get(), "cross-thread")
+        XCTAssertThrowsError(try engine.evaluate("function recurse(){java.md5Encode('x');return recurse()} recurse()", result: "", baseURL: url, timeout: 0.5))
+        XCTAssertEqual(try engine.evaluate("1+1", result: "", baseURL: url) as? Int, 2)
+    }
     func testModernJavaScriptAndStructuredOutput() throws {
         let engine = try SourceScript()
         let value = try engine.evaluate("JSON.parse(result).books.filter(b => b.free).map(({name}) => name)", result: #"{"books":[{"name":"三国","free":true},{"name":"Other","free":false}]}"#, baseURL: base)

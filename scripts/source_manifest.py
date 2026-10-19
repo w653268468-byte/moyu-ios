@@ -5,14 +5,14 @@ import json
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-FOLDERS = ["Sources", "Tests", "Resources", "Moyu.xcodeproj", ".github", "scripts", "docs", "Examples"]
+FOLDERS = ["Sources", "Tests", "Resources", "Moyu.xcodeproj", ".github", "scripts", "docs", "Examples", "Vendor"]
 TOP_LEVEL = ["README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "Package.swift", ".gitignore"]
 
 
 def files():
     result = [ROOT / name for name in TOP_LEVEL]
     for folder in FOLDERS:
-        result.extend(path for path in (ROOT / folder).rglob("*") if path.is_file() and "__pycache__" not in path.parts and "xcuserdata" not in path.parts)
+        result.extend(path for path in (ROOT / folder).rglob("*") if path.is_file() and not {"__pycache__", "xcuserdata", ".build", ".git", ".swiftpm"}.intersection(path.parts))
     return sorted(result)
 
 

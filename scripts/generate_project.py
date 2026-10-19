@@ -46,7 +46,7 @@ def generate_project():
     obj("soup-product", f'isa = XCSwiftPackageProductDependency; package = {uid("soup-package")}; productName = SwiftSoup;')
 
     obj("js-build", f'isa = PBXBuildFile; productRef = {uid("js-product")};')
-    obj("js-package", 'isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/zqqf16/QuickJS-Swift.git"; requirement = { kind = revision; revision = "50eb132d6bc89736f478cf8336948fb62133a264"; };')
+    obj("js-package", 'isa = XCLocalSwiftPackageReference; relativePath = "Vendor/QuickJS-Swift";')
     obj("js-product", f'isa = XCSwiftPackageProductDependency; package = {uid("js-package")}; productName = QuickJS;')
 
     common = {

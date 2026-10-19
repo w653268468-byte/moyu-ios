@@ -34,6 +34,8 @@ jobs:
           swift --version
       - name: Validate project files
         run: python3 scripts/validate.py
+      - name: Test patched JavaScript runtime
+        run: swift test --package-path Vendor/QuickJS-Swift
       - name: Test parser and source rules
         env:
           GAVIN_CI_OCR: '1'

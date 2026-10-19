@@ -5,10 +5,10 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "dist/Gavin-iOS-source.zip"
 OUTPUT.parent.mkdir(exist_ok=True)
-folders = ["Sources", "Tests", "Resources", "Moyu.xcodeproj", ".github", "scripts", "docs", "Examples"]
+folders = ["Sources", "Tests", "Resources", "Moyu.xcodeproj", ".github", "scripts", "docs", "Examples", "Vendor"]
 files = [ROOT / name for name in ["README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "Package.swift", ".gitignore"]]
 for folder in folders:
-    files.extend(p for p in (ROOT / folder).rglob("*") if p.is_file() and "__pycache__" not in p.parts and "xcuserdata" not in p.parts)
+    files.extend(p for p in (ROOT / folder).rglob("*") if p.is_file() and not {"__pycache__", "xcuserdata", ".build", ".git", ".swiftpm"}.intersection(p.parts))
 with zipfile.ZipFile(OUTPUT, "w", zipfile.ZIP_DEFLATED) as archive:
     for path in sorted(files):
         archive.write(path, Path("Gavin-iOS") / path.relative_to(ROOT))

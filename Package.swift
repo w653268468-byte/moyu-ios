@@ -8,7 +8,7 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/scinfu/SwiftSoup.git", exact: "2.7.7"),
         .package(url: "https://github.com/weichsel/ZIPFoundation.git", exact: "0.9.19"),
-        .package(url: "https://github.com/zqqf16/QuickJS-Swift.git", revision: "50eb132d6bc89736f478cf8336948fb62133a264")
+        .package(path: "Vendor/QuickJS-Swift")
     ],
     targets: [
         .target(name: "CReaderXML", path: "Sources/CReaderXML", publicHeadersPath: "include", linkerSettings: [.linkedLibrary("xml2")]),
