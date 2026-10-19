@@ -38,8 +38,9 @@ final class SourceScriptCache: @unchecked Sendable {
             let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
             if status == errSecItemNotFound {
                 var insert = query; attributes.forEach { insert[$0] = $1 }
-                guard SecItemAdd(insert as CFDictionary, nil) == errSecSuccess else { throw SourceError.message("无法保存书源登录信息到钥匙串。") }
-            } else if status != errSecSuccess { throw SourceError.message("无法更新书源登录信息。") }
+                let added = SecItemAdd(insert as CFDictionary, nil)
+                guard added == errSecSuccess else { throw SourceError.message("无法保存书源登录信息到钥匙串（\(added)）。") }
+            } else if status != errSecSuccess { throw SourceError.message("无法更新书源登录信息（\(status)）。") }
             return
         }
         let manager = FileManager.default

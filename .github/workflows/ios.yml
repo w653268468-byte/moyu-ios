@@ -72,7 +72,14 @@ jobs:
         run: >-
           xcodebuild -project Moyu.xcodeproj -scheme Moyu -configuration Debug
           -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'
-          -derivedDataPath build/simulator ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build
+          -derivedDataPath build/simulator ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES
+          CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual build
+      - name: Verify simulator keychain signing identity
+        run: |
+          mkdir -p build/ui
+          codesign --verify --deep --strict build/simulator/Build/Products/Debug-iphonesimulator/Gavin.app
+          codesign -d --entitlements - --xml build/simulator/Build/Products/Debug-iphonesimulator/Gavin.app > build/ui/simulator-entitlements.plist 2> build/ui/codesign.log
+          python3 -c 'import plistlib,pathlib; d=plistlib.loads(pathlib.Path("build/ui/simulator-entitlements.plist").read_bytes()); assert d["application-identifier"] == "GAVINCI001.org.moyu.reader"; assert d["keychain-access-groups"] == ["GAVINCI001.org.moyu.reader"]'
       - name: Build unsigned iPhone app
         run: >-
           xcodebuild -project Moyu.xcodeproj -scheme Moyu -configuration Release
@@ -186,7 +193,7 @@ jobs:
           xcodebuild test -project Moyu.xcodeproj -scheme Moyu -configuration Debug \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build/simulator \
             -resultBundlePath build/ui/ReaderInteraction.xcresult -parallel-testing-enabled NO \
-            ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO \
+            ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual \
             GAVIN_SIMULATOR_SWIFT="$RUNTIME_SWIFT"
       - name: Upload simulator screens
         if: always()

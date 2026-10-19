@@ -64,6 +64,7 @@ def generate_project():
     app = {
         "PRODUCT_NAME": "Gavin", "PRODUCT_BUNDLE_IDENTIFIER": "org.moyu.reader",
         "INFOPLIST_FILE": "Resources/Info.plist", "GENERATE_INFOPLIST_FILE": "NO",
+        "CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]": "Resources/Simulator.entitlements",
         "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon", "CODE_SIGN_STYLE": "Automatic",
         "TARGETED_DEVICE_FAMILY": "1,2", "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator",
         "SUPPORTS_MACCATALYST": "NO", "CURRENT_PROJECT_VERSION": "2", "MARKETING_VERSION": "2.0.0",
@@ -81,7 +82,7 @@ def generate_project():
                 settings["SWIFT_OPTIMIZATION_LEVEL"] = "-Onone" if config == "Debug" else "-O"
                 settings["DEBUG_INFORMATION_FORMAT"] = "dwarf" if config == "Debug" else "dwarf-with-dsym"
                 if config == "Debug": settings["SWIFT_ACTIVE_COMPILATION_CONDITIONS"] = "DEBUG"
-            body = " ".join(f"{k} = {quote(v)};" for k, v in settings.items())
+            body = " ".join(f"{quote(k) if '[' in k else k} = {quote(v)};" for k, v in settings.items())
             obj(f"{scope}-{config}", f'isa = XCBuildConfiguration; buildSettings = {{ {body} }}; name = {config};')
     for scope in ["project", "app", "ui"]:
         obj(scope + "-config", f'isa = XCConfigurationList; buildConfigurations = {ids([scope + "-Debug", scope + "-Release"])}; defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;')

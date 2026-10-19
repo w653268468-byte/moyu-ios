@@ -2,6 +2,8 @@
 
 当前任务仅处理书源兼容和真实搜索→目录→正文；书架、排版、听书等其他功能暂停迭代。
 
+第 50/51 次原生检查阻止发布：未签名模拟器 App 的 Keychain 调用返回 -34018，设备日志确认缺少 application-identifier/keychain-access-groups。仅对 iphonesimulator 使用专用测试身份的临时签名，并检查最终签名权限；真实 iPhone IPA 仍为待用户签名的未签名包，不带模拟器测试身份。钥匙串检查及保密存储保留，未降级明文。
+
 为公开脚本实际导入的 Hutool/OkHttp 包补充显式适配：Base64、摘要/HMac、StrUtil/CharsetUtil、ZipUtil gzip、Request/RequestBody/MediaType/OkHttpClient 的同步 GET/POST 构建和响应。压缩走系统 zlib，二进制请求不经 UTF-8 损坏；继续使用同一受限网络通道、请求头校验和取消机制。此为接口子集，不支持任意 JVM、拦截器、文件或线程；新增 Node 对照及 Swift 网络回归待确认。
 
 iOS 构建恢复使用第 46 次已成功的 macos-15 Apple Silicon 环境。Intel 临时替代环境的第 47 次任务耗尽 35 分钟，不能把容量排队问题改成长期超时；保留 Xcode 16.4 固定工具链及架构自适应的模拟器 Swift/WebKit 路径。
