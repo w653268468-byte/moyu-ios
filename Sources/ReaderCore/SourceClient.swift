@@ -101,11 +101,25 @@ public actor SourceClient {
 
     private func scriptEngine(for source: BookSource) throws -> SourceScript? {
         let rules = [source.ruleSearch, source.ruleExplore, source.ruleBookInfo, source.ruleToc, source.ruleContent].compactMap { $0 }.flatMap(\.values) + [source.searchUrl, source.exploreUrl, source.header].compactMap { $0 }
-        guard rules.contains(where: { ScriptTemplate.needsScript($0) }) else { return nil }
+        guard rules.contains(where: { ScriptTemplate.needsScript($0) }) || source.jsLib?.isEmpty == false else { return nil }
         if let cached = scriptEngines[source.id], cached.0 == source { return cached.1 }
         let engine = try SourceScript(configuration: session.configuration)
         let json = try source.originalJSON ?? String(decoding: JSONEncoder().encode(source), as: UTF8.self)
         try engine.setJSONGlobal("source", json: json)
+        if let library = source.jsLib, !library.isEmpty, let base = URL(string: source.bookSourceUrl) {
+            if let urls = try? JSONDecoder().decode([String: String].self, from: Data(library.utf8)) {
+                guard urls.count <= 8 else { throw SourceError.message("书源共享脚本最多加载 8 个文件。") }
+                let deadline = Date().addingTimeInterval(30)
+                for name in urls.keys.sorted() {
+                    try Task.checkCancellation()
+                    guard Date() < deadline, let value = urls[name] else { throw SourceError.message("共享脚本加载超时。") }
+                    let url = try Self.resolve(value, base: base)
+                    let escaped = String(decoding: try JSONSerialization.data(withJSONObject: [url.absoluteString]), as: UTF8.self)
+                    guard let code = try engine.evaluate("java.ajax(\(escaped)[0])", result: "", baseURL: base) as? String else { throw SourceError.message("共享脚本下载结果不是文本。") }
+                    _ = try engine.evaluate(code + "\n;void 0;", result: "", baseURL: base, timeout: 8)
+                }
+            } else { _ = try engine.evaluate(library + "\n;void 0;", result: "", baseURL: base, timeout: 8) }
+        }
         if scriptEngines.count >= 4, let first = scriptEngines.keys.first { scriptEngines.removeValue(forKey: first) }
         scriptEngines[source.id] = (source, engine)
         return engine

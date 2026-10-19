@@ -15,7 +15,10 @@ enum ScriptTemplate {
             if result is NSNull { return "" }
             return String(decoding: try JSONSerialization.data(withJSONObject: result, options: .fragmentsAllowed), as: UTF8.self)
         }
-        if let parts = try ScriptRule.parts(template) { return try run(parts.code, input: parts.prefix) }
+        if let parts = try ScriptRule.parts(template) {
+            guard parts.suffix.isEmpty else { throw SourceError.message("网址脚本之后含提取规则，请把规则放到正文或列表字段。") }
+            return try run(parts.code, input: parts.prefix)
+        }
         let chars = Array(template)
         var i = 0, output = "", count = 0
         while i < chars.count {

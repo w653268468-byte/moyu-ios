@@ -45,7 +45,26 @@ struct RuleDocument {
                 input = try (selected as? String) ?? String(decoding: JSONSerialization.data(withJSONObject: selected, options: .fragmentsAllowed), as: UTF8.self)
             }
         }
-        return try scope.evaluate(parts.code, input: input, document: rawText)
+        let result = try scope.evaluate(parts.code, input: input, document: rawText)
+        guard !parts.suffix.isEmpty else { return result }
+        let documents = try ((result as? [Any]) ?? [result]).map { value -> RuleDocument in
+            let html = (value as? [String: Any])?["__gavinHTML"] as? String
+            if let html {
+                let parsed = try SwiftSoup.parse(html, scope.baseURL.absoluteString)
+                return child(.html(parsed.body()?.children().first() ?? parsed))
+            }
+            if let text = value as? String {
+                if let json = try? JSONSerialization.jsonObject(with: Data(text.utf8), options: .fragmentsAllowed) { return child(.json(json)) }
+                if text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<") {
+                    let html = try SwiftSoup.parse(text, scope.baseURL.absoluteString)
+                    return child(.html(html.body()?.children().first() ?? html))
+                }
+                return child(.json(text))
+            }
+            return child(.json(value))
+        }
+        if list { return try documents.flatMap { try $0.elements(parts.suffix) }.map { try $0.scriptInput } }
+        return try documents.map { try $0.value(parts.suffix, body: body) }.joined(separator: "\n")
     }
     func elements(_ rule: String) throws -> [RuleDocument] {
         try scope.enter(); defer { scope.leave() }

@@ -44,6 +44,7 @@ public struct BookSource: Codable, Identifiable, Equatable, Sendable {
     public var exploreUrl: String?
     public var enabledExplore: Bool?
     public var header: String?
+    public var jsLib: String?
     public var ruleSearch: SourceRule?
     public var ruleExplore: SourceRule?
     public var ruleBookInfo: SourceRule?

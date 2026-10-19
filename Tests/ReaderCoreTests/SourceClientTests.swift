@@ -16,6 +16,7 @@ private final class FixtureProtocol: URLProtocol {
             "/api/chapter": #"{"text":"滚滚长江东逝水。"}"#,
             "/api/script-search": #"{"data":{"books":[{"title":"公版故事","sourceUuid":"one"}]}}"#,
             "/source/one": "<div class='m-book-recent'><a>最新章</a></div>",
+            "/helpers.js": "function sharedTitle(value) { return value + '共享脚本'; }",
             "/search": "<div class='book'><a href='/book/1'>山海来信</a><span class='author'>Gavin</span></div>",
             "/book/1": "<h1>山海来信</h1><a class='catalog' href='/toc/1'>目录</a>",
             "/toc/1": "<div id='list'><a href='/chapter/1'>第一章</a></div><a class='next' href='/toc/2'>下一页</a>",
@@ -36,6 +37,15 @@ private final class FixtureProtocol: URLProtocol {
 }
 
 final class SourceClientTests: XCTestCase {
+    func testSharedScriptLibrariesLoadBeforeSearchRules() async throws {
+        for library in ["function sharedTitle(value) { return value + '共享脚本'; }", #"{"helpers":"/helpers.js"}"#] {
+            var source = try source()
+            source.jsLib = library
+            source.ruleSearch?.name = "a@text@js:sharedTitle(result)"
+            let found = try await makeClient().search("山海", source: source)
+            XCTAssertEqual(found.first?.title, "山海来信共享脚本")
+        }
+    }
     func testWebViewOptionsReachRendererAndSurviveSavedChapter() async throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [FixtureProtocol.self]
         let client = SourceClient(configuration: config, webRenderer: { request, _ in

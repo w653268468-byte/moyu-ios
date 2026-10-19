@@ -36,4 +36,10 @@ final class RuleCompositionTests: XCTestCase {
         XCTAssertEqual(try html.elements(".textlist!0").map { try $0.value("text") }, ["章节"])
         XCTAssertThrowsError(try html.value("{{'unclosed'"))
     }
+    func testExtractionContinuesAfterScriptClosingTag() throws {
+        let doc = try RuleDocument.parse(Data("<p>原始内容</p>".utf8), base: base)
+        XCTAssertEqual(try doc.value("<js>'<a href=\"/next\">下一页</a>'</js>@href"), "/next")
+        XCTAssertEqual(try doc.value("<js>({title:'故事'})</js>$.title"), "故事")
+        XCTAssertEqual(try doc.elements("<js>'<div><b>A</b><b>B</b></div>'</js>b").map { try $0.value("text") }, ["A", "B"])
+    }
 }

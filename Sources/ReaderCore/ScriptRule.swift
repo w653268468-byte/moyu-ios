@@ -1,26 +1,27 @@
 import Foundation
 
 enum ScriptRule {
-    struct Parts { let prefix: String; let code: String }
+    struct Parts { let prefix: String; let code: String; let suffix: String }
     static func parts(_ rule: String) throws -> Parts? {
         let js = rule.range(of: "@js:", options: .caseInsensitive)
         let tag = rule.range(of: "<js>", options: .caseInsensitive)
         let ranges = [js, tag].compactMap { $0 }.sorted { $0.lowerBound < $1.lowerBound }
         guard let first = ranges.first else { return nil }
         var code = String(rule[first.upperBound...])
+        var suffix = ""
         if first == tag {
             if let close = code.range(of: "</js>", options: .caseInsensitive) {
-                guard code[close.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                    throw SourceError.message("脚本结束标签之后的规则链暂未实现。")
-                }
+                suffix = String(code[close.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
                 code = String(code[..<close.lowerBound])
             }
         }
-        return Parts(prefix: String(rule[..<first.lowerBound]), code: code)
+        return Parts(prefix: String(rule[..<first.lowerBound]), code: code, suffix: suffix)
     }
-    static func isSupported(_ rule: String) -> Bool {
+    static func isSupported(_ rule: String, depth: Int = 0) -> Bool {
+        guard depth < 32, rule.utf8.count <= 512 * 1024 else { return false }
         guard let parts = try? parts(rule), !parts.code.isEmpty else { return false }
-        return parts.prefix.isEmpty || HTMLRule.isSupported(parts.prefix) || JSONRule.isSupported(parts.prefix)
+        return (parts.prefix.isEmpty || HTMLRule.isSupported(parts.prefix) || JSONRule.isSupported(parts.prefix) || RuleComposition.isSupported(parts.prefix)) &&
+            (parts.suffix.isEmpty || HTMLRule.isSupported(parts.suffix) || JSONRule.isSupported(parts.suffix) || ScriptRule.isSupported(parts.suffix, depth: depth + 1) || RuleComposition.isSupported(parts.suffix))
     }
 }
 
