@@ -204,8 +204,8 @@ public final class SourceScript: @unchecked Sendable {
         case "html": result = try SwiftSoup.parse(string(0), base.absoluteString).body()?.html() ?? ""
         case "attr": result = try SwiftSoup.parse(string(0), base.absoluteString).body()?.children().first()?.attr(string(1)) ?? ""
         case "put": try storeVariable(string(0), value: string(1)); result = string(1)
-        case "get" where !(string(0).hasPrefix("https://") || string(0).hasPrefix("http://")): result = variables[string(0)] ?? ""
-        case "ajax", "get", "post":
+        case "get" where args.count == 1 && !(string(0).hasPrefix("https://") || string(0).hasPrefix("http://") || string(0).hasPrefix("/")): result = variables[string(0)] ?? ""
+        case "ajax", "get", "post", "connect":
             var request = try SourceRequest.make(string(0), query: "", base: base)
             if method == "post" {
                 request.httpMethod = "POST"
@@ -214,12 +214,19 @@ public final class SourceScript: @unchecked Sendable {
             }
             request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
             request.setValue(base.absoluteString, forHTTPHeaderField: "Referer")
+            if let login = SourceScriptCache.shared.get(sourceNamespace, "source:@loginHeader") {
+                for (name, value) in try SourceHeaders.parse(login) where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
+            }
             let headerIndex = method == "post" ? 2 : 1
-            if args.indices.contains(headerIndex), let headers = args[headerIndex] as? [String: String] {
-                for (name, value) in headers where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
+            if args.indices.contains(headerIndex) {
+                let raw: String?
+                if let text = args[headerIndex] as? String { raw = text }
+                else if let values = args[headerIndex] as? [String: String] { raw = String(decoding: try JSONSerialization.data(withJSONObject: values), as: UTF8.self) }
+                else { raw = nil }
+                if let raw { for (name, value) in try SourceHeaders.parse(raw) where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) } }
             }
             limit.beginIO(); defer { limit.endIO() }
-            let response = try http.request(request, cancelled: { self.limit.exceeded() })
+            let response = try http.request(request, allowHTTPError: method != "ajax", cancelled: { self.limit.exceeded() })
             result = method == "ajax" ? response.text : response.json
         case "getCookie", "removeCookie":
             let url = try SourceClient.resolve(string(0), base: base)

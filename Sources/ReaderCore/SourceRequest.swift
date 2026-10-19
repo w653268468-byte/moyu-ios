@@ -52,7 +52,8 @@ public enum SourceRequest {
         request.httpMethod = (options["method"] as? String ?? "GET").uppercased()
         guard ["GET", "POST"].contains(request.httpMethod!) else { throw SourceError.message("仅支持 GET 和 POST 请求。") }
         if let headers = options["headers"] as? [String: String] {
-            for (key, value) in headers where !["cookie", "authorization", "host"].contains(key.lowercased()) {
+            let validated = try SourceHeaders.parse(String(decoding: JSONSerialization.data(withJSONObject: headers), as: UTF8.self))
+            for (key, value) in validated where key.lowercased() != "host" {
                 request.setValue(value, forHTTPHeaderField: key)
             }
         }

@@ -78,9 +78,12 @@ public actor SourceClient {
             if let header = source.header, !header.isEmpty {
                 let expanded = try ScriptTemplate.expand(header, using: scriptEngine(for: source), query: "", base: url)
                 let headers = try SourceHeaders.parse(expanded)
-                for (key, value) in headers where !["cookie", "authorization", "host"].contains(key.lowercased()) {
+                for (key, value) in headers where key.lowercased() != "host" {
                     request.setValue(value, forHTTPHeaderField: key)
                 }
+            }
+            if let login = SourceScriptCache.shared.get(source.id, "source:@loginHeader") {
+                for (key, value) in try SourceHeaders.parse(login) where key.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: key) }
             }
         }
         do {

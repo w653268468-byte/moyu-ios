@@ -15,6 +15,8 @@ final class ScriptHTTP {
         var bytes = Data()
         var response: HTTPURLResponse?
         var outcome: Result<Response, Error>?
+        let allowHTTPError: Bool
+        init(allowHTTPError: Bool) { self.allowHTTPError = allowHTTPError; super.init() }
         func finish(_ value: Result<Response, Error>) {
             lock.lock(); defer { lock.unlock() }
             guard outcome == nil else { return }
@@ -28,7 +30,7 @@ final class ScriptHTTP {
         func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
             guard let response = response as? HTTPURLResponse else { finish(.failure(SourceError.message("脚本网络请求没有 HTTP 响应。"))); completionHandler(.cancel); return }
             self.response = response
-            guard (200...299).contains(response.statusCode) else { finish(.failure(SourceError.message("脚本请求 HTTP \(response.statusCode) · \(response.url?.host ?? "")"))); completionHandler(.cancel); return }
+            guard allowHTTPError || (200...299).contains(response.statusCode) else { finish(.failure(SourceError.message("脚本请求 HTTP \(response.statusCode) · \(response.url?.host ?? "")"))); completionHandler(.cancel); return }
             guard response.expectedContentLength <= 4 * 1024 * 1024 else { finish(.failure(SourceError.message("脚本网络响应超过 4 MB。"))); completionHandler(.cancel); return }
             completionHandler(.allow)
         }
@@ -47,9 +49,9 @@ final class ScriptHTTP {
     }
     private let configuration: URLSessionConfiguration
     init(configuration: URLSessionConfiguration) { self.configuration = configuration }
-    func request(_ request: URLRequest, cancelled: () -> Bool) throws -> Response {
+    func request(_ request: URLRequest, allowHTTPError: Bool = false, cancelled: () -> Bool) throws -> Response {
         guard !SourceRequest.requiresWebView(request) else { throw SourceError.message("同步 ajax 不能执行 WebView 请求，请在书源请求地址中设置 webView 选项。") }
-        let collector = Collector()
+        let collector = Collector(allowHTTPError: allowHTTPError)
         let config = configuration.copy() as! URLSessionConfiguration
         config.timeoutIntervalForRequest = 10; config.timeoutIntervalForResource = 15
         let session = URLSession(configuration: config, delegate: collector, delegateQueue: nil)

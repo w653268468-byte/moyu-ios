@@ -77,6 +77,7 @@
     globalThis.__gavinHydrate=function(name,value) {
         if(!['source','book','chapter'].includes(name) || !value || typeof value!=='object') return value;
         const id=name==='source' ? value.bookSourceUrl||'' : name==='book' ? value.bookUrl||'' : value.url||'';
+        if(name==='source'&&!Object.prototype.hasOwnProperty.call(value,'key'))Object.defineProperty(value,'key',{get:()=>id,enumerable:false});
         function get(key) { return name==='source' ? cache.get('source:'+key)??'' : gavinCall('get',[name+':'+id+':'+key]); }
         function put(key,item) { if(name==='source')cache.put('source:'+key,item??'');else gavinCall('put',[name+':'+id+':'+key,String(item??'')]);return item; }
         const methods={

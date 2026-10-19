@@ -67,6 +67,7 @@ private final class FixtureProtocol: URLProtocol {
         guard let url = request.url else { return }
         var body = url.path == "/js-search" && request.value(forHTTPHeaderField: "X-Reader") == "Gavin" ? routes["/search"] : routes[url.path]
         if url.path == "/release-script" { body = routes["/search"] }
+        if url.path == "/auth-search", request.value(forHTTPHeaderField: "Authorization") == "Bearer fixture", request.value(forHTTPHeaderField: "Cookie") == "sid=fixture" { body = routes["/search"] }
         if url.path == "/paged-search" {
             let page = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "page" })?.value ?? "1"
             body = page == "1" ? routes["/search"] : page == "2" ? "<div class='book'><a href='/book/2'>第二本</a></div>" : "<p>No more results</p>"
@@ -363,6 +364,20 @@ final class SourceClientTests: XCTestCase {
         XCTAssertThrowsError(try script.evaluate("java.ajax('/missing')", result: "", baseURL: url)) { error in
             XCTAssertTrue(error.localizedDescription.contains("HTTP 404"))
         }
+        XCTAssertEqual(try script.evaluate("java.get('/missing',{}).code()", result: "", baseURL: url) as? Int, 404)
+        XCTAssertEqual(try script.evaluate("java.connect('/missing').code()", result: "", baseURL: url) as? Int, 404)
+        XCTAssertEqual(try script.evaluate("java.get('/js-search','{\"X-Reader\":\"Gavin\"}').code()", result: "", baseURL: url) as? Int, 200)
+    }
+    func testSourceAndRequestAuthenticationHeadersArePreserved() async throws {
+        var source = try source()
+        source.searchUrl = "/auth-search"
+        source.header = #"{"Authorization":"Bearer fixture","Cookie":"sid=fixture"}"#
+        let first = try await makeClient().search("故事", source: source)
+        XCTAssertEqual(first.first?.title, "山海来信")
+        source.header = nil
+        source.searchUrl = #"/auth-search,{"headers":{"Authorization":"Bearer fixture","Cookie":"sid=fixture"}}"#
+        let second = try await makeClient().search("故事", source: source)
+        XCTAssertEqual(second.first?.title, "山海来信")
     }
     func testScriptURLAndHeadersActuallyReachSearch() async throws {
         var source = try source()

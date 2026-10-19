@@ -1,7 +1,7 @@
 """Download public rule collections for opt-in, bounded real-site checks."""
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-import hashlib, json, re, urllib.request
+import hashlib, json, re, time, urllib.request
 
 ROOT=Path(__file__).resolve().parents[1]
 OUTPUT=ROOT/'.build/source-audit'
@@ -14,10 +14,18 @@ URLS=[
 ]
 def load(url):
     try:
-        request=urllib.request.Request(url,headers={'User-Agent':'Gavin-source-compatibility-audit/1.0'})
-        with urllib.request.urlopen(request,timeout=45) as response:
-            data=response.read(16*1024*1024+1); actual=response.url
-        if len(data)>16*1024*1024: raise ValueError('Collection exceeds 16 MB')
+        request=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1','Accept':'application/json,text/plain;q=0.9,*/*;q=0.5'})
+        with urllib.request.urlopen(request,timeout=15) as response:
+            chunks=[];size=0;deadline=time.monotonic()+60;actual=response.url
+            while True:
+                if time.monotonic()>deadline:raise TimeoutError('Collection download exceeds 60 seconds')
+                chunk=response.read(128*1024)
+                if not chunk:break
+                size+=len(chunk)
+                if size>20*1024*1024:raise ValueError('Collection exceeds 20 MB')
+                chunks.append(chunk)
+            data=b''.join(chunks)
+        if len(data)>20*1024*1024: raise ValueError('Collection exceeds 20 MB')
         rows=json.loads(data.decode('utf-8-sig'))
         if not isinstance(rows,list): raise ValueError('Expected source array')
         return {'url':url,'actual':actual,'sha256':hashlib.sha256(data).hexdigest(),'count':len(rows),'rows':rows}
@@ -36,7 +44,7 @@ def main():
             if source.get('bookSourceType',0) not in [0,None]:continue
             seen.add(url)
             rules=json.dumps({k:v for k,v in source.items() if k.startswith('rule') or k in ['searchUrl','jsLib','header']},ensure_ascii=False)
-            sources.append({'collection':collection['url'],'scripted':bool(re.search(r'@js:|<js>|\{\{',rules,re.I)),'source':source})
+            sources.append({'collection':collection['url'],'scripted':bool(re.search(r'@js:|<js>|\{\{(?!\s*(?:key|page)\s*\}\})',rules,re.I)),'source':source})
     assert sources,'No public collections were downloaded'
     (OUTPUT/'corpus.json').write_text(json.dumps(sources,ensure_ascii=False),encoding='utf-8')
     provenance=[{k:v for k,v in collection.items() if k!='rows'} for collection in collections]

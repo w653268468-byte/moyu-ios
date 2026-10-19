@@ -2,6 +2,8 @@
 
 当前任务仅处理书源兼容和真实搜索→目录→正文；书架、排版、听书等其他功能暂停迭代。
 
+HTTP 兼容：get/post/connect 可读取非 2xx 响应的状态与正文；ajax 保留明确 HTTP 失败。书源显式配置的 Authorization/Cookie 和请求选项头按源请求应用，Host 不允许覆盖，头部值经过换行检查；source 登录头保存在本机钥匙串并复用到该源后续请求。采样任务使用与 App 相同的浏览器 User-Agent 和 60 秒下载预算，超过 20 MB 的合集单独记录为导入限制。
+
 本轮接入固定版本 CryptoJS 4.2.0 和独立实现的 Legado 适配层，补充 AES/DES/TripleDES、字节编码、source/book/chapter 变量、按源隔离的限额缓存及 Cookie 辅助接口；支持嵌套 getString/getElements，保存并恢复外层脚本状态，嵌套不能重新获得执行预算。所有新增项须通过 Swift/iOS 检查后才能认定集成通过，RSA 和其余 Android 平台接口另行补齐。
 
 真实网站审计使用 `scripts/fetch_source_corpus.py` 下载公开合集，包括用户 yiove 合集、XIU2/Yuedu 及 aoaostar/legado 发布的多个合集。记录下载地址、重定向地址、SHA-256 和条目数；规则不内置到 App。按独立域名、不同集合和脚本/静态规则分层抽样，最多 3 源并发、每源完整链路 45 秒预算，阶段之间间隔 500 ms。每个样本记录搜索、目录、正文阶段与错误分类。
