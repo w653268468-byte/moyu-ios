@@ -125,14 +125,15 @@ public enum SourceError: LocalizedError {
 }
 
 public struct OnlineChapter: Codable, Identifiable, Equatable, Sendable {
-    public var id: String { url.absoluteString }
+    public var id: String { requestTemplate ?? url.absoluteString }
     public var title: String
     public var url: URL
     public var ruleVariables: [String: String]?
+    public var requestTemplate: String?
 }
 
 public struct OnlineNovel: Codable, Identifiable, Equatable, Sendable {
-    public var id: String { shelfID ?? url.absoluteString }
+    public var id: String { shelfID ?? requestTemplate ?? url.absoluteString }
     public var shelfID: String?
     public var title: String
     public var author: String
@@ -145,6 +146,7 @@ public struct OnlineNovel: Codable, Identifiable, Equatable, Sendable {
     public var textOffset: Int?
     public var scrollFraction: Double?
     public var ruleVariables: [String: String]?
+    public var requestTemplate: String?
 
     public init(title: String, author: String = "", intro: String = "", url: URL, sourceID: String) {
         self.title = title

@@ -48,6 +48,7 @@ final class ScriptHTTP {
     private let configuration: URLSessionConfiguration
     init(configuration: URLSessionConfiguration) { self.configuration = configuration }
     func request(_ request: URLRequest, cancelled: () -> Bool) throws -> Response {
+        guard !SourceRequest.requiresWebView(request) else { throw SourceError.message("同步 ajax 不能执行 WebView 请求，请在书源请求地址中设置 webView 选项。") }
         let collector = Collector()
         let config = configuration.copy() as! URLSessionConfiguration
         config.timeoutIntervalForRequest = 10; config.timeoutIntervalForResource = 15

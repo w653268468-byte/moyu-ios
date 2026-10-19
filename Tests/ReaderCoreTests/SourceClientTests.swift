@@ -36,11 +36,29 @@ private final class FixtureProtocol: URLProtocol {
 }
 
 final class SourceClientTests: XCTestCase {
+    func testWebViewOptionsReachRendererAndSurviveSavedChapter() async throws {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [FixtureProtocol.self]
+        let client = SourceClient(configuration: config, webRenderer: { request, _ in
+            guard SourceRequest.requiresWebView(request), request.url?.path == "/chapter/1", request.value(forHTTPHeaderField: "Referer") != nil else { throw SourceError.message("WebView option lost") }
+            return (Data("<div id='content'>动态生成的正文</div>".utf8), request.url!)
+        })
+        var source = try source(); source.ruleContent?.nextContentUrl = nil
+        let navigation = try SourceRequest.navigation("../chapter/1,{'webView':'true','webJs':'document.body.innerHTML'}", base: URL(string: "https://fixture.example/book/toc")!, script: nil)
+        let chapter = OnlineChapter(title: "第一章", url: navigation.url, requestTemplate: navigation.template)
+        let saved = try JSONDecoder().decode(OnlineChapter.self, from: JSONEncoder().encode(chapter))
+        XCTAssertEqual(saved.url.path, "/chapter/1")
+        XCTAssertNotEqual(saved.id, saved.url.absoluteString, "Chapter request options must not share cache keys")
+        let body = try await client.chapter(saved, source: source)
+        XCTAssertEqual(body, "动态生成的正文")
+        let request = try SourceRequest.make(saved.requestTemplate!, query: "", base: saved.url)
+        XCTAssertEqual(SourceRequest.webScript(request), "document.body.innerHTML")
+    }
     func testTemplateBookURLAndVariablesSurviveReaderRestart() async throws {
         var source = try source()
         source.searchUrl = "/api/search"
         source.ruleSearch?.bookList = "$.data.books[*]"
         source.ruleSearch?.name = "$.name"
+        source.ruleSearch?.author = nil
         source.ruleSearch?.bookUrl = "{{$.url}}?bid=@get:{bid}"
         source.ruleSearch?.wordCount = "@put:{bid:$.bid}"
         source.ruleBookInfo?.name = "$.name"

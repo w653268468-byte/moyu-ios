@@ -1,18 +1,22 @@
 import Foundation
 import SwiftSoup
+import CryptoKit
 
 public actor SourceClient {
     private let session: URLSession
     private let cookieStorage: HTTPCookieStorage?
     private let cookieProvider: (@Sendable (URL) async -> [HTTPCookie])?
+    private let webRenderer: (@Sendable (URLRequest, [HTTPCookie]) async throws -> (Data, URL))?
     private var scriptEngines: [String: (BookSource, SourceScript)] = [:]
-    public init(configuration: URLSessionConfiguration = .ephemeral, cookieProvider: (@Sendable (URL) async -> [HTTPCookie])? = nil) {
+    public init(configuration: URLSessionConfiguration = .ephemeral, cookieProvider: (@Sendable (URL) async -> [HTTPCookie])? = nil,
+                webRenderer: (@Sendable (URLRequest, [HTTPCookie]) async throws -> (Data, URL))? = nil) {
         let config = configuration
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 60
         config.httpMaximumConnectionsPerHost = 2
         cookieStorage = config.httpCookieStorage
         self.cookieProvider = cookieProvider
+        self.webRenderer = webRenderer
         session = URLSession(configuration: config)
     }
 
@@ -55,6 +59,12 @@ public actor SourceClient {
             }
         }
         do {
+            if SourceRequest.requiresWebView(request) {
+                guard let webRenderer else { throw SourceError.message("当前运行环境没有 WebView 渲染器，无法执行此书源的动态网页请求。") }
+                let rendered = try await webRenderer(request, cookieStorage?.cookies(for: url) ?? [])
+                guard rendered.0.count <= limit else { throw SourceError.message("WebView 网页超过大小限制。") }
+                return rendered
+            }
             let (bytes, response) = try await session.bytes(for: request)
             guard let response = response as? HTTPURLResponse else { throw SourceError.message("未收到 HTTP 响应。") }
             guard (200...299).contains(response.statusCode) else {
@@ -158,11 +168,13 @@ public actor SourceClient {
             let title = try element.value(name)
             let link = try element.value(bookURL)
             guard !title.isEmpty, !link.isEmpty else { continue }
-            let resolved = try Self.resolve(link, base: url)
-            guard seen.insert(resolved.absoluteString).inserted else { continue }
+            let navigation = try SourceRequest.navigation(link, base: url, script: scriptEngine(for: source))
+            let resolved = navigation.url
+            guard seen.insert(navigation.template ?? resolved.absoluteString).inserted else { continue }
             var novel = OnlineNovel(title: title, author: try element.optionalValue(rule.author),
                                     intro: try element.optionalValue(rule.intro), url: resolved, sourceID: source.id)
             novel.ruleVariables = try scriptEngine(for: source)?.snapshotVariables()
+            novel.requestTemplate = navigation.template
             results.append(novel)
         }
         return results
@@ -189,9 +201,11 @@ public actor SourceClient {
             let title = try element.value(name)
             let raw = try element.value(bookURL)
             guard !title.isEmpty, !raw.isEmpty else { continue }
-            let link = try Self.resolve(raw, base: url)
-            guard seen.insert(link.absoluteString).inserted else { continue }
-            novels.append(OnlineNovel(title: title, author: try element.optionalValue(rule.author), intro: try element.optionalValue(rule.intro), url: link, sourceID: source.id))
+            let link = try SourceRequest.navigation(raw, base: url, script: scriptEngine(for: source))
+            guard seen.insert(link.template ?? link.url.absoluteString).inserted else { continue }
+            var novel = OnlineNovel(title: title, author: try element.optionalValue(rule.author), intro: try element.optionalValue(rule.intro), url: link.url, sourceID: source.id)
+            novel.requestTemplate = link.template; novel.ruleVariables = try scriptEngine(for: source)?.snapshotVariables()
+            novels.append(novel)
         }
         return novels
     }
@@ -200,7 +214,8 @@ public actor SourceClient {
         if let reason = source.incompatibility { throw SourceError.message(reason) }
         var result = novel
         if let variables = novel.ruleVariables { try scriptEngine(for: source)?.restoreVariables(variables) }
-        let (detail, detailURL) = try await document(novel.url, source: source)
+        let detailRequest = try SourceRequest.make(novel.requestTemplate ?? novel.url.absoluteString, query: "", base: novel.url, script: scriptEngine(for: source))
+        let (detail, detailURL) = try await document(detailRequest, source: source)
         if let initialization = source.ruleBookInfo?.initialization, !initialization.isEmpty { _ = try detail.value(initialization) }
         if let info = source.ruleBookInfo {
             let title = try detail.optionalValue(info.name)
@@ -211,28 +226,28 @@ public actor SourceClient {
             if !intro.isEmpty { result.intro = intro }
         }
         let toc = try detail.value(source.ruleBookInfo?.tocUrl)
-        var nextURL = try (toc.isEmpty ? detailURL : Self.resolve(toc, base: detailURL))
+        var nextRequest = try SourceRequest.make(toc.isEmpty ? detailURL.absoluteString : toc, query: "", base: detailURL, script: scriptEngine(for: source))
         var visited: Set<String> = []
         var seenChapters: Set<String> = []
         var chapters: [OnlineChapter] = []
         guard let rule = source.ruleToc, let list = rule.chapterList else { throw SourceError.message("缺少目录规则。") }
-        while visited.insert(nextURL.absoluteString).inserted {
+        while visited.insert(requestKey(nextRequest)).inserted {
             try Task.checkCancellation()
             guard visited.count <= 30 else { throw SourceError.message("目录超过 30 页，已停止以避免循环请求。") }
             let (doc, pageURL): (RuleDocument, URL)
-            if nextURL == detailURL { (doc, pageURL) = (detail, detailURL) }
-            else { (doc, pageURL) = try await document(nextURL, source: source) }
+            if visited.count == 1 && nextRequest.url == detailURL && toc.isEmpty { (doc, pageURL) = (detail, detailURL) }
+            else { (doc, pageURL) = try await document(nextRequest, source: source) }
             for element in try doc.elements(list) {
                 let title = try element.value(rule.chapterName)
                 let raw = try element.value(rule.chapterUrl)
                 guard !title.isEmpty, !raw.isEmpty else { continue }
-                let link = try Self.resolve(raw, base: pageURL)
-                if seenChapters.insert(link.absoluteString).inserted { chapters.append(OnlineChapter(title: title, url: link, ruleVariables: try scriptEngine(for: source)?.snapshotVariables())) }
+                let link = try SourceRequest.navigation(raw, base: pageURL, script: scriptEngine(for: source))
+                if seenChapters.insert(link.template ?? link.url.absoluteString).inserted { chapters.append(OnlineChapter(title: title, url: link.url, ruleVariables: try scriptEngine(for: source)?.snapshotVariables(), requestTemplate: link.template)) }
                 guard chapters.count <= 20000 else { throw SourceError.message("目录超过 20000 章，暂不支持。") }
             }
             let next = try doc.value(rule.nextTocUrl)
             if next.isEmpty { break }
-            nextURL = try Self.resolve(next, base: pageURL)
+            nextRequest = try SourceRequest.make(next, query: "", base: pageURL, script: scriptEngine(for: source))
             try await Task.sleep(for: .milliseconds(350))
         }
         guard !chapters.isEmpty else { throw SourceError.message("没有解析到章节。请检查目录规则、网站结构或访问限制。") }
@@ -245,14 +260,14 @@ public actor SourceClient {
     public func chapter(_ chapter: OnlineChapter, source: BookSource) async throws -> String {
         if let variables = chapter.ruleVariables { try scriptEngine(for: source)?.restoreVariables(variables) }
         guard let rule = source.ruleContent, let content = rule.content else { throw SourceError.message("缺少正文规则。") }
-        var nextURL = chapter.url
+        var nextRequest = try SourceRequest.make(chapter.requestTemplate ?? chapter.url.absoluteString, query: "", base: chapter.url, script: scriptEngine(for: source))
         var visited: Set<String> = []
         var texts: [String] = []
         var total = 0
-        while visited.insert(nextURL.absoluteString).inserted {
+        while visited.insert(requestKey(nextRequest)).inserted {
             try Task.checkCancellation()
             guard visited.count <= 20 else { throw SourceError.message("正文分页超过 20 页，已停止请求。") }
-            let (doc, pageURL) = try await document(nextURL, source: source)
+            let (doc, pageURL) = try await document(nextRequest, source: source)
             var text = try doc.value(content, body: true)
             if let replacement = rule.replaceRegex, !replacement.isEmpty { text = try RuleReplacement.apply(text, suffix: replacement) }
             guard !text.isEmpty else { throw SourceError.message("正文为空，请检查书源规则或网站是否需要验证。") }
@@ -261,9 +276,12 @@ public actor SourceClient {
             texts.append(text)
             let next = try doc.value(rule.nextContentUrl)
             if next.isEmpty { break }
-            nextURL = try Self.resolve(next, base: pageURL)
+            nextRequest = try SourceRequest.make(next, query: "", base: pageURL, script: scriptEngine(for: source))
             try await Task.sleep(for: .milliseconds(350))
         }
         return texts.joined(separator: "\n\n")
+    }
+    private func requestKey(_ request: URLRequest) -> String {
+        (request.url?.absoluteString ?? "") + "|" + (request.httpMethod ?? "GET") + "|" + SHA256.hash(data: request.httpBody ?? Data()).map { String(format: "%02x", $0) }.joined()
     }
 }

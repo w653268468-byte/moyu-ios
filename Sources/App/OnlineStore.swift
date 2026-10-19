@@ -7,7 +7,7 @@ final class OnlineStore: ObservableObject {
     @Published private(set) var novels: [OnlineNovel] = []
     @Published var errorMessage: String?
     @Published private(set) var locked = false
-    let client = SourceClient(cookieProvider: { url in await BrowserSessions.cookies(for: url) })
+    let client = SourceClient(cookieProvider: { url in await BrowserSessions.cookies(for: url) }, webRenderer: { request, cookies in try await SourceWebRenderer.render(request, cookies: cookies) })
     private let directory = URL.documentsDirectory.appendingPathComponent("MoyuOnline", isDirectory: true)
     private var indexURL: URL { directory.appendingPathComponent("index.json") }
     private var backupURL: URL { directory.appendingPathComponent("index.backup.json") }
@@ -117,7 +117,7 @@ final class OnlineStore: ObservableObject {
     }
 
     private func cacheURL(_ chapter: OnlineChapter, sourceID: String) -> URL {
-        let hash = SHA256.hash(data: Data((sourceID + "|" + chapter.url.absoluteString).utf8))
+        let hash = SHA256.hash(data: Data((sourceID + "|" + chapter.id).utf8))
             .map { String(format: "%02x", $0) }.joined()
         return directory.appendingPathComponent("\(hash).txt")
     }

@@ -22,6 +22,9 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/private" and "gavin_fixture=verified" in self.headers.get("Cookie", ""):
             self.send_response(200)
             body = b"GAVIN_AUTHENTICATED_CHAPTER"
+        elif self.path == "/dynamic" and "gavin_fixture=verified" in self.headers.get("Cookie", ""):
+            self.send_response(200)
+            body = b"<!doctype html><title>Gavin dynamic fixture</title><div id='content'>Loading</div><script>setTimeout(()=>document.getElementById('content').textContent='GAVIN_RENDERED_DYNAMIC_CHAPTER',400)</script>"
         else:
             self.send_response(401)
             body = b"Authentication required"

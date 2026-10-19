@@ -1,6 +1,15 @@
 import Foundation
 
 public enum SourceRequest {
+    public static func requiresWebView(_ request: URLRequest) -> Bool { URLProtocol.property(forKey: "GavinWebView", in: request) as? Bool == true }
+    public static func webScript(_ request: URLRequest) -> String? { URLProtocol.property(forKey: "GavinWebScript", in: request) as? String }
+    static func navigation(_ text: String, base: URL, script: SourceScript?) throws -> (url: URL, template: String?) {
+        let expanded = try ScriptTemplate.expand(text, using: script, query: "", base: base)
+        let request = try make(expanded, query: "", base: base, script: script)
+        guard let url = request.url else { throw SourceError.message("书源章节地址为空。") }
+        let split = expanded.range(of: #",\s*\{"#, options: .regularExpression)
+        return (url, split.map { url.absoluteString + expanded[$0.lowerBound...] })
+    }
     public static func make(_ template: String, query: String, base: URL, script: SourceScript? = nil, page: Int = 1) throws -> URLRequest {
         let template = try ScriptTemplate.expand(template, using: script, query: query, base: base, page: page)
         let split = template.range(of: #",\s*\{"#, options: .regularExpression)
@@ -64,6 +73,15 @@ public enum SourceRequest {
                 request.httpBody = try JSONSerialization.data(withJSONObject: replace(body))
                 request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
             }
+        }
+        if options["webView"] as? Bool == true || (options["webView"] as? String)?.lowercased() == "true" {
+            let mutable = (request as NSURLRequest).mutableCopy() as! NSMutableURLRequest
+            URLProtocol.setProperty(true, forKey: "GavinWebView", in: mutable)
+            if let script = options["webJs"] as? String {
+                guard script.utf8.count <= 512 * 1024 else { throw SourceError.message("WebView 脚本超过大小限制。") }
+                URLProtocol.setProperty(script, forKey: "GavinWebScript", in: mutable)
+            }
+            request = mutable as URLRequest
         }
         return request
     }
