@@ -53,6 +53,7 @@ final class SourceCorpusAuditTests: XCTestCase {
         for object in objects {
             guard let source = object["source"] as? [String: Any], let collection = object["collection"] as? String,
                   let parsed = try? SourceImport.parse(JSONSerialization.data(withJSONObject: source)).sources.first else { continue }
+            if let required = environment["GAVIN_AUDIT_COLLECTION"], !required.isEmpty, !collection.contains(required) { continue }
             candidates.append(SourceAuditCase(source: parsed, collection: collection, scripted: object["scripted"] as? Bool ?? false, requiresPersonalLogin: object["requiresPersonalLogin"] as? Bool ?? false))
         }
         let limit = min(60, max(1, Int(environment["GAVIN_AUDIT_LIMIT"] ?? "32") ?? 32))
