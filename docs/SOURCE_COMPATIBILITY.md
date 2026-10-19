@@ -2,6 +2,8 @@
 
 当前任务仅处理书源兼容和真实搜索→目录→正文；书架、排版、听书等其他功能暂停迭代。
 
+第 52 次审计已实际使用 WebView 检查动态源；32 个域名有 4 个完整链路通过，其中“错层小说网”只取得 82 字，未加入推荐样例，仍需排查是否为提示/占位正文。“天天小说 ttk.tw”的 TypeError 已定位为 connect 响应缺少 raw().request().url()；补充该响应链与对应回归。当前通过数不视为兼容工作已完成。
+
 动态请求头同样应用于脚本 ajax/get/post 与共享脚本下载；搜索头获得实际 key/page，嵌套请求模板保存并恢复外层 key/page/result，嵌套设置全局变量不得重置外层执行预算。增加动态头与嵌套请求回归。
 
 第 50 次提交对应的审计已取得 3/32 个完整链路，通过的规则及精确记录在 SOURCE_VALIDATION.md 与 Examples/verified-sources.json。新增近期维护的 cjj200011222/legado-booksource 公开集合，并给 macOS 审计接入独立、临时 Cookie 存储的 WKWebView：动态源不再仅因命令行缺少浏览器而跳过，报告标记 usedWebView；交互式登录仍须用户在 App 内完成。

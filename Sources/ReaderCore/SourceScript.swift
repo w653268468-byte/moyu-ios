@@ -394,6 +394,7 @@ public final class SourceScript: @unchecked Sendable {
         headers() { const values={...this.value.headers};Object.defineProperty(values,'get',{value:name=>this.header(name),enumerable:false});return values; }
         header(name) { const key=Object.keys(this.value.headers).find(key=>key.toLowerCase()===String(name).toLowerCase());return key?this.value.headers[key]:null; }
         statusCode() { return this.code(); }
+        raw() { const response=this;return {request:()=>({url:()=>response.url()}),body:()=>({string:()=>response.body(),bytes:()=>String(response.body()).getBytes()}),code:()=>response.code(),header:name=>response.header(name),headers:()=>response.headers()}; }
         toString() { return this.body(); }
     }
     class GavinElement {

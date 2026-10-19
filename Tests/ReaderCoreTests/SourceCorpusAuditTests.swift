@@ -8,6 +8,7 @@ private struct SourceAuditResult: Codable, Sendable {
     var status = "failed"; var stage = "search"; var keyword = "三国演义"
     var title: String?; var chapters: Int?; var characters: Int?; var error: String?; var category: String?
     var usedWebView = false
+    var chapterIndex: Int?; var chapterTitle: String?
 }
 private actor SourceAuditProgress {
     var value: SourceAuditResult
@@ -17,6 +18,7 @@ private actor SourceAuditProgress {
         if let keyword { value.keyword = keyword }; if let title { value.title = title }; if let chapters { value.chapters = chapters }
     }
     func usedWebView() { value.usedWebView = true }
+    func chapter(_ index: Int, title: String, characters: Int? = nil) { value.chapterIndex = index; value.chapterTitle = title; value.characters = characters }
     func result(_ text: String? = nil, error: String? = nil) -> SourceAuditResult {
         var result = value
         if let text { result.status = "passed"; result.stage = "content"; result.characters = text.count }
@@ -26,8 +28,9 @@ private actor SourceAuditProgress {
             if lower.contains("没有 webview 渲染器") { result.status = "requires_webview"; result.category = "runtime_environment" }
             else if lower.contains("没有交互式书源验证窗口") { result.status = "requires_login"; result.category = "runtime_environment" }
             else if ["域名停放", "广告跳转", "脚本跳转页", "网站返回 html 页面"].contains(where: lower.contains) { result.category = "unexpected_website_response" }
-            else if ["http 403", "http 429", "验证", "验证码", "登录", "captcha"].contains(where: lower.contains) { result.category = "authentication_or_rate_limit" }
-            else if ["http 404", "http 410", "域名", "dns", "超时", "超过 45", "timeout", "network", "网络", "https"].contains(where: lower.contains) { result.category = "network_or_dead_endpoint" }
+            else if lower.contains("正文不足") { result.category = "short_or_placeholder_body" }
+            else if ["http 401", "http 403", "http 429", "验证", "验证码", "登录", "captcha"].contains(where: lower.contains) { result.category = "authentication_or_rate_limit" }
+            else if ["http 404", "http 410", "http 5", "域名", "dns", "超时", "超过 45", "timeout", "network", "网络", "https"].contains(where: lower.contains) { result.category = "network_or_dead_endpoint" }
             else { result.category = "rule_or_bridge" }
         }
         return result
@@ -110,11 +113,15 @@ final class SourceCorpusAuditTests: XCTestCase {
                     try await Task.sleep(for: .milliseconds(500))
                     let novel = try await client.catalog(book, source: item.source)
                     await progress.update("content", chapters: novel.chapters.count)
-                    guard let chapter = novel.chapters.first else { throw SourceError.message("目录为空") }
-                    try await Task.sleep(for: .milliseconds(500))
-                    let text = try await client.chapter(chapter, source: item.source)
-                    guard text.count >= 50 else { throw SourceError.message("正文少于 50 字，不能认定链路可用") }
-                    return await progress.result(text)
+                    guard !novel.chapters.isEmpty else { throw SourceError.message("目录为空") }
+                    for (index, chapter) in novel.chapters.prefix(3).enumerated() {
+                        await progress.chapter(index, title: chapter.title)
+                        try await Task.sleep(for: .milliseconds(500))
+                        let text = try await client.chapter(chapter, source: item.source)
+                        await progress.chapter(index, title: chapter.title, characters: text.count)
+                        if text.count >= 200 { return await progress.result(text) }
+                    }
+                    throw SourceError.message("检查前三章正文不足 200 字，暂不认定链路可用")
                 }
                 group.addTask { try await Task.sleep(for: .seconds(45)); throw SourceError.message("单源完整链路检查超过 45 秒") }
                 defer { group.cancelAll() }

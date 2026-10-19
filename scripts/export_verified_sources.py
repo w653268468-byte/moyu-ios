@@ -8,7 +8,7 @@ def export(corpus, report, output):
     selected=[]
     for result in report:
         if result.get('status')!='passed':continue
-        if not result.get('chapters') or result.get('characters',0)<50:raise ValueError('Incomplete pass evidence')
+        if not result.get('chapters') or result.get('characters',0)<200:raise ValueError('Incomplete pass evidence')
         source=sources[result['source']]
         if 'cookie' in str(source.get('header','')).lower() or 'authorization' in str(source.get('header','')).lower():
             raise ValueError('Do not distribute authentication headers in the verified sample')

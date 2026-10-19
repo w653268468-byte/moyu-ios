@@ -380,6 +380,7 @@ final class SourceClientTests: XCTestCase {
         XCTAssertEqual(try script.evaluate("java.get('/missing',{}).code()", result: "", baseURL: url) as? Int, 404)
         XCTAssertEqual(try script.evaluate("java.connect('/missing').code()", result: "", baseURL: url) as? Int, 404)
         XCTAssertEqual(try script.evaluate("java.get('/js-search','{\"X-Reader\":\"Gavin\"}').code()", result: "", baseURL: url) as? Int, 200)
+        XCTAssertEqual(try script.evaluate("String(java.connect('/api/chapter').raw().request().url())", result: "", baseURL: url) as? String, "https://fixture.example/api/chapter")
     }
     func testCachedExternalScriptAndLiteralSourceHeaders() throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [FixtureProtocol.self]
