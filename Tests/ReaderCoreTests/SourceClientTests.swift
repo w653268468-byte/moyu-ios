@@ -391,6 +391,20 @@ final class SourceClientTests: XCTestCase {
         let result = try script.evaluate("const first=java.importScript('https://fixture.example/js-search'); [first.includes('book'),java.cacheFile('https://fixture.example/js-search')===first,java.get('https://fixture.example/js-search',null).code()]", result: "", baseURL: URL(string: "https://fixture.example")!) as? [Any]
         XCTAssertEqual(result?[0] as? Bool, true); XCTAssertEqual(result?[1] as? Bool, true); XCTAssertEqual(result?[2] as? Int, 200)
     }
+    func testDynamicHeadersAndNestedRequestKeepOuterQueryPageAndResult() throws {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [FixtureProtocol.self]
+        let script = try SourceScript(configuration: config)
+        let object: [String: String] = ["bookSourceUrl": "https://fixture.example", "header": "@js:JSON.stringify({'X-Reader':page===3&&key==='山海'?'Gavin':'wrong'})"]
+        try script.setJSONGlobal("source", json: String(decoding: JSONSerialization.data(withJSONObject: object), as: UTF8.self))
+        let result = try script.evaluate("const before=result;const response=java.ajax('/js-search?value={{page+1}}');[response.includes('book'),page,key,result===before]", result: "outer", baseURL: URL(string: "https://fixture.example")!, globals: ["page":"3","key":"山海"]) as? [Any]
+        XCTAssertEqual(result?[0] as? Bool, true); XCTAssertEqual(result?[1] as? Int, 3); XCTAssertEqual(result?[2] as? String, "山海"); XCTAssertEqual(result?[3] as? Bool, true)
+    }
+    func testSearchHeaderReceivesActualKeywordAndPage() async throws {
+        var source = try source(); source.searchUrl = "/js-search"
+        source.header = "@js:JSON.stringify({'X-Reader':key==='山海'&&page===3?'Gavin':'wrong'})"
+        let books = try await makeClient().search("山海", source: source, page: 3)
+        XCTAssertEqual(books.first?.title, "山海来信")
+    }
     func testInteractiveVerificationRefetchAndResponseBody() async throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [FixtureProtocol.self]
         let script = try SourceScript(configuration: config, verificationHandler: { input in

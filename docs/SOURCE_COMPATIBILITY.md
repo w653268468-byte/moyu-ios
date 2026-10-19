@@ -2,6 +2,8 @@
 
 当前任务仅处理书源兼容和真实搜索→目录→正文；书架、排版、听书等其他功能暂停迭代。
 
+动态请求头同样应用于脚本 ajax/get/post 与共享脚本下载；搜索头获得实际 key/page，嵌套请求模板保存并恢复外层 key/page/result，嵌套设置全局变量不得重置外层执行预算。增加动态头与嵌套请求回归。
+
 第 50 次提交对应的审计已取得 3/32 个完整链路，通过的规则及精确记录在 SOURCE_VALIDATION.md 与 Examples/verified-sources.json。新增近期维护的 cjj200011222/legado-booksource 公开集合，并给 macOS 审计接入独立、临时 Cookie 存储的 WKWebView：动态源不再仅因命令行缺少浏览器而跳过，报告标记 usedWebView；交互式登录仍须用户在 App 内完成。
 
 公开样本中 14 个源使用 JavaImporter，22 处调用 toNumChapter。新增显式 Java 兼容包：JavaImporter、SecretKeySpec/IvParameterSpec、Cipher、RSA KeyFactory/EncodedKeySpec、Signature、MessageDigest、Base64、Arrays、ByteArrayOutputStream、String 字节构造和中文章节数字；只实现列出的接口，不暴露任意 Java/Android 类。Node 中使用真实 JavaImporter/with 解密流程对照独立 OpenSSL AES 结果，Swift/iOS 与 RSA 向量检查另行验证；OkHttp、Hutool、字体反混淆等尚需真实案例适配。

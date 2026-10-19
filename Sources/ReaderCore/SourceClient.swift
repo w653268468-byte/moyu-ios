@@ -78,7 +78,9 @@ public actor SourceClient {
         if let source {
             request.setValue(source.bookSourceUrl, forHTTPHeaderField: "Referer")
             if let header = source.header, !header.isEmpty {
-                let expanded = try ScriptTemplate.expand(header, using: scriptEngine(for: source), query: "", base: url)
+                let engine = try scriptEngine(for: source)
+                let globals = engine?.requestGlobals() ?? (query: "", page: 1)
+                let expanded = try ScriptTemplate.expand(header, using: engine, query: globals.query, base: url, page: globals.page)
                 let headers = try SourceHeaders.parse(expanded)
                 for (key, value) in headers where key.lowercased() != "host" {
                     request.setValue(value, forHTTPHeaderField: key)
@@ -315,6 +317,9 @@ public actor SourceClient {
             throw SourceError.message("此书源没有完整的搜索规则，可以尝试直接粘贴小说详情页链接。")
         }
         let base = try Self.resolve(source.bookSourceUrl, base: URL(string: "https://example.com")!)
+        let engine = try scriptEngine(for: source)
+        try engine?.setJSONGlobal("key", json: String(decoding: JSONEncoder().encode(query), as: UTF8.self))
+        try engine?.setJSONGlobal("page", json: String(page))
         let request = try SourceRequest.make(template, query: query, base: base, script: scriptEngine(for: source), page: page)
         let (doc, url) = try await document(request, source: source, globals: ["key": query, "page": String(page)])
         var seen: Set<String> = []

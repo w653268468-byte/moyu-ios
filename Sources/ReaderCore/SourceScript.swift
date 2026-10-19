@@ -33,6 +33,8 @@ public final class SourceScript: @unchecked Sendable {
     private var variables: [String: String] = [:]
     private var sourceNamespace = "unscoped"
     private var literalSourceHeaders: [String: String] = [:]
+    private var sourceHeaderTemplate: String?
+    private var expandingSourceHeader = false
 
     public init(configuration: URLSessionConfiguration = .ephemeral, webRenderer: (@Sendable (URLRequest, [HTTPCookie]) async throws -> (Data, URL))? = nil, verificationHandler: SourceVerificationHandler? = nil) throws {
         let limit = Limit()
@@ -66,6 +68,10 @@ public final class SourceScript: @unchecked Sendable {
     }
 
     public func cancel() { limit.stop() }
+    func requestGlobals() -> (query: String, page: Int) {
+        gate.lock(); defer { gate.unlock() }
+        return (context.getGlobalProperty("key").string ?? "", context.getGlobalProperty("page").int ?? 1)
+    }
     public func variable(_ name: String) -> String { gate.lock(); defer { gate.unlock() }; return variables[name] ?? "" }
     public func snapshotVariables() -> [String: String] { gate.lock(); defer { gate.unlock() }; return variables }
     public func restoreVariables(_ values: [String: String]) throws {
@@ -85,9 +91,10 @@ public final class SourceScript: @unchecked Sendable {
 
     public func setJSONGlobal(_ name: String, json: String) throws {
         gate.lock(); defer { gate.unlock() }
-        limit.begin(2)
+        if evaluationDepth == 0 { limit.begin(2) }
         if name == "source", let object = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any], let url = object["bookSourceUrl"] as? String {
             sourceNamespace = url
+            sourceHeaderTemplate = object["header"] as? String
             literalSourceHeaders = (object["header"] as? String).flatMap { try? SourceHeaders.parse($0) } ?? [:]
         }
         context.setGlobalProperty(name: "__gavinGlobal", value: json)
@@ -142,6 +149,19 @@ public final class SourceScript: @unchecked Sendable {
         }
     }
 
+    private func sourceRequestHeaders() throws -> [String: String] {
+        guard !expandingSourceHeader, let template = sourceHeaderTemplate, ScriptTemplate.needsScript(template) else { return literalSourceHeaders }
+        expandingSourceHeader = true; defer { expandingSourceHeader = false }
+        let page = context.getGlobalProperty("page"), key = context.getGlobalProperty("key")
+        defer { context.setGlobalProperty(name: "page", value: page); context.setGlobalProperty(name: "key", value: key) }
+        let expanded = try ScriptTemplate.expand(template, using: self, query: key.string ?? "", base: base, page: page.int ?? 1)
+        return try SourceHeaders.parse(expanded)
+    }
+    private func scriptRequest(_ template: String) throws -> URLRequest {
+        let page = context.getGlobalProperty("page"), key = context.getGlobalProperty("key")
+        defer { context.setGlobalProperty(name: "page", value: page); context.setGlobalProperty(name: "key", value: key) }
+        return try SourceRequest.make(template, query: key.string ?? "", base: base, script: self, page: page.int ?? 1)
+    }
     private func native(_ method: String, payload: String) throws -> String {
         guard let data = payload.data(using: .utf8), let args = try JSONSerialization.jsonObject(with: data) as? [Any] else { throw SourceError.message("脚本参数无效。") }
         func string(_ index: Int) -> String { args.indices.contains(index) ? (args[index] as? String ?? String(describing: args[index])) : "" }
@@ -220,7 +240,7 @@ public final class SourceScript: @unchecked Sendable {
             let cacheKey = "remote-script:" + url.absoluteString
             if let cached = SourceScriptCache.shared.get(sourceNamespace, cacheKey) { result = cached; break }
             var request = URLRequest(url: url)
-            for (name, value) in literalSourceHeaders where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
+            for (name, value) in try sourceRequestHeaders() where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
             if let login = SourceScriptCache.shared.get(sourceNamespace, "source:@loginHeader") {
                 for (name, value) in try SourceHeaders.parse(login) where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
             }
@@ -230,7 +250,7 @@ public final class SourceScript: @unchecked Sendable {
             try SourceScriptCache.shared.put(sourceNamespace, cacheKey, text, seconds: args.count > 1 ? (args[1] as? Double ?? 0) : 0)
             result = text
         case "ajax", "get", "post", "connect":
-            var request = try SourceRequest.make(string(0), query: "", base: base)
+            var request = try scriptRequest(string(0))
             if method == "post" {
                 request.httpMethod = "POST"
                 request.httpBody = Data(string(1).utf8)
@@ -238,7 +258,7 @@ public final class SourceScript: @unchecked Sendable {
             }
             request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
             request.setValue(base.absoluteString, forHTTPHeaderField: "Referer")
-            for (name, value) in literalSourceHeaders where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
+            for (name, value) in try sourceRequestHeaders() where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
             if let login = SourceScriptCache.shared.get(sourceNamespace, "source:@loginHeader") {
                 for (name, value) in try SourceHeaders.parse(login) where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
             }
@@ -257,7 +277,7 @@ public final class SourceScript: @unchecked Sendable {
             guard let handler = verificationHandler else { throw SourceError.message("当前运行环境没有交互式书源验证窗口，需在 App 内完成登录或验证码。") }
             let url = try SourceClient.resolve(string(0), base: base)
             var request = URLRequest(url: url)
-            for (name, value) in literalSourceHeaders where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
+            for (name, value) in try sourceRequestHeaders() where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
             if let login = SourceScriptCache.shared.get(sourceNamespace, "source:@loginHeader") {
                 for (name, value) in try SourceHeaders.parse(login) where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
             }
@@ -278,7 +298,7 @@ public final class SourceScript: @unchecked Sendable {
             var request = try SourceRequest.renderRequest(url: url, html: html?.isEmpty == false ? html : nil, script: args.indices.contains(2) ? args[2] as? String : nil)
             request.setValue(base.absoluteString, forHTTPHeaderField: "Referer")
             request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
-            for (name, value) in literalSourceHeaders where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
+            for (name, value) in try sourceRequestHeaders() where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
             if args.indices.contains(3), args[3] as? Bool == true { request.cachePolicy = .returnCacheDataElseLoad }
             if let login = SourceScriptCache.shared.get(sourceNamespace, "source:@loginHeader") {
                 for (name, value) in try SourceHeaders.parse(login) where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
