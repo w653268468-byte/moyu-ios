@@ -1,19 +1,83 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+@MainActor
+private final class SearchViewModel: ObservableObject {
+    @Published var state = SourceSearchState()
+    @Published var searching = false
+    @Published var didSearch = false
+    @Published var completed = 0
+    @Published var total = 0
+    @Published var message: String?
+    private(set) var keyword = ""
+    private var sources: [BookSource] = []
+    private var generation = UUID()
+    private var task: Task<Void, Never>?
+
+    var canLoadMore: Bool { !state.limitReached && sources.contains { state.failures[$0.id] == nil && !state.exhausted.contains($0.id) && (state.nextPages[$0.id] ?? 1) <= 10000 } }
+    var failures: [SourceSearchFailure] { state.failures.values.sorted { $0.sourceName.localizedStandardCompare($1.sourceName) == .orderedAscending } }
+
+    func start(_ text: String, sources: [BookSource], client: SourceClient) {
+        reset()
+        keyword = text; self.sources = sources; didSearch = true
+        batch(sources.map { SourceSearchRequest(source: $0, page: 1) }, client: client)
+    }
+    func more(client: SourceClient) {
+        let jobs = sources.filter { state.failures[$0.id] == nil && !state.exhausted.contains($0.id) && (state.nextPages[$0.id] ?? 1) <= 10000 }
+            .map { SourceSearchRequest(source: $0, page: state.nextPages[$0.id] ?? 1) }
+        batch(jobs, client: client)
+    }
+    func retryFailures(client: SourceClient) {
+        batch(sources.filter { state.failures[$0.id] != nil }.map { SourceSearchRequest(source: $0, page: state.nextPages[$0.id] ?? 1) }, client: client)
+    }
+    func cancel() { task?.cancel(); generation = UUID(); searching = false }
+    func reset() {
+        cancel(); state = SourceSearchState(); sources = []; keyword = ""; message = nil
+        didSearch = false; completed = 0; total = 0
+    }
+    private func receive(_ outcome: SourceSearchOutcome, token: UUID) -> Bool {
+        guard token == generation else { return false }
+        state.receive(outcome); completed += 1
+        if state.limitReached { message = "结果已达 5000 条，请缩小关键词或选择单个书源。" }
+        return !state.limitReached
+    }
+    private func batch(_ jobs: [SourceSearchRequest], client: SourceClient) {
+        guard !searching, !jobs.isEmpty, !state.limitReached else { return }
+        let token = UUID(); generation = token
+        let query = keyword
+        searching = true; completed = 0; total = jobs.count; message = nil
+        task = Task { [weak self] in
+            do {
+                try await SourceSearch.run(requests: jobs, search: { source, page in
+                    try await client.search(query, source: source, page: page)
+                }, onResult: { [weak self] outcome in
+                    guard let self else { return false }
+                    return await self.receive(outcome, token: token)
+                })
+            } catch {
+                guard let self, self.generation == token, !Task.isCancelled else { return }
+                self.message = error.localizedDescription
+            }
+            guard let self, self.generation == token else { return }
+            self.searching = false
+        }
+    }
+}
+
 struct SourceHubView: View {
     @EnvironmentObject private var online: OnlineStore
     @State private var showImport = false
     @State private var selectedSource = ""
     @State private var query = ""
     @State private var directURL = ""
-    @State private var results: [OnlineNovel] = []
+    @StateObject private var search = SearchViewModel()
+    @State private var allSources = true
+    @State private var available: [BookSource] = []
     @State private var selection: OnlineNovel?
-    @State private var searching = false
     @State private var failure: String?
-    @State private var didSearch = false
-    @State private var searchTask: Task<Void, Never>?
-    private var available: [BookSource] { online.sources.filter { $0.incompatibility == nil && $0.enabled != false } }
+    private var searchable: [BookSource] {
+        available.filter { !($0.searchUrl ?? "").isEmpty && !($0.ruleSearch?.bookList ?? "").isEmpty && !($0.ruleSearch?.name ?? "").isEmpty && !($0.ruleSearch?.bookUrl ?? "").isEmpty }
+    }
 
     var body: some View {
         NavigationStack {
@@ -27,14 +91,17 @@ struct SourceHubView: View {
                 if online.locked { Section { Button("重新读取在线书架") { online.reload() } } }
                 if !available.isEmpty {
                     Section("搜索小说") {
-                        Picker("使用书源", selection: $selectedSource) {
+                        Toggle("搜索所有已启用书源", isOn: $allSources).disabled(search.searching)
+                        Text(allSources ? "搜索范围：\(searchable.count) 个具备搜索规则的书源，结果陆续显示。" : "仅搜索下面选中的书源。")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Picker("目录／单源网站", selection: $selectedSource) {
                             ForEach(available) { Text($0.bookSourceName).tag($0.id) }
-                        }.disabled(searching)
-                        TextField("书名或作者", text: $query).submitLabel(.search).onSubmit { performSearch() }
+                        }.disabled(search.searching)
+                        TextField("书名或作者", text: $query).submitLabel(.search).onSubmit { performSearch() }.disabled(search.searching)
                         Button { performSearch() } label: {
-                            if searching { ProgressView("正在获取网页…") } else { Label("搜索", systemImage: "magnifyingglass") }
-                        }.disabled(searching || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        if searching { Button("取消搜索", role: .cancel) { searchTask?.cancel(); searching = false } }
+                            if search.searching { ProgressView("已完成 \(search.completed)/\(search.total) 个书源") } else { Label("搜索", systemImage: "magnifyingglass") }
+                        }.disabled(search.searching || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || searchable.isEmpty)
+                        if search.searching { Button("停止搜索，保留已找到的结果", role: .cancel) { search.cancel() } }
                     }
                     if let source = available.first(where: { $0.id == selectedSource }), source.enabledExplore != false, !(source.exploreUrl ?? "").isEmpty {
                         Section("发现分类") {
@@ -44,25 +111,44 @@ struct SourceHubView: View {
                     Section("通过小说链接打开") {
                         TextField("https://… 小说详情页或目录页", text: $directURL)
                             .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        Button("解析目录") { openDirect() }.disabled(searching || directURL.isEmpty)
+                        Button("解析目录") { openDirect() }.disabled(search.searching || directURL.isEmpty)
                         Text("链接需要与所选书源的网站匹配，无法自动识别任意网站。")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 if let failure { Section("解析结果") { Text(failure).foregroundStyle(.red).textSelection(.enabled) } }
-                if didSearch {
-                    Section("搜索结果 · \(results.count)") {
-                        if results.isEmpty && !searching { Text("没有结果，请检查书源、关键词或访问限制。").foregroundStyle(.secondary) }
-                        ForEach(results) { novel in
-                            Button { selection = novel } label: {
+                if let message = search.message { Section { Text(message).foregroundStyle(.orange) } }
+                if search.didSearch {
+                    Section("「\(search.keyword)」· \(search.state.hits.count) 个结果") {
+                        if search.state.hits.isEmpty && !search.searching { Text("没有结果，请展开下面的失败详情，或调整关键词和搜索范围。").foregroundStyle(.secondary) }
+                        ForEach(search.state.hits) { hit in
+                            Button { selection = hit.novel } label: {
                                 VStack(alignment: .leading, spacing: 5) {
-                                    Text(novel.title).foregroundStyle(.primary)
-                                    if !novel.author.isEmpty { Text(novel.author).font(.caption).foregroundStyle(.secondary) }
-                                    if !novel.intro.isEmpty { Text(novel.intro).font(.caption).lineLimit(2).foregroundStyle(.secondary) }
+                                    Text(hit.novel.title).foregroundStyle(.primary)
+                                    Text(hit.sourceName).font(.caption2).foregroundStyle(.tint)
+                                    if !hit.novel.author.isEmpty { Text(hit.novel.author).font(.caption).foregroundStyle(.secondary) }
+                                    if !hit.novel.intro.isEmpty { Text(hit.novel.intro).font(.caption).lineLimit(2).foregroundStyle(.secondary) }
                                 }
                             }
                         }
-                        Text("当前获取搜索结果的第一页，最多 100 本。").font(.caption).foregroundStyle(.secondary)
+                        if search.canLoadMore {
+                            Button("加载更多结果") { search.more(client: online.client) }.disabled(search.searching)
+                        } else if !search.searching && !search.state.hits.isEmpty && !search.state.limitReached {
+                            Text("当前可用书源已无更多结果。").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    if !search.failures.isEmpty {
+                        Section {
+                            DisclosureGroup("失败详情 · \(search.failures.count) 个书源") {
+                                ForEach(search.failures) { item in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(item.sourceName)
+                                        Text(item.message).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
+                                    }
+                                }
+                            }
+                            Button("仅重试失败的书源") { search.retryFailures(client: online.client) }.disabled(search.searching)
+                        }
                     }
                 }
                 Section("书源") {
@@ -81,28 +167,27 @@ struct SourceHubView: View {
                 } }
                 .sheet(isPresented: $showImport) { SourceImportView() }
                 .sheet(item: $selection) { NovelDetailView(novel: $0) }
-                .onDisappear { searchTask?.cancel() }
+                .onDisappear { search.cancel() }
                 .onAppear { chooseDefault() }
-                .onChange(of: online.sources) { _, _ in chooseDefault() }
+                .onChange(of: online.sources) { _, _ in search.reset(); chooseDefault() }
+                .onChange(of: allSources) { _, _ in search.reset() }
+                .onChange(of: selectedSource) { _, _ in if !allSources { search.reset() } }
         }
     }
 
     private func chooseDefault() {
+        available = online.sources.filter { $0.incompatibility == nil && $0.enabled != false }
         if !available.contains(where: { $0.id == selectedSource }) { selectedSource = available.first?.id ?? "" }
     }
 
     private func performSearch() {
-        guard !searching, let source = available.first(where: { $0.id == selectedSource }) else { return }
+        guard !search.searching else { return }
         let keyword = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !keyword.isEmpty else { return }
-        searching = true; failure = nil; results = []; didSearch = true
-        searchTask = Task {
-            do {
-                let found = try await online.client.search(keyword, source: source)
-                try Task.checkCancellation(); results = found
-            } catch { if !Task.isCancelled { failure = "搜索失败：" + error.localizedDescription } }
-            if !Task.isCancelled { searching = false }
-        }
+        let sources = allSources ? searchable : searchable.filter { $0.id == selectedSource }
+        guard !sources.isEmpty else { failure = "当前没有具备搜索规则的书源，请先导入或启用书源。"; return }
+        failure = nil
+        search.start(keyword, sources: sources, client: online.client)
     }
 
     private func openDirect() {

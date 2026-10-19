@@ -32,7 +32,11 @@ private final class FixtureProtocol: URLProtocol {
             "/chapter/2": "<div id='content'>第二天，天晴了。</div>"
         ]
         guard let url = request.url else { return }
-        let body = url.path == "/js-search" && request.value(forHTTPHeaderField: "X-Reader") == "Gavin" ? routes["/search"] : routes[url.path]
+        var body = url.path == "/js-search" && request.value(forHTTPHeaderField: "X-Reader") == "Gavin" ? routes["/search"] : routes[url.path]
+        if url.path == "/paged-search" {
+            let page = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "page" })?.value ?? "1"
+            body = page == "1" ? routes["/search"] : page == "2" ? "<div class='book'><a href='/book/2'>第二本</a></div>" : "<p>No more results</p>"
+        }
         let response = HTTPURLResponse(url: url, statusCode: body == nil ? 404 : 200, httpVersion: "HTTP/1.1",
                                        headerFields: ["Content-Type": "text/html; charset=utf-8"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
@@ -43,6 +47,17 @@ private final class FixtureProtocol: URLProtocol {
 }
 
 final class SourceClientTests: XCTestCase {
+    func testSearchPaginationReadsDifferentPagesAndStopsOnEmpty() async throws {
+        var source = try source(); source.searchUrl = "/paged-search?page={{page}}&q={{key}}"
+        let client = makeClient()
+        let first = try await client.search("故事", source: source, page: 1)
+        let second = try await client.search("故事", source: source, page: 2)
+        let third = try await client.search("故事", source: source, page: 3)
+        XCTAssertEqual(first.first?.title, "山海来信")
+        XCTAssertEqual(second.first?.title, "第二本")
+        XCTAssertEqual(second.first?.url.path, "/book/2")
+        XCTAssertTrue(third.isEmpty)
+    }
     func testTLSHandshakeAndCertificateFailuresAreDistinguished() async {
         do {
             _ = try await makeClient().fetch(URL(string: "https://fixture.example/tlsfailure")!)

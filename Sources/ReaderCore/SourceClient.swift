@@ -169,6 +169,7 @@ public actor SourceClient {
     }
 
     public func search(_ query: String, source: BookSource, page: Int = 1) async throws -> [OnlineNovel] {
+        guard (1...10000).contains(page) else { throw SourceError.message("搜索页码无效。") }
         if let reason = source.incompatibility { throw SourceError.message(reason) }
         guard let template = source.searchUrl, !template.isEmpty, let rule = source.ruleSearch,
               let list = rule.bookList, let name = rule.name, let bookURL = rule.bookUrl else {
