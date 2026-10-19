@@ -54,7 +54,10 @@ public enum SourceValidator {
         // Prefer numbered story chapters to author notices and character summaries.
         // Reading itself still exposes every catalog entry unchanged.
         let numbered = opening.filter { $0.element.title.range(of: #"(?i)^(?:第[0-9０-９一二三四五六七八九十百千万零〇两壹贰叁肆伍陆柒捌玖拾佰仟]+[章回节]|chapter\s*[0-9]+)"#, options: .regularExpression) != nil }
-        for (index, chapter) in (numbered.isEmpty ? opening : numbered).prefix(3) {
+        let narrative = opening.filter { $0.element.title.range(of: #"^(?:感谢|感言|公告|前言|序言|后记|上架|请假|致读者|作品相关|人物资料|设定|更新说明)|(?:年龄.*法宝|路线总结|求月票|求推荐票)"#, options: .regularExpression) == nil }
+        let candidates = (numbered.isEmpty ? narrative : numbered).prefix(3)
+        guard !candidates.isEmpty else { throw SourceError.message("目录开头仅有前言、通知或资料，尚未完成正文验证") }
+        for (index, chapter) in candidates {
             await progress?(SourceValidationProgress(stage: "content", keyword: keyword, title: novel.title, chapters: novel.chapters.count, chapterIndex: index, chapterTitle: chapter.title))
             try await Task.sleep(for: .milliseconds(500))
             let text = try await client.chapter(chapter, source: source)
