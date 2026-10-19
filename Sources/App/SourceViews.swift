@@ -306,7 +306,7 @@ struct SourceImportView: View {
     private func importText(_ text: String) {
         guard !busy else { return }
         busy = true; failure = nil; preview = nil
-        importStatus = "正在识别内容并获取书源…"
+        importStatus = "正在获取书源；大型合集最多等待 3 分钟，可随时取消…"
         importTask = Task {
             do {
                 let parsed = try await online.client.importText(text)

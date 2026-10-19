@@ -93,6 +93,11 @@ public actor SourceClient {
             return (data, response.url ?? url)
         } catch let error as URLError {
             if error.code == .cancelled { throw error }
+            throw Self.networkError(error, url: url)
+        }
+    }
+
+    private static func networkError(_ error: URLError, url: URL) -> SourceError {
             let cause: String
             switch error.code {
             case .timedOut: cause = "连接或响应超时"
@@ -105,8 +110,7 @@ public actor SourceClient {
             default: cause = error.localizedDescription
             }
             let failedURL = (error as NSError).userInfo[NSURLErrorFailingURLErrorKey] as? URL ?? url
-            throw SourceError.message("\(failedURL.host ?? url.host ?? "网站")：\(cause)（网络错误 \(error.code.rawValue)）。请用手机 Safari 打开同一网址对比，书源导入与网站正文是不同的请求。")
-        }
+            return SourceError.message("\(failedURL.host ?? url.host ?? "网站")：\(cause)（网络错误 \(error.code.rawValue)）。请用手机 Safari 打开同一网址对比，书源导入与网站正文是不同的请求。")
     }
 
     private func document(_ request: URLRequest, source: BookSource, globals: [String: String] = [:]) async throws -> (RuleDocument, URL) {
@@ -185,7 +189,14 @@ public actor SourceClient {
 
     private func importURL(_ input: URL, depth: Int) async throws -> SourceImport {
         let url = try SourceSubscription.normalize(input)
-        let (data, finalURL) = try await fetch(url, limit: SourceImport.maximumBytes)
+        _ = try Self.resolve(url.absoluteString, base: url)
+        let data: Data, finalURL: URL
+        do {
+            (data, finalURL) = try await SourceImportDownload(configuration: session.configuration, limit: SourceImport.maximumBytes).run(url)
+        } catch let error as URLError {
+            if error.code == .cancelled { throw error }
+            throw Self.networkError(error, url: url)
+        }
         let trace = "\(input.absoluteString)\n实际地址：\(finalURL.absoluteString) · \(data.count) 字节"
         if let links = try SourceSubscription.links(in: data, base: finalURL) {
             guard depth == 0 else { throw SourceError.message("订阅索引嵌套过深，请直接导入其中的书源 JSON 链接。") }

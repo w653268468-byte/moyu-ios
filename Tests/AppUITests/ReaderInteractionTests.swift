@@ -1,11 +1,12 @@
 import XCTest
 
 final class ReaderInteractionTests: XCTestCase {
+    override func setUp() { super.setUp(); continueAfterFailure = false }
     @MainActor private func application() -> XCUIApplication {
         let app = XCUIApplication()
-        if let path = ProcessInfo.processInfo.environment["GAVIN_SIMULATOR_SWIFT"], path.hasPrefix("/") {
-            app.launchEnvironment["DYLD_FALLBACK_LIBRARY_PATH"] = path
-        }
+        let path = ProcessInfo.processInfo.environment["GAVIN_SIMULATOR_SWIFT"] ?? ""
+        XCTAssertTrue(path.hasPrefix("/"), "Simulator Swift overlay path was not passed to the UI test runner")
+        app.launchEnvironment["DYLD_FALLBACK_LIBRARY_PATH"] = path
         return app
     }
     @MainActor func testEveryReadingRegionAdvancesAndLongPressOpensMenu() {

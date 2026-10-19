@@ -4,6 +4,12 @@ import XCTest
 
 /// Explicit opt-in: external network checks are reported separately from deterministic tests.
 final class LiveSourceTests: XCTestCase {
+    func testUserProvidedYioveCollection() async throws {
+        guard ProcessInfo.processInfo.environment["MOYU_LIVE_CHECK"] == "1" else { throw XCTSkip("Live network check disabled") }
+        let result = try await SourceClient().importText("https://shuyuan-api.yiove.com/import/book-source-collection/a8adf570-e115-4b99-87e3-ccaf298ae361")
+        XCTAssertFalse(result.sources.isEmpty)
+        print("YIOVE IMPORT: \(result.sources.count) sources; \(result.failures.count) entry errors. Import is not website availability validation.")
+    }
     func testUserProvidedYuancSubscriptionIndex() async throws {
         guard ProcessInfo.processInfo.environment["MOYU_LIVE_CHECK"] == "1" else { throw XCTSkip("Live network check disabled") }
         let client = SourceClient()
