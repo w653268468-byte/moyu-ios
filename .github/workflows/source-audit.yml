@@ -1,4 +1,7 @@
 name: Real source compatibility audit
+concurrency:
+  group: gavin-source-audit-${{ github.ref }}
+  cancel-in-progress: true
 on:
   workflow_dispatch:
   push:

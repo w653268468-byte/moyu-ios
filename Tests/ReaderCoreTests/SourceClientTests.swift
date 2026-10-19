@@ -68,6 +68,16 @@ private final class FixtureProtocol: URLProtocol {
         var body = url.path == "/js-search" && request.value(forHTTPHeaderField: "X-Reader") == "Gavin" ? routes["/search"] : routes[url.path]
         if url.path == "/release-script" { body = routes["/search"] }
         if url.path == "/auth-search", request.value(forHTTPHeaderField: "Authorization") == "Bearer fixture", request.value(forHTTPHeaderField: "Cookie") == "sid=fixture" { body = routes["/search"] }
+        if url.path == "/okhttp-post", request.httpMethod == "POST", request.value(forHTTPHeaderField: "Content-Type") == "application/json", request.value(forHTTPHeaderField: "Content-Encoding") == "gzip" {
+            var prefix = request.httpBody.map { Data($0.prefix(2)) }
+            if prefix == nil, let stream = request.httpBodyStream {
+                stream.open(); defer { stream.close() }
+                var bytes = [UInt8](repeating: 0, count: 2)
+                let count = stream.read(&bytes, maxLength: 2)
+                if count > 0 { prefix = Data(bytes.prefix(count)) }
+            }
+            if prefix == Data([0x1f,0x8b]) { body = #"{"ok":true}"# }
+        }
         if url.path == "/paged-search" {
             let page = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "page" })?.value ?? "1"
             body = page == "1" ? routes["/search"] : page == "2" ? "<div class='book'><a href='/book/2'>第二本</a></div>" : "<p>No more results</p>"
@@ -87,6 +97,12 @@ private actor SearchOutcomeRecorder {
 }
 
 final class SourceClientTests: XCTestCase {
+    func testOkHttpBuilderSendsBinaryGzipBodyThroughNativePipeline() throws {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [FixtureProtocol.self]
+        let script = try SourceScript(configuration: config)
+        let code = "with(new JavaImporter(Packages.okhttp3,Packages.cn.hutool.core.util)){var body=RequestBody.create(ZipUtil.gzip(JSON.stringify({q:'故事'})),MediaType.parse('application/json'));var request=new Request.Builder().url('https://fixture.example/okhttp-post').post(body).addHeader('Content-Encoding','gzip').build();JSON.parse(new OkHttpClient().newCall(request).execute().body().string()).ok}"
+        XCTAssertEqual(try script.evaluate(code, result: "", baseURL: URL(string: "https://fixture.example")!) as? Bool, true)
+    }
     func testBookInitializationReplacesDocumentBeforeMetadataAndCatalog() async throws {
         var source = try source()
         source.ruleBookInfo?.initialization = "@js:const value=JSON.parse(result);({name:value.name+'初始化',toc:value.toc})"

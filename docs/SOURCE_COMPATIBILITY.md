@@ -2,6 +2,10 @@
 
 当前任务仅处理书源兼容和真实搜索→目录→正文；书架、排版、听书等其他功能暂停迭代。
 
+为公开脚本实际导入的 Hutool/OkHttp 包补充显式适配：Base64、摘要/HMac、StrUtil/CharsetUtil、ZipUtil gzip、Request/RequestBody/MediaType/OkHttpClient 的同步 GET/POST 构建和响应。压缩走系统 zlib，二进制请求不经 UTF-8 损坏；继续使用同一受限网络通道、请求头校验和取消机制。此为接口子集，不支持任意 JVM、拦截器、文件或线程；新增 Node 对照及 Swift 网络回归待确认。
+
+iOS 构建恢复使用第 46 次已成功的 macos-15 Apple Silicon 环境。Intel 临时替代环境的第 47 次任务耗尽 35 分钟，不能把容量排队问题改成长期超时；保留 Xcode 16.4 固定工具链及架构自适应的模拟器 Swift/WebKit 路径。
+
 按旧 JSON 书源中的实际写法补充尾部 @put、脚本内选择器模板、脚本结果接字面网址模板（同时保留原 JSON 选择器作用域）；脚本标记识别避开引号与模板内部，JS 正则中的未闭合字面 {{ 不误当模板。新增独立的规则回归，尚待云端确认。
 
 第 52 次审计已实际使用 WebView 检查动态源；32 个域名有 4 个完整链路通过，其中“错层小说网”只取得 82 字，未加入推荐样例，仍需排查是否为提示/占位正文。“天天小说 ttk.tw”的 TypeError 已定位为 connect 响应缺少 raw().request().url()；补充该响应链与对应回归。当前通过数不视为兼容工作已完成。

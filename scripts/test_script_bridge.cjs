@@ -1,5 +1,5 @@
 // Local, independent vectors for the JavaScript adapters. Native Swift tests also run in CI.
-const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),crypto=require('node:crypto');
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),crypto=require('node:crypto'),zlib=require('node:zlib');
 const variables=new Map(),cache=new Map();
 const context=vm.createContext({__native:{call(name,payload){const a=JSON.parse(payload);let value=null;
     if(name==='randomBytes')value=Array.from(crypto.randomBytes(a[0]));
@@ -10,6 +10,8 @@ const context=vm.createContext({__native:{call(name,payload){const a=JSON.parse(
     else if(name==='cacheDelete')cache.delete(a[0]);
     else if(name==='decodeBytes')value=Buffer.from(a[0].map(x=>x&255)).toString('utf8');
     else if(name==='encodeBytes')value=Array.from(Buffer.from(a[0])).map(x=>x<<24>>24);
+    else if(name==='gzip'||name==='ungzip')value=Array.from((name==='gzip'?zlib.gzipSync:zlib.gunzipSync)(Buffer.from(a[0].map(x=>x&255)))).map(x=>x<<24>>24);
+    else if(name==='connect'){const split=a[0].indexOf(',{'),options=JSON.parse(a[0].slice(split+1));value={__gavinResponse:{body:zlib.gunzipSync(Buffer.from(options.bodyBase64,'base64')).toString(),url:a[0].slice(0,split),status:200,headers:{}}};}
     else throw Error('Unexpected native call '+name);
     return JSON.stringify(value);
 }}});
@@ -35,6 +37,11 @@ assert.equal(run("java.toNumChapter('第一千二章')"),'第1200章');
 assert.equal(run("java.toNumChapter('序章')"),'序章');
 assert.equal(run("java.toNumChapter(null)"),null);
 assert.equal(run("with(new JavaImporter(Packages.java.io,Packages.java.lang)){var out=ByteArrayOutputStream();out.write('中文'.getBytes());String(out.toByteArray()).toString()}"),'中文');
+assert.equal(run("with(new JavaImporter(Packages.cn.hutool.core.codec,Packages.cn.hutool.crypto.digest)){MD5.create().digestHex('abc')}"),'900150983cd24fb0d6963f7d28e17f72');
+assert.equal(run("with(new JavaImporter(Packages.cn.hutool.crypto.digest)){HMac(HmacAlgorithm.HmacSHA256,'key'.getBytes()).digestHex('The quick brown fox jumps over the lazy dog')}"),crypto.createHmac('sha256','key').update('The quick brown fox jumps over the lazy dog').digest('hex'));
+assert.equal(run("with(new JavaImporter(Packages.cn.hutool.core.codec)){Base64.decodeStr(Base64.encode('中文正文'))}"),'中文正文');
+assert.equal(run("with(new JavaImporter(Packages.cn.hutool.core.util)){java.byteArrayToString(ZipUtil.unGzip(ZipUtil.gzip('正文 gzip 验证')))}"),'正文 gzip 验证');
+assert.equal(run("with(new JavaImporter(Packages.okhttp3,Packages.cn.hutool.core.util)){var body=RequestBody.create(ZipUtil.gzip('正文 gzip 验证'),MediaType.parse('application/json'));var request=new Request.Builder().url('https://fixture.example/post').post(body).build();new OkHttpClient().newCall(request).execute().body().string()}"),'正文 gzip 验证');
 assert.equal(run("CryptoJS.lib.WordArray.create ? java.security.MessageDigest.getInstance('SHA-256').digest('abc'.getBytes()).map(x=>(x&255).toString(16).padStart(2,'0')).join('') : ''"),'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
 assert.equal(run("java.createSymmetricCrypto('AES/CBC/PKCS5Padding','0123456789abcdef','abcdef0123456789').encryptBase64(plain)"),expected);
 assert.equal(run("java.createSymmetricCrypto('AES/CBC/PKCS5Padding','0123456789abcdef','abcdef0123456789').decryptStr(expected)"),plain);

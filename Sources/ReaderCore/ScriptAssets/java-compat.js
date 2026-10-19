@@ -3,7 +3,7 @@
     'use strict';
     const C=globalThis.CryptoJS, nativeJava=globalThis.java;
     function array(value) {
-        const result=typeof value==='string'?Array.from(value.getBytes()):Array.from(value||[]);
+        const result=typeof value==='string'||value instanceof String?Array.from(value.getBytes()):Array.from(value||[]);
         if(result.length>2*1024*1024 || result.some(x=>!Number.isInteger(x)||x < -128||x > 255))throw new Error('Invalid Java byte array');
         return result.map(x=>x<<24>>24);
     }
@@ -88,6 +88,43 @@
     }
     globalThis.java=new Proxy(nativeJava,{get:(target,name)=>name==='security'?security:name==='util'?util:name==='io'?io:name==='toNumChapter'?toNumChapter:Reflect.get(target,name)});
     const javax={crypto:{Cipher,spec:{SecretKeySpec,IvParameterSpec}}};
-    globalThis.Packages={...globalThis.Packages,java:globalThis.java,javax};
+    const CodecBase64={encode:value=>word(value).toString(C.enc.Base64),decode:value=>signed(C.enc.Base64.parse(String(value))),decodeStr:value=>C.enc.Base64.parse(String(value)).toString(C.enc.Utf8),encodeUrlSafe:value=>word(value).toString(C.enc.Base64).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')};
+    function digestFacade(algorithm,key) {
+        const name=String(algorithm).toUpperCase().replace(/^HMAC/,'').replace(/-/g,''),hash={MD5:C.MD5,SHA1:C.SHA1,SHA256:C.SHA256,SHA384:C.SHA384,SHA512:C.SHA512}[name];
+        if(!hash)throw new Error('Unsupported digest: '+algorithm);
+        const keyed={MD5:C.HmacMD5,SHA1:C.HmacSHA1,SHA256:C.HmacSHA256,SHA384:C.HmacSHA384,SHA512:C.HmacSHA512}[name];
+        const digest=value=>key==null?hash(word(value)):keyed(word(value),word(key));
+        return {digest:value=>signed(digest(value)),digestHex:value=>digest(value).toString(C.enc.Hex),digestBase64:value=>digest(value).toString(C.enc.Base64)};
+    }
+    function MD5(){return digestFacade('MD5');}MD5.create=()=>MD5();
+    function HMac(algorithm,key){return digestFacade(algorithm,key);}
+    const HmacAlgorithm={HmacMD5:'HmacMD5',HmacSHA1:'HmacSHA1',HmacSHA256:'HmacSHA256',HmacSHA384:'HmacSHA384',HmacSHA512:'HmacSHA512'};
+    const DigestUtil={md5Hex:value=>MD5().digestHex(value),sha1Hex:value=>digestFacade('SHA1').digestHex(value),sha256Hex:value=>digestFacade('SHA256').digestHex(value),hmac:(algorithm,key)=>HMac(algorithm,key)};
+    const SecureUtil={...DigestUtil,aes:key=>nativeJava.createSymmetricCrypto('AES/ECB/PKCS5Padding',key),des:key=>nativeJava.createSymmetricCrypto('DES/ECB/PKCS5Padding',key)};
+    const CharsetUtil={UTF_8:'UTF-8',CHARSET_UTF_8:'UTF-8',GBK:'GBK'};
+    const StrUtil={isBlank:value=>value==null||!String(value).trim(),isNotBlank:value=>value!=null&&!!String(value).trim(),utf8Str:value=>nativeJava.byteArrayToString(array(value),'UTF-8'),bytes:(value,charset='UTF-8')=>String(value).getBytes(charset)};
+    function RequestBody(){}RequestBody.create=(first,second)=>{
+        const isMedia=value=>value&&value.__mediaType;
+        const data=isMedia(first)?second:first,type=isMedia(first)?first:second;
+        return {text:Array.isArray(data)||ArrayBuffer.isView(data)?undefined:String(data??''),bytes:Array.isArray(data)||ArrayBuffer.isView(data)?array(data):undefined,type:type&&type.__mediaType||'application/octet-stream'};
+    };
+    const MediaType={parse:value=>({__mediaType:String(value)}),get:value=>({__mediaType:String(value)})};
+    function RequestBuilder(){let address='',method='GET',body;const headers={};const api={
+        url(value){address=String(value);return api;},get(){method='GET';body=undefined;return api;},post(value){if(!value||(typeof value.text!=='string'&&!Array.isArray(value.bytes)))throw new Error('Invalid RequestBody');method='POST';body=value;headers['Content-Type']=value.type;return api;},
+        addHeader(name,value){headers[String(name)]=String(value);return api;},header(name,value){return api.addHeader(name,value);},
+        build(){if(!/^https?:\/\//i.test(address))throw new Error('Request requires an HTTP URL');return {url:address,method,body,headers:{...headers}};}
+    };return api;}
+    const Request={Builder:RequestBuilder};
+    function OkHttpClient(){return {newCall:request=>({execute(){
+        const options={method:request.method,headers:request.headers};if(request.method==='POST'){if(request.body.bytes)options.bodyBase64=CodecBase64.encode(request.body.bytes);else options.body=request.body.text;}
+        return gavinCall('connect',[request.url+','+JSON.stringify(options)]).raw();
+    }})};}OkHttpClient.Builder=function(){return {build:()=>OkHttpClient()};};
+    StrUtil.reverse=value=>Array.from(String(value)).reverse().join('');
+    const ZipUtil={gzip:value=>gavinCall('gzip',[array(value)]),unGzip:value=>gavinCall('ungzip',[array(value)])};
+    const cn={hutool:{core:{codec:{Base64:CodecBase64},util:{CharsetUtil,StrUtil,ZipUtil}},crypto:{SecureUtil,digest:{MD5,HMac,HmacAlgorithm,DigestUtil}}}};
+    const okhttp3={Request,RequestBody,MediaType,OkHttpClient};
+    for(const [name,value] of Object.entries({MD5,HMac,HmacAlgorithm,DigestUtil,SecureUtil,CharsetUtil,StrUtil,ZipUtil,Request,RequestBody,MediaType,OkHttpClient}))Object.defineProperty(value,'__javaName',{value:name});
+    Object.defineProperty(CodecBase64,'__javaName',{value:'Base64'});
+    globalThis.Packages={...globalThis.Packages,java:globalThis.java,javax,cn,okhttp3};
     globalThis.javax=javax;globalThis.JavaImporter=JavaImporter;
 })();

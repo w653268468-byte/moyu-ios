@@ -3,6 +3,7 @@ import CryptoKit
 import QuickJS
 import SwiftSoup
 import Security
+import CReaderMobi
 
 /// An isolated, bounded interpreter. Android objects are implemented explicitly by the bridge.
 public final class SourceScript: @unchecked Sendable {
@@ -186,6 +187,14 @@ public final class SourceScript: @unchecked Sendable {
         }
         let result: Any
         switch method {
+        case "gzip", "ungzip":
+            guard let values = args.first as? [Int], values.count <= 2 * 1024 * 1024, values.allSatisfy({ (-128...255).contains($0) }) else { throw SourceError.message("gzip 输入字节无效或过大。") }
+            let bytes = Data(values.map { UInt8(truncatingIfNeeded: $0) })
+            var output: UnsafeMutablePointer<UInt8>?, length = 0
+            let status = bytes.withUnsafeBytes { gavin_gzip($0.bindMemory(to: UInt8.self).baseAddress, $0.count, method == "ungzip" ? 1 : 0, &output, &length) }
+            guard status == 0, let output else { throw SourceError.message("gzip 数据无效或解压超过 4 MB（\(status)）。") }
+            defer { gavin_buffer_free(output) }
+            result = UnsafeBufferPointer(start: output, count: length).map { Int(Int8(bitPattern: $0)) }
         case "rsaGenerate", "rsaPublicKey", "rsaCrypt", "rsaSign", "rsaVerify": result = try SourceRSA.call(method, args, cancelled: { self.limit.exceeded() })
         case "cacheGet":
             if let value = SourceScriptCache.shared.get(sourceNamespace, string(0)) { result = value } else { result = NSNull() }

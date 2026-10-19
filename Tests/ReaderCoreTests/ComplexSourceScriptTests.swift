@@ -3,6 +3,13 @@ import XCTest
 @testable import ReaderCore
 
 final class ComplexSourceScriptTests: XCTestCase {
+    func testHutoolGzipAndDigestAdaptersMatchIndependentVectors() throws {
+        let script = try SourceScript()
+        XCTAssertEqual(try script.evaluate("with(new JavaImporter(Packages.cn.hutool.core.codec,Packages.cn.hutool.core.util)){java.byteArrayToString(ZipUtil.unGzip(Base64.decode('H4sIAAAAAAAACnu2dvGzae0K6VWZBQovV/W8WN8IACh7H4ESAAAA')))}", result: "", baseURL: base) as? String, "正文 gzip 验证")
+        XCTAssertEqual(try script.evaluate("with(new JavaImporter(Packages.cn.hutool.core.util)){java.byteArrayToString(ZipUtil.unGzip(ZipUtil.gzip('正文 gzip 验证')))}", result: "", baseURL: base) as? String, "正文 gzip 验证")
+        XCTAssertEqual(try script.evaluate("with(new JavaImporter(Packages.cn.hutool.crypto.digest)){MD5.create().digestHex('abc')}", result: "", baseURL: base) as? String, "900150983cd24fb0d6963f7d28e17f72")
+        XCTAssertThrowsError(try script.evaluate("Packages.cn.hutool.core.util.ZipUtil.unGzip([1,2,3])", result: "", baseURL: base))
+    }
     func testJavaImporterCipherAndChineseChapterHelpers() throws {
         let engine = try SourceScript()
         let value = try engine.evaluate("var imports=new JavaImporter(Packages.javax.crypto,Packages.javax.crypto.spec);with(imports){var key=SecretKeySpec(java.hexDecodeToByteArray('2b7e151628aed2a6abf7158809cf4f3c'),'AES');var iv=IvParameterSpec(java.hexDecodeToByteArray('000102030405060708090a0b0c0d0e0f'));var cipher=Cipher.getInstance('AES/CBC/NoPadding');cipher.init(Cipher.ENCRYPT_MODE,key,iv);cipher.doFinal(java.hexDecodeToByteArray('6bc1bee22e409f96e93d7e117393172a')).map(x=>(x&255).toString(16).padStart(2,'0')).join('')}", result: "", baseURL: base) as? String
