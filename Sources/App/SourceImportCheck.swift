@@ -27,9 +27,14 @@ import Foundation
             guard let chapter = book.chapters.first else { throw SourceError.message("目录为空") }
             let text = try await reloaded.client.chapter(chapter, source: source)
             guard text.contains("完整链路") else { throw SourceError.message("正文读取失败") }
+            var mark = OnlineReadingMark(chapter: chapter, index: 0, offset: 3, text: text)
+            mark.note = "保存后重开仍保留的备注"
+            try reloaded.saveMark(mark, in: book)
+            let restored = OnlineStore(directory: root)
+            guard restored.novels.first?.readingMarks?.first == mark else { throw SourceError.message("在线书签或备注未持久化") }
             let report: [String: Any] = ["status": "passed", "redirect": true, "partialFailure": true,
                 "pastedJSON": true, "savedAndReloaded": true, "preservedUnknownFields": true,
-                "duplicateUpdated": true, "searchCatalogContent": true]
+                "duplicateUpdated": true, "searchCatalogContent": true, "onlineBookmarkAndNote": true]
             try JSONSerialization.data(withJSONObject: report, options: .prettyPrinted).write(to: reportURL, options: .atomic)
         } catch {
             let report = try? JSONSerialization.data(withJSONObject: ["status": "failed", "error": error.localizedDescription])

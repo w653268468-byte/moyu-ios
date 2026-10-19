@@ -238,7 +238,7 @@ public actor SourceClient {
     public func search(_ query: String, source: BookSource, page: Int = 1) async throws -> [OnlineNovel] {
         retainScript(source.id); defer { releaseScript(source.id) }
         guard (1...10000).contains(page) else { throw SourceError.message("搜索页码无效。") }
-        if let reason = source.incompatibility { throw SourceError.message(reason) }
+        if let reason = source.searchIncompatibility { throw SourceError.message(reason) }
         guard let template = source.searchUrl, !template.isEmpty, let rule = source.ruleSearch,
               let list = rule.bookList, let name = rule.name, let bookURL = rule.bookUrl else {
             throw SourceError.message("此书源没有完整的搜索规则，可以尝试直接粘贴小说详情页链接。")
@@ -258,6 +258,11 @@ public actor SourceClient {
             guard seen.insert(navigation.template ?? resolved.absoluteString).inserted else { continue }
             var novel = OnlineNovel(title: title, author: try element.optionalValue(rule.author),
                                     intro: try element.optionalValue(rule.intro), url: resolved, sourceID: source.id)
+            novel.kind = try? element.optionalValue(rule.kind)
+            novel.wordCountLabel = try? element.optionalValue(rule.wordCount)
+            novel.lastChapter = try? element.optionalValue(rule.lastChapter)
+            let cover = (try? element.optionalValue(rule.coverUrl)) ?? ""
+            if !cover.isEmpty { novel.coverURL = try? Self.resolve(cover, base: url) }
             novel.ruleVariables = try scriptEngine(for: source)?.snapshotVariables()
             novel.requestTemplate = navigation.template
             results.append(novel)
@@ -290,6 +295,10 @@ public actor SourceClient {
             let link = try SourceRequest.navigation(raw, base: url, script: scriptEngine(for: source))
             guard seen.insert(link.template ?? link.url.absoluteString).inserted else { continue }
             var novel = OnlineNovel(title: title, author: try element.optionalValue(rule.author), intro: try element.optionalValue(rule.intro), url: link.url, sourceID: source.id)
+            novel.kind = try? element.optionalValue(rule.kind); novel.wordCountLabel = try? element.optionalValue(rule.wordCount)
+            novel.lastChapter = try? element.optionalValue(rule.lastChapter)
+            let cover = (try? element.optionalValue(rule.coverUrl)) ?? ""
+            if !cover.isEmpty { novel.coverURL = try? Self.resolve(cover, base: url) }
             novel.requestTemplate = link.template; novel.ruleVariables = try scriptEngine(for: source)?.snapshotVariables()
             novels.append(novel)
         }

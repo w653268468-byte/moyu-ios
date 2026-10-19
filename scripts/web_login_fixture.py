@@ -2,6 +2,8 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from socketserver import TCPServer
 import json
+from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 
 IMPORT_SOURCE = {
     "bookSourceName": "Gavin 导入链路测试", "bookSourceUrl": "http://127.0.0.1:18765",
@@ -26,7 +28,32 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         print("GET", self.path, flush=True)
         content_type = "text/html; charset=utf-8"
-        if self.path == "/source-start":
+        if self.path == "/font-test.ttf":
+            font = Path("/System/Library/Fonts/Supplemental/Arial.ttf")
+            self.send_response(200 if font.is_file() else 404)
+            content_type = "font/ttf"
+            body = font.read_bytes() if font.is_file() else b"Missing test font"
+        elif self.path == "/search-test-sources":
+            self.send_response(200)
+            content_type = "application/json; charset=utf-8"
+            sources = []
+            for tag, name in [("a", "搜索测试甲"), ("b", "搜索测试乙")]:
+                source = dict(IMPORT_SOURCE, bookSourceName=name, bookSourceUrl="http://127.0.0.1:18765/source-" + tag,
+                    bookSourceGroup="搜索测试", searchUrl="/search-ui?site=" + tag + "&q={{key}}&page={{page}}")
+                source["ruleSearch"] = dict(IMPORT_SOURCE["ruleSearch"], author=".author@text", kind=".kind@text", lastChapter=".latest@text")
+                sources.append(source)
+            body = json.dumps(sources, ensure_ascii=False).encode()
+        elif self.path.startswith("/search-ui?"):
+            self.send_response(200)
+            query = parse_qs(urlparse(self.path).query)
+            page = query.get("page", ["1"])[0]
+            tag = query.get("site", ["a"])[0]
+            items = [("公版小说", "某作者"), ("其他故事", "另一位")] if page == "1" else [("第二页故事", "新作者")] if page == "2" else []
+            body = "".join(f"<div class='book'><a href='/search-ui-book?site={tag}&amp;book={(int(page)-1)*10+index}'>{title}</a><span class='author'>{author}</span><span class='kind'>小说</span><span class='latest'>第一章</span></div>" for index, (title, author) in enumerate(items)).encode()
+        elif self.path.startswith("/search-ui-book?"):
+            self.send_response(200)
+            body = b"<a class='catalog' href='/source-toc'>TOC</a>"
+        elif self.path == "/source-start":
             self.send_response(302)
             self.send_header("Location", "/sources.json")
             body = b""

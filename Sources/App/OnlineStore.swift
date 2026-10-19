@@ -108,9 +108,25 @@ final class OnlineStore: ObservableObject {
         do { try keep(updated) } catch { errorMessage = error.localizedDescription }
     }
 
+    func saveMark(_ mark: OnlineReadingMark, in novel: OnlineNovel) throws {
+        var saved = novels.first { $0.id == novel.id && $0.sourceID == novel.sourceID } ?? novel
+        var marks = saved.readingMarks ?? []
+        if let index = marks.firstIndex(where: { $0.id == mark.id }) { marks[index] = mark }
+        else {
+            guard marks.count < 5000 else { throw SourceError.message("本书已有 5000 个书签，请先清理。") }
+            marks.insert(mark, at: 0)
+        }
+        saved.readingMarks = marks; try keep(saved)
+    }
+    func removeMark(_ id: UUID, in novel: OnlineNovel) throws {
+        var saved = novels.first { $0.id == novel.id && $0.sourceID == novel.sourceID } ?? novel
+        saved.readingMarks?.removeAll { $0.id == id }; try keep(saved)
+    }
+
     func commitReplacement(_ original: OnlineNovel, replacement: SourceSwitchResult) throws {
         guard !locked, replacement.novel.chapters.indices.contains(replacement.novel.chapterIndex) else { throw SourceError.message("替代书源或章节无效。") }
         var updated = replacement.novel
+        updated.readingMarks = novels.first(where: { $0.id == original.id && $0.sourceID == original.sourceID })?.readingMarks ?? original.readingMarks
         updated.shelfID = original.id
         try replacement.text.write(to: cacheURL(updated.chapters[updated.chapterIndex], sourceID: updated.sourceID), atomically: true, encoding: .utf8)
         let before = novels

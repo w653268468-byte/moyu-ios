@@ -12,14 +12,20 @@ public struct SourceSearchOutcome: Sendable {
     public let page: Int
     public let novels: [OnlineNovel]
     public let failure: String?
-    public init(sourceID: String, sourceName: String, page: Int, novels: [OnlineNovel], failure: String? = nil) {
+    public let elapsedMilliseconds: Int?
+    public init(sourceID: String, sourceName: String, page: Int, novels: [OnlineNovel], failure: String? = nil, elapsedMilliseconds: Int? = nil) {
         self.sourceID = sourceID; self.sourceName = sourceName; self.page = page; self.novels = novels; self.failure = failure
+        self.elapsedMilliseconds = elapsedMilliseconds
     }
 }
 
 public struct SourceSearchHit: Identifiable, Sendable {
     public let novel: OnlineNovel
     public let sourceName: String
+    public let elapsedMilliseconds: Int?
+    public init(novel: OnlineNovel, sourceName: String, elapsedMilliseconds: Int? = nil) {
+        self.novel = novel; self.sourceName = sourceName; self.elapsedMilliseconds = elapsedMilliseconds
+    }
     // A book URL can occur in several sources; retain each source's rules.
     public var id: String { SourceSearchState.key(sourceID: novel.sourceID, novelID: novel.id) }
 }
@@ -53,7 +59,7 @@ public struct SourceSearchState: Sendable {
         failures.removeValue(forKey: outcome.sourceID)
         let before = hits.count
         for novel in outcome.novels where !limitReached {
-            let hit = SourceSearchHit(novel: novel, sourceName: outcome.sourceName)
+            let hit = SourceSearchHit(novel: novel, sourceName: outcome.sourceName, elapsedMilliseconds: outcome.elapsedMilliseconds)
             if seen.insert(hit.id).inserted { hits.append(hit) }
         }
         if hits.count == before { exhausted.insert(outcome.sourceID) }
@@ -65,6 +71,7 @@ public enum SourceSearch {
     /// Delivers each completed source immediately. A failed source doesn't discard
     /// successful sources. Returning false from onResult cancels pending work.
     public static func run(requests: [SourceSearchRequest], concurrency: Int = 4,
+                           timeoutSeconds: Double = 30,
                            search: @escaping @Sendable (BookSource, Int) async throws -> [OnlineNovel],
                            onResult: @escaping @Sendable (SourceSearchOutcome) async -> Bool) async throws {
         guard requests.count <= 5000, requests.allSatisfy({ (1...10000).contains($0.page) }) else {
@@ -75,10 +82,22 @@ public enum SourceSearch {
         let jobs = requests.filter { seen.insert($0.source.id).inserted }
         let worker: @Sendable (SourceSearchRequest) async throws -> SourceSearchOutcome = { job in
             try Task.checkCancellation()
+            let start = ContinuousClock.now
             do {
-                let novels = try await search(job.source, job.page)
+                let novels = try await withThrowingTaskGroup(of: [OnlineNovel].self) { attempts in
+                    attempts.addTask { try await search(job.source, job.page) }
+                    attempts.addTask {
+                        let seconds = timeoutSeconds.isFinite ? min(120, max(0.01, timeoutSeconds)) : 30
+                        try await Task.sleep(for: .seconds(seconds))
+                        throw SourceError.message("书源搜索超时，可单独重试或在搜索设置延长等待时间。")
+                    }
+                    defer { attempts.cancelAll() }
+                    return try await attempts.next() ?? []
+                }
                 try Task.checkCancellation()
-                return SourceSearchOutcome(sourceID: job.source.id, sourceName: job.source.bookSourceName, page: job.page, novels: novels)
+                let duration = start.duration(to: .now).components
+                let elapsed = max(0, Int(duration.seconds * 1000 + duration.attoseconds / 1_000_000_000_000_000))
+                return SourceSearchOutcome(sourceID: job.source.id, sourceName: job.source.bookSourceName, page: job.page, novels: novels, elapsedMilliseconds: elapsed)
             } catch {
                 if Task.isCancelled || error is CancellationError { throw CancellationError() }
                 return SourceSearchOutcome(sourceID: job.source.id, sourceName: job.source.bookSourceName, page: job.page, novels: [], failure: error.localizedDescription)

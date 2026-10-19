@@ -32,9 +32,11 @@ struct MoyuApp: App {
                 SourceManagerView().tabItem { Label("书源", systemImage: "globe.asia.australia") }.tag(2)
                 AppSettingsView().tabItem { Label("设置", systemImage: "gearshape") }.tag(3)
             }
+                .overlay(alignment: .bottom) { SpeechMiniPlayer() }
                 .environmentObject(library)
                 .environmentObject(online)
                 .onAppear {
+                    ReaderFontStore.shared.reload()
                     #if DEBUG
                     try? Data("onAppear".utf8).write(to: URL.documentsDirectory.appendingPathComponent("ui-startup.txt"), options: .atomic)
                     if ProcessInfo.processInfo.arguments.contains("--ui-scroll-check") {
@@ -49,6 +51,8 @@ struct MoyuApp: App {
                     if ProcessInfo.processInfo.arguments.contains("--ui-import-check") {
                         Task { await SourceImportCheck.run() }
                     }
+                    if ProcessInfo.processInfo.arguments.contains("--ui-font-check") { Task { await FontImportCheck.run() } }
+                    if ProcessInfo.processInfo.arguments.contains("--ui-speech-check") { Task { await ReaderSpeech.checkContinuousPlayback() } }
                     if ProcessInfo.processInfo.arguments.contains("--ui-import-preview") { showSourceImportPreview = true }
                     if ProcessInfo.processInfo.arguments.contains("--ui-preferences") { showReaderPreferences = true }
                     if ProcessInfo.processInfo.arguments.contains("--ui-all-next") { UserDefaults.standard.set(ReadingTapMap.allNext.stored, forKey: "reader.tapMap") }

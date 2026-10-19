@@ -43,4 +43,34 @@ final class ReaderInteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Gavin 导入链路测试"].firstMatch.waitForExistence(timeout: 10))
         app.terminate()
     }
+
+    @MainActor func testSearchAggregatesSourcesPagesAndRemembersHistory() {
+        let app = application()
+        app.launchArguments = ["--ui-tab", "1", "--ui-search-fixture"]
+        app.launch()
+        let submit = app.buttons["search.submit"]
+        XCTAssertTrue(submit.waitForExistence(timeout: 15))
+        let query = app.textFields["search.query"]
+        expectation(for: NSPredicate(format: "value == %@", "公版"), evaluatedWith: query)
+        waitForExpectations(timeout: 15)
+        submit.tap()
+        let count = app.staticTexts["search.count"]
+        expectation(for: NSPredicate(format: "label == %@", "2 本 · 4 条书源结果"), evaluatedWith: count)
+        waitForExpectations(timeout: 15)
+        let row = app.buttons["search.result.公版小说"]
+        XCTAssertTrue(row.exists); row.tap()
+        XCTAssertTrue(app.staticTexts["搜索测试甲"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["搜索测试乙"].exists)
+        app.buttons["关闭"].tap()
+        app.swipeUp()
+        let more = app.buttons["search.more"]
+        XCTAssertTrue(more.waitForExistence(timeout: 5)); more.tap()
+        expectation(for: NSPredicate(format: "label == %@", "3 本 · 6 条书源结果"), evaluatedWith: count)
+        waitForExpectations(timeout: 10)
+        app.terminate()
+        app.launchArguments = ["--ui-tab", "1"]
+        app.launch()
+        XCTAssertTrue(app.buttons.containing(.staticText, identifier: "公版").firstMatch.waitForExistence(timeout: 10))
+        app.terminate()
+    }
 }

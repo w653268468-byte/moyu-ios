@@ -9,7 +9,7 @@ struct ReaderBackup: Codable {
 }
 
 enum BackupService {
-    static let folders = ["Moyu", "MoyuOnline"]
+    static let folders = ["Moyu", "MoyuOnline", "GavinFonts"]
     static let maximumBytes = 200 * 1024 * 1024
     static func create() throws -> Data {
         var files: [String: Data] = [:]
@@ -19,7 +19,7 @@ enum BackupService {
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
             for file in try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey]) {
                 let info = try file.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-                guard info.isRegularFile == true, ["json", "txt", "epub"].contains(file.pathExtension) else { continue }
+                guard info.isRegularFile == true, ["json", "txt", "epub", "ttf", "otf", "ttc"].contains(file.pathExtension) else { continue }
                 total += info.fileSize ?? 0
                 guard total <= maximumBytes else { throw SourceError.message("备份超过 200 MB，请先清理章节缓存。") }
                 files[folder + "/" + file.lastPathComponent] = try Data(contentsOf: file)
@@ -39,7 +39,7 @@ enum BackupService {
             let parts = path.components(separatedBy: "/")
             guard parts.count == 2, folders.contains(parts[0]), !parts[1].isEmpty,
                   parts[1] != ".", parts[1] != "..", !parts[1].contains("\\"),
-                  ["json", "txt", "epub"].contains((parts[1] as NSString).pathExtension) else { throw SourceError.message("备份中含无效文件路径。") }
+                  ["json", "txt", "epub", "ttf", "otf", "ttc"].contains((parts[1] as NSString).pathExtension) else { throw SourceError.message("备份中含无效文件路径。") }
             total += content.count
             guard total <= maximumBytes else { throw SourceError.message("备份内容超过 200 MB。") }
         }
@@ -63,7 +63,8 @@ enum BackupService {
             "reader.fontSize": 12...44, "reader.lineSpacing": 0...30,
             "reader.letterSpacing": 0...6, "reader.paragraphSpacing": 0...40,
             "reader.horizontalMargin": 10...55, "reader.verticalMargin": 8...60,
-            "reader.brightness": 0.35...1, "reader.speechRate": 0.25...0.65
+            "reader.brightness": 0.35...1, "reader.speechRate": 0.25...0.65,
+            "reader.sleepMinutes": 0...180, "reader.search.concurrency": 1...8, "reader.search.timeout": 5...60
         ]
         for (key, range) in ranges {
             if let value = preferences[key] {
@@ -105,6 +106,7 @@ enum BackupService {
         }
         for key in UserDefaults.standard.dictionaryRepresentation().keys where key.hasPrefix("reader.") { UserDefaults.standard.removeObject(forKey: key) }
         for (key, value) in preferences { UserDefaults.standard.set(value, forKey: key) }
+        ReaderFontStore.shared.reload()
     }
 }
 
@@ -123,6 +125,8 @@ struct AppSettingsView: View {
             Form {
                 Section("阅读") {
                     NavigationLink("字体、排版与主题") { ReadingPreferences() }
+                    NavigationLink("自定义字体") { ReaderFontSettings() }
+                    NavigationLink("搜索设置") { SearchConfigurationView() }
                     LabeledContent("本地书籍", value: "\(library.books.count) 本")
                     LabeledContent("在线书架", value: "\(online.novels.count) 本")
                     LabeledContent("书源", value: "\(online.sources.count) 个")
@@ -134,7 +138,7 @@ struct AppSettingsView: View {
                         catch { message = error.localizedDescription }
                     }
                     Button("从备份恢复", systemImage: "arrow.counterclockwise") { importing = true }
-                    Text("包含本地文字书、原始 EPUB、书架、进度、书签、书源、章节缓存及阅读设置。备份可能包含你的私人阅读内容，请保存在自己的位置。")
+                    Text("包含书籍、书源、进度、书签备注、章节缓存、自定义字体及阅读设置。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("存储") {
@@ -142,23 +146,9 @@ struct AppSettingsView: View {
                     Text("清理后未连接网站时将无法读取这些章节；本地书籍和书架记录保留。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Section("导入格式") {
-                    Text("TXT · EPUB · PDF · Markdown · HTML · RTF · DOCX · MOBI · AZW3")
-                    Text("EPUB 保留原文件、图片和 CSS，可切换原书样式与重排。旧版已导入的 EPUB 需重新导入原文件。DOCX 与富文本以文字重排；扫描 PDF 尝试本机 OCR；未加密 MOBI/AZW3 转为保留图片与目录的 EPUB。")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section("兼容性") {
-                    Text("CSS、旧式选择器、XPath 1.0、基础 JSONPath、静态 GET/POST、目录及正文分页。")
-                    Text("支持常用脚本接口、发现分类、换源与仿真卷页；完整 Java/Android 桥仍待补齐，当前版本不等同 Android Legado 完整版。")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section("Gavin 2.0") {
-                    Text(AppBuildIdentity.label).font(.caption).textSelection(.enabled)
-                    Link("项目源码与安装包", destination: URL(string: "https://github.com/w653268468-byte/moyu-ios")!)
-                    Text("主程序 MIT · libmobi LGPL-3.0-or-later · 无广告")
-                    Link("第三方许可与重新编译说明", destination: URL(string: "https://github.com/w653268468-byte/moyu-ios/blob/main/THIRD_PARTY_NOTICES.md")!)
-                    Text("免费 Apple 账号签名通常需每 7 天续签。用 Sideloadly 覆盖安装同一包名；不要先删 App，以免丢失本地数据。")
-                        .font(.caption).foregroundStyle(.secondary)
+                Section("帮助与关于") {
+                    NavigationLink("支持格式、兼容性与关于") { AppAboutView() }
+                    Text(AppBuildIdentity.label).font(.caption).foregroundStyle(.secondary)
                 }
             }.navigationTitle("设置")
                 .fileExporter(isPresented: $exporting, document: export, contentType: .json, defaultFilename: "Gavin完整备份.json") { result in
@@ -188,5 +178,30 @@ struct AppSettingsView: View {
             try BackupService.restore(Data(contentsOf: url))
             library.reload(); online.reload(); message = "备份已恢复。"
         } catch { message = error.localizedDescription }
+    }
+}
+
+struct AppAboutView: View {
+    var body: some View {
+        Form {
+                Section("导入格式") {
+                    Text("TXT · EPUB · PDF · Markdown · HTML · RTF · DOCX · MOBI · AZW3")
+                    Text("EPUB 保留原文件、图片和 CSS，可切换原书样式与重排。旧版已导入的 EPUB 需重新导入原文件。DOCX 与富文本以文字重排；扫描 PDF 尝试本机 OCR；未加密 MOBI/AZW3 转为保留图片与目录的 EPUB。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("兼容性") {
+                    Text("CSS、旧式选择器、XPath 1.0、基础 JSONPath、静态 GET/POST、目录及正文分页。")
+                    Text("支持常用脚本接口、发现分类、换源与仿真卷页；完整 Java/Android 桥仍待补齐，当前版本不等同 Android Legado 完整版。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("Gavin 2.0") {
+                    Text(AppBuildIdentity.label).font(.caption).textSelection(.enabled)
+                    Link("项目源码与安装包", destination: URL(string: "https://github.com/w653268468-byte/moyu-ios")!)
+                    Text("主程序 MIT · libmobi LGPL-3.0-or-later · 无广告")
+                    Link("第三方许可与重新编译说明", destination: URL(string: "https://github.com/w653268468-byte/moyu-ios/blob/main/THIRD_PARTY_NOTICES.md")!)
+                    Text("免费 Apple 账号签名通常需每 7 天续签。用 Sideloadly 覆盖安装同一包名；不要先删 App，以免丢失本地数据。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }.navigationTitle("帮助与关于").navigationBarTitleDisplayMode(.inline)
     }
 }

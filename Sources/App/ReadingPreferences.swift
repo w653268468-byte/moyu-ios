@@ -53,11 +53,16 @@ struct ReadingStyle: DynamicProperty {
     var paper: Paper { Paper(rawValue: paperName) ?? .cream }
     var font: Font {
         let size = min(44, max(12, fontSize))
+        if fontFamily.hasPrefix("custom:") { return .custom(String(fontFamily.dropFirst(7)), size: size).weight(bold ? .semibold : .regular) }
         let design: Font.Design
         switch fontFamily { case "宋体": design = .serif; case "圆体": design = .rounded; case "等宽": design = .monospaced; default: design = .default }
         return .system(size: size, weight: bold ? .semibold : .regular, design: design)
     }
     var uiFont: UIFont {
+        if fontFamily.hasPrefix("custom:"), let font = UIFont(name: String(fontFamily.dropFirst(7)), size: min(44, max(12, fontSize))) {
+            if bold, let descriptor = font.fontDescriptor.withSymbolicTraits(.traitBold) { return UIFont(descriptor: descriptor, size: font.pointSize) }
+            return font
+        }
         let base = UIFont.systemFont(ofSize: min(44, max(12, fontSize)), weight: bold ? .semibold : .regular)
         let design: UIFontDescriptor.SystemDesign
         switch fontFamily { case "宋体": design = .serif; case "圆体": design = .rounded; case "等宽": design = .monospaced; default: design = .default }
@@ -71,6 +76,9 @@ struct ReadingStyle: DynamicProperty {
         autoChangeSource = false
         pageAnimation = "slide"
         tapMapValue = ReadingTapMap.allNext.stored
+        UserDefaults.standard.set("", forKey: "reader.speechVoice")
+        UserDefaults.standard.set(0, forKey: "reader.sleepMinutes")
+        UserDefaults.standard.set(false, forKey: "reader.stopAfterChapter")
     }
 }
 
@@ -103,7 +111,11 @@ struct ReadingAppearance: ViewModifier {
 
 struct ReadingPreferences: View {
     private var style = ReadingStyle()
+    @ObservedObject private var fonts = ReaderFontStore.shared
     @State private var resetting = false
+    @AppStorage("reader.speechVoice") private var speechVoice = ""
+    @AppStorage("reader.sleepMinutes") private var sleepMinutes = 0
+    @AppStorage("reader.stopAfterChapter") private var stopAfterChapter = false
     var body: some View {
         Form {
             Section("实时预览") {
@@ -128,7 +140,9 @@ struct ReadingPreferences: View {
             Section("字体与排版") {
                 Picker("字体", selection: Binding(get: { style.fontFamily }, set: { style.fontFamily = $0 })) {
                     ForEach(["系统", "宋体", "圆体", "等宽"], id: \.self) { Text($0).tag($0) }
+                    ForEach(fonts.faces) { face in Text(face.title).tag("custom:" + face.name) }
                 }
+                NavigationLink("导入字体与字体管理") { ReaderFontSettings() }
                 control("字号", value: Binding(get: { style.fontSize }, set: { style.fontSize = $0 }), range: 12...44)
                 Toggle("加粗", isOn: Binding(get: { style.bold }, set: { style.bold = $0 }))
                 control("字距", value: Binding(get: { style.letterSpacing }, set: { style.letterSpacing = $0 }), range: 0...6, step: 0.5)
@@ -179,7 +193,13 @@ struct ReadingPreferences: View {
             }
             Section("听书") {
                 control("语速", value: Binding(get: { style.speechRate }, set: { style.speechRate = $0 }), range: 0.25...0.65, step: 0.05)
-                Text("使用 iPhone 系统中文语音，朗读当前分段或当前章节；切换章节会停止朗读。")
+                Picker("朗读声音", selection: $speechVoice) {
+                    Text("系统中文").tag("")
+                    ForEach(AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("zh") }, id: \.identifier) { voice in Text(voice.name + " · " + voice.language).tag(voice.identifier) }
+                }
+                Picker("定时停止", selection: $sleepMinutes) { Text("不定时").tag(0); ForEach([15, 30, 45, 60, 90, 120], id: \.self) { Text("\($0) 分钟").tag($0) } }
+                Toggle("本章读完后停止", isOn: $stopAfterChapter)
+                Text("从当前位置连续朗读并自动进入下一章；退出阅读页后仍可播放，在书架、锁屏和控制中心暂停或停止。定时设置在下一次开始听书时生效。手动跨章会停止当前听书。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
@@ -198,29 +218,3 @@ struct ReadingPreferences: View {
     }
 }
 
-@MainActor
-final class ReaderSpeech: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
-    @Published private(set) var active = false
-    @Published private(set) var paused = false
-    @Published var message: String?
-    private let synthesizer = AVSpeechSynthesizer()
-    override init() { super.init(); synthesizer.delegate = self }
-    func play(_ text: String, rate: Double) {
-        if active {
-            if paused { synthesizer.continueSpeaking(); paused = false }
-            else { synthesizer.pauseSpeaking(at: .word); paused = true }
-            return
-        }
-        guard text.count <= 100000 else { message = "本章超过 10 万字，请选择较短章节再朗读。"; return }
-        guard !text.isEmpty else { return }
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: "zh-CN")
-        utterance.rate = Float(min(0.65, max(0.25, rate)))
-        active = true; paused = false
-        synthesizer.speak(utterance)
-    }
-    func stop() { synthesizer.stopSpeaking(at: .immediate); active = false; paused = false }
-    nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        Task { @MainActor in self.active = false; self.paused = false }
-    }
-}

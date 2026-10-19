@@ -66,6 +66,14 @@ private actor SearchOutcomeRecorder {
 }
 
 final class SourceClientTests: XCTestCase {
+    func testSearchIsNotBlockedByUnsupportedBodyRule() async throws {
+        var source = try source()
+        source.ruleContent?.content = "{{java.get()}"
+        XCTAssertNotNil(source.incompatibility)
+        XCTAssertNil(source.searchIncompatibility)
+        let found = try await makeClient().search("故事", source: source)
+        XCTAssertEqual(found.first?.title, "山海来信")
+    }
     func testImportTextRecognizesJSONAndPreservesSuccessfulLinks() async throws {
         let client = makeClient()
         let json = try SourceImport.export([source()])

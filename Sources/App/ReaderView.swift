@@ -42,7 +42,8 @@ struct ReaderView: View {
     @State private var navigationID = UUID()
     @State private var panel: ReaderPanel?
     @State private var search = ""
-    @StateObject private var speech = ReaderSpeech()
+    @ObservedObject private var speech = ReaderSpeech.shared
+    private var speechKey: String { "local:" + book.id.uuidString }
     private var style = ReadingStyle()
     private var liveBook: Book { library.books.first { $0.id == book.id } ?? book }
     private var current: ReadingPage { document.pages[page] }
@@ -103,7 +104,7 @@ struct ReaderView: View {
                 }.accessibilityLabel(marked ? "移除书签" : "添加书签")
                 Menu {
                     Button("全屏阅读", systemImage: "arrow.up.left.and.arrow.down.right") { style.fullScreen = true }
-                    Button(speech.active ? (speech.paused ? "继续朗读" : "暂停朗读") : "朗读当前分段", systemImage: "speaker.wave.2") { speech.play(current.text, rate: style.speechRate) }
+                    Button(speech.active && speech.owner == speechKey ? (speech.paused ? "继续听书" : "暂停听书") : "从当前位置连续听书", systemImage: "speaker.wave.2", action: startSpeech)
                     if speech.active { Button("停止朗读", systemImage: "stop.circle") { speech.stop() } }
                     Button("目录与书签", systemImage: "list.bullet") { panel = .contents }
                     Button("搜索正文", systemImage: "magnifyingglass") { panel = .search }
@@ -118,14 +119,14 @@ struct ReaderView: View {
             navigationID = UUID()
         }
         .onChange(of: page) { old, value in
-            if document.pages[old].chapter != document.pages[value].chapter { speech.stop() }
+            if document.pages[old].chapter != document.pages[value].chapter && speech.owner == speechKey && speech.chapterIndex != document.pages[value].chapter { speech.stop() }
         }
+        .onChange(of: speech.chapterIndex) { _, value in if speech.active && speech.owner == speechKey && document.chapters.indices.contains(value) { chapterJump(value) } }
         .onChange(of: style.paged) { _, _ in
             resumeOffset = liveBook.textOffset ?? offsetForSegment(page)
             resumeFraction = liveBook.scrollFraction
             navigationID = UUID()
         }
-        .onDisappear { speech.stop() }
         .alert("听书提示", isPresented: Binding(get: { speech.message != nil }, set: { if !$0 { speech.message = nil } })) { Button("知道了") { speech.message = nil } } message: { Text(speech.message ?? "") }
         .sheet(item: $panel) { selected in
             NavigationStack {
@@ -141,6 +142,19 @@ struct ReaderView: View {
     }
 
     private var chapterSegments: [ReadingPage] { document.pages.filter { $0.chapter == current.chapter } }
+    private func startSpeech() {
+        let data = document, id = book.id, store = library
+        speech.start(owner: speechKey, title: book.title, chapter: current.chapter, offset: resumeOffset, loader: { index in
+            guard data.chapters.indices.contains(index) else { return nil }
+            return (data.chapters[index].title, data.pages.filter { $0.chapter == index }.map { TextPagination.readingText($0.text) }.joined(separator: "\n"))
+        }, progress: { chapter, offset in
+            var start = 0, page = data.chapters[chapter].firstPage
+            for segment in data.pages where segment.chapter == chapter {
+                if start > offset { break }; page = segment.id; start += (TextPagination.readingText(segment.text) as NSString).length + 1
+            }
+            store.updatePosition(bookID: id, page: page, textOffset: offset)
+        })
+    }
     private var chapterText: String { chapterSegments.map { TextPagination.readingText($0.text) }.joined(separator: "\n") }
 
     private func offsetForSegment(_ target: Int) -> Int {

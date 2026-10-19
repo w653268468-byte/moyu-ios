@@ -32,6 +32,11 @@ jobs:
         run: |
           xcodebuild -version
           swift --version
+      - name: Start simulator while compiling
+        run: |
+          DEVICE_ID=$(xcrun simctl list devices available --json | python3 -c 'import sys,json; d=json.load(sys.stdin); print(next(v["udid"] for k,vs in d["devices"].items() if "iOS" in k for v in vs if v["name"].startswith("iPhone")))')
+          echo "GAVIN_SIMULATOR_ID=$DEVICE_ID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$DEVICE_ID"
       - name: Validate project files
         run: python3 scripts/validate.py
       - name: Test patched JavaScript runtime
@@ -69,8 +74,7 @@ jobs:
         run: |
           FIXTURE_PID=$(cat build/web-login-fixture.pid)
           trap 'cp -R "$HOME/Library/Logs/DiagnosticReports" build/ui/crashes 2>/dev/null || true; cp -R "$HOME/Library/Developer/CoreSimulator/Devices/$DEVICE_ID/data/Library/Logs" build/ui/device-logs 2>/dev/null || true; cp "$CONTAINER/Documents/ui-startup.txt" build/ui/ui-startup.txt 2>/dev/null || true; kill "$FIXTURE_PID" 2>/dev/null || true' EXIT
-          DEVICE_ID=$(xcrun simctl list devices available --json | python3 -c 'import sys,json; d=json.load(sys.stdin); print(next(v["udid"] for k,vs in d["devices"].items() if "iOS" in k for v in vs if v["name"].startswith("iPhone")))')
-          xcrun simctl boot "$DEVICE_ID"
+          DEVICE_ID="$GAVIN_SIMULATOR_ID"
           xcrun simctl bootstatus "$DEVICE_ID" -b
           RUNTIME_SWIFT=$(python3 scripts/simulator_swift_path.py "$DEVICE_ID")
           if [ -n "$RUNTIME_SWIFT" ]; then
@@ -90,6 +94,20 @@ jobs:
           test -f "$CONTAINER/Documents/ui-startup.txt"
           sleep 3
           xcrun simctl io "$DEVICE_ID" screenshot build/ui/startup-shelf.png
+          xcrun simctl launch --terminate-running-process "$DEVICE_ID" org.moyu.reader --ui-speech-check
+          for ATTEMPT in $(seq 1 30); do
+            if [ -f "$CONTAINER/Documents/speech-check.json" ]; then break; fi
+            sleep 1
+          done
+          cp "$CONTAINER/Documents/speech-check.json" build/ui/speech-check.json || true
+          python3 -c 'import json,pathlib,sys; d=json.loads(pathlib.Path(sys.argv[1]).read_text()); print(d); assert d["status"] == "passed"' "$CONTAINER/Documents/speech-check.json"
+          xcrun simctl launch --terminate-running-process "$DEVICE_ID" org.moyu.reader --ui-font-check
+          for ATTEMPT in $(seq 1 30); do
+            if [ -f "$CONTAINER/Documents/font-check.json" ]; then break; fi
+            sleep 1
+          done
+          cp "$CONTAINER/Documents/font-check.json" build/ui/font-check.json || true
+          python3 -c 'import json,pathlib,sys; d=json.loads(pathlib.Path(sys.argv[1]).read_text()); print(d); assert d["status"] == "passed"' "$CONTAINER/Documents/font-check.json"
           xcrun simctl launch --terminate-running-process "$DEVICE_ID" org.moyu.reader --ui-import-check
           for ATTEMPT in $(seq 1 45); do
             if [ -f "$CONTAINER/Documents/source-import-check.json" ]; then break; fi

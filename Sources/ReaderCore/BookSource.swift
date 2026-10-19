@@ -51,6 +51,19 @@ public struct BookSource: Codable, Identifiable, Equatable, Sendable {
     public var ruleToc: SourceRule?
     public var ruleContent: SourceRule?
 
+    public var searchIncompatibility: String? {
+        guard let base = URL(string: bookSourceUrl), ["http", "https"].contains(base.scheme?.lowercased() ?? ""), base.host != nil else { return "书源网站地址无效" }
+        guard let searchUrl, !searchUrl.isEmpty, let rule = ruleSearch,
+              !(rule.bookList ?? "").isEmpty, !(rule.name ?? "").isEmpty, !(rule.bookUrl ?? "").isEmpty else { return "缺少搜索规则" }
+        for value in [rule.bookList, rule.name, rule.bookUrl, rule.author, rule.intro].compactMap({ $0 }).filter({ !$0.isEmpty }) {
+            if !HTMLRule.isSupported(value) && !JSONRule.isSupported(value) && !ScriptRule.isSupported(value) && !RuleComposition.isSupported(value) { return "搜索规则暂不支持：\(value.prefix(65))" }
+        }
+        if !ScriptTemplate.needsScript(searchUrl) {
+            do { _ = try SourceRequest.make(searchUrl, query: "测试", base: base) } catch { return error.localizedDescription }
+        }
+        return nil
+    }
+
     public var incompatibility: String? {
         guard let url = URL(string: bookSourceUrl), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil else {
             return "书源基础地址不是有效的 HTTP/HTTPS 网址"
@@ -146,6 +159,11 @@ public struct OnlineChapter: Codable, Identifiable, Equatable, Sendable {
 public struct OnlineNovel: Codable, Identifiable, Equatable, Sendable {
     public var id: String { shelfID ?? requestTemplate ?? url.absoluteString }
     public var shelfID: String?
+    public var readingMarks: [OnlineReadingMark]?
+    public var coverURL: URL?
+    public var kind: String?
+    public var wordCountLabel: String?
+    public var lastChapter: String?
     public var title: String
     public var author: String
     public var intro: String
