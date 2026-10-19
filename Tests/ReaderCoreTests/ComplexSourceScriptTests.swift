@@ -3,6 +3,12 @@ import XCTest
 @testable import ReaderCore
 
 final class ComplexSourceScriptTests: XCTestCase {
+    func testJavaImporterCipherAndChineseChapterHelpers() throws {
+        let engine = try SourceScript()
+        let value = try engine.evaluate("var imports=new JavaImporter(Packages.javax.crypto,Packages.javax.crypto.spec);with(imports){var key=SecretKeySpec(java.hexDecodeToByteArray('2b7e151628aed2a6abf7158809cf4f3c'),'AES');var iv=IvParameterSpec(java.hexDecodeToByteArray('000102030405060708090a0b0c0d0e0f'));var cipher=Cipher.getInstance('AES/CBC/NoPadding');cipher.init(Cipher.ENCRYPT_MODE,key,iv);cipher.doFinal(java.hexDecodeToByteArray('6bc1bee22e409f96e93d7e117393172a')).map(x=>(x&255).toString(16).padStart(2,'0')).join('')}", result: "", baseURL: base) as? String
+        XCTAssertEqual(value, "7649abac8119b246cee98e9b12e9197d")
+        XCTAssertEqual(try engine.evaluate("java.toNumChapter('第两千零三章 风起')", result: "", baseURL: base) as? String, "第2003章")
+    }
     func testParkedDomainAndHTMLInsteadOfJSONHaveWebsiteDiagnostics() throws {
         let doc = try RuleDocument.parse(Data("<title>Redirecting</title><meta name='redirect-domain' content='example.com'><script>window.location.replace('https://ads.example')</script>".utf8), base: URL(string: "https://fixture.example")!)
         XCTAssertTrue(doc.emptyResultDiagnostic?.contains("域名停放") == true)

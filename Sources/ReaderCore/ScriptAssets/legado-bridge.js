@@ -106,7 +106,14 @@
         removeCookie:url=>gavinCall('removeCookie',[String(url)]),
         setWebCookie:(url,value)=>gavinCall('setCookie',[String(url),String(value)])
     };
-    function JavaString(value,charset='UTF-8') { return new String(Array.isArray(value)||ArrayBuffer.isView(value)?gavinCall('decodeBytes',[Array.from(value),charset]):String(value??'')); }
+    function JavaString(value,charset='UTF-8',length,encoding='UTF-8') {
+        if(Array.isArray(value)||ArrayBuffer.isView(value)) {
+            let bytes=Array.from(value);
+            if(typeof charset==='number') {if(!Number.isInteger(charset)||!Number.isInteger(length)||charset<0||length<0||charset+length>bytes.length)throw new Error('Invalid String byte range');bytes=bytes.slice(charset,charset+length);charset=encoding;}
+            return new String(gavinCall('decodeBytes',[bytes,charset]));
+        }
+        return new String(String(value??''));
+    }
     if(!String.prototype.getBytes)Object.defineProperty(String.prototype,'getBytes',{value:function(charset='UTF-8'){return gavinCall('encodeBytes',[String(this),charset]);}});
     const numeric={parseInt:value=>parseInt(value,10),parseLong:value=>parseInt(value,10),valueOf:value=>Number(value)};
     function asymmetric(algorithm,signing=false) {

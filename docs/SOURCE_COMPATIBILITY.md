@@ -2,6 +2,8 @@
 
 当前任务仅处理书源兼容和真实搜索→目录→正文；书架、排版、听书等其他功能暂停迭代。
 
+公开样本中 14 个源使用 JavaImporter，22 处调用 toNumChapter。新增显式 Java 兼容包：JavaImporter、SecretKeySpec/IvParameterSpec、Cipher、RSA KeyFactory/EncodedKeySpec、Signature、MessageDigest、Base64、Arrays、ByteArrayOutputStream、String 字节构造和中文章节数字；只实现列出的接口，不暴露任意 Java/Android 类。Node 中使用真实 JavaImporter/with 解密流程对照独立 OpenSSL AES 结果，Swift/iOS 与 RSA 向量检查另行验证；OkHttp、Hutool、字体反混淆等尚需真实案例适配。
+
 第 49 次真实集合抽样已生成报告：32 个域名中 1 个通过完整链路，2 个需本人登录，1 个需 WebView，其余有网络、网站响应和兼容问题；不能把审计任务绿色当作 32 个源均可用。本地复核确认 leeyegy 返回域名广告跳转、kuaishu5 返回 ParkLogic 页面，增加网站响应诊断。qsyz 搜索同时返回衍生作品与原作，审计优先选同名书，并可先用作者提供的 checkKeyWord。
 
 针对真实神话之后书源，正文“下一”会继续跳到下一章：目录现在保存下一章边界，正文分页只合并本章页面，不把后续章节不断拼入。新增边界持久化回归。详情 init 的返回结果现在成为后续元数据与目录解析输入，修正仅执行脚本却丢弃转换结果的问题。第 48 次检查发现 CSS 属性中的 @ 在二次转换被拆分，及系统 RSA PKCS1 解密的错误密钥未可靠拒绝，已分别修正分隔和增加原始块填充校验；待新检查确认。

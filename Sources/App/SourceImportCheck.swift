@@ -70,6 +70,7 @@ private actor SearchCheckGate {
             try interpreter.setJSONGlobal("source", json: String(decoding: JSONSerialization.data(withJSONObject: ["bookSourceUrl": nativeNamespace]), as: UTF8.self))
             defer { SourceScriptCache.shared.delete(nativeNamespace, "source:@loginHeader") }
             guard try interpreter.evaluate("const cipher=java.createSymmetricCrypto('AES/CBC/PKCS5Padding','0123456789abcdef','abcdef0123456789');cipher.decryptStr(cipher.encryptBase64('正文验证'))", result: "", baseURL: URL(string: nativeNamespace)!) as? String == "正文验证",
+                  try interpreter.evaluate("var imports=new JavaImporter(Packages.java.lang,Packages.java.util);with(imports){String(Base64.getDecoder().decode('R2F2aW4=')).toString()}", result: "", baseURL: URL(string: nativeNamespace)!) as? String == "Gavin",
                   try interpreter.evaluate("java.getString('a@text@js:result+\"规则\"')", result: "<a>嵌套</a>", baseURL: URL(string: nativeNamespace)!) as? String == "嵌套规则",
                   try interpreter.evaluate("source.putLoginHeader('{\"X-Reader\":\"Gavin\"}');source.getLoginHeaderMap().get('X-Reader')", result: "", baseURL: URL(string: nativeNamespace)!) as? String == "Gavin",
                   try interpreter.evaluate("const rsa=java.createAsymmetricCrypto('RSA');rsa.decryptStr(rsa.encryptBase64('正文RSA'),false)", result: "", baseURL: URL(string: nativeNamespace)!, timeout: 15) as? String == "正文RSA" else { throw SourceError.message("原生书源加密、嵌套规则或登录头检查失败") }

@@ -15,7 +15,7 @@ const context=vm.createContext({__native:{call(name,payload){const a=JSON.parse(
 }}});
 const swift=fs.readFileSync('Sources/ReaderCore/SourceScript.swift','utf8');
 vm.runInContext(swift.match(/private static let bootstrap = #"""\r?\n([\s\S]*?)\r?\n    """#/)[1],context);
-for(const file of ['crypto-js','legado-bridge'])vm.runInContext(fs.readFileSync('Sources/ReaderCore/ScriptAssets/'+file+'.js','utf8'),context);
+for(const file of ['crypto-js','legado-bridge','java-compat'])vm.runInContext(fs.readFileSync('Sources/ReaderCore/ScriptAssets/'+file+'.js','utf8'),context);
 const run=code=>vm.runInContext(code,context,{timeout:3000});
 assert.equal(run("new GavinResponse({body:'redirect',url:'https://fixture.example',status:302,headers:{Location:'/next'}}).header('location')"),'/next');
 assert.equal(run("new GavinResponse({body:'redirect',url:'https://fixture.example',status:302,headers:{Location:'/next'}}).headers().get('LOCATION')"),'/next');
@@ -24,6 +24,16 @@ assert.equal(run("java.createSymmetricCrypto('AES/CBC/NoPadding',java.hexDecodeT
 const key='0123456789abcdef',iv='abcdef0123456789',plain='中文正文 🌸';
 const oracle=crypto.createCipheriv('aes-128-cbc',key,iv);const expected=Buffer.concat([oracle.update(plain),oracle.final()]).toString('base64');
 context.expected=expected;context.plain=plain;
+assert.equal(run("var imports=new JavaImporter();imports.importPackage(Packages.java.lang,Packages.javax.crypto.spec,Packages.javax.crypto,Packages.java.util);with(imports){var key=SecretKeySpec('0123456789abcdef'.getBytes(),'AES');var iv=IvParameterSpec('abcdef0123456789'.getBytes());var decipher=Cipher.getInstance('AES/CBC/PKCS5Padding');decipher.init(2,key,iv);var decoded=String(decipher.doFinal(Base64.getDecoder().decode(expected)));}decoded.toString()"),plain);
+assert.equal(run("java.util.Arrays.copyOfRange([1,-1,3],1,5).join(',')"),'-1,3,0,0');
+assert.equal(run("java.toNumChapter('第两千零三章 风起')"),'第2003章');
+assert.equal(run("java.toNumChapter('第壹万贰仟叁佰肆拾伍章')"),'第12345章');
+assert.equal(run("java.toNumChapter('第１２３章')"),'第123章');
+assert.equal(run("java.toNumChapter('第一千二章')"),'第1200章');
+assert.equal(run("java.toNumChapter('序章')"),'序章');
+assert.equal(run("java.toNumChapter(null)"),null);
+assert.equal(run("with(new JavaImporter(Packages.java.io,Packages.java.lang)){var out=ByteArrayOutputStream();out.write('中文'.getBytes());String(out.toByteArray()).toString()}"),'中文');
+assert.equal(run("CryptoJS.lib.WordArray.create ? java.security.MessageDigest.getInstance('SHA-256').digest('abc'.getBytes()).map(x=>(x&255).toString(16).padStart(2,'0')).join('') : ''"),'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
 assert.equal(run("java.createSymmetricCrypto('AES/CBC/PKCS5Padding','0123456789abcdef','abcdef0123456789').encryptBase64(plain)"),expected);
 assert.equal(run("java.createSymmetricCrypto('AES/CBC/PKCS5Padding','0123456789abcdef','abcdef0123456789').decryptStr(expected)"),plain);
 assert.equal(run("java.aesDecodeArgsBase64Str(expected, CryptoJS.enc.Utf8.parse('0123456789abcdef').toString(CryptoJS.enc.Base64), 'CBC','PKCS5Padding',CryptoJS.enc.Utf8.parse('abcdef0123456789').toString(CryptoJS.enc.Base64))"),plain);
@@ -36,4 +46,4 @@ assert.equal(run("CryptoJS.AES.decrypt(CryptoJS.AES.encrypt('正文','password')
 const tkey='123456789012345678901234',tiv='12345678',t=crypto.createCipheriv('des-ede3-cbc',tkey,tiv);
 const triple=Buffer.concat([t.update(plain),t.final()]).toString('base64');
 assert.equal(run("java.createSymmetricCrypto('DESede/CBC/PKCS5Padding','123456789012345678901234','12345678').encryptBase64(plain)"),triple);
-console.log('PASS: NIST AES, Node/OpenSSL AES and TripleDES, invalid padding, byte arrays, scoped variables, CryptoJS passphrase randomness');
+console.log('PASS: NIST AES, Node/OpenSSL AES and TripleDES, invalid padding, JavaImporter/Cipher/Base64/digest/stream, Chinese chapter numbers, scoped variables, CryptoJS passphrase randomness');

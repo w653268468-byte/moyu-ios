@@ -3,6 +3,11 @@ import XCTest
 @testable import ReaderCore
 
 final class SourceRSATests: XCTestCase {
+    func testJavaImporterKeyFactoryAndCipherMatchOpenSSLFixture() throws {
+        let script = try engine()
+        let result = try script.evaluate("var imports=new JavaImporter(Packages.java.security,Packages.java.security.spec,Packages.javax.crypto,Packages.java.lang,Packages.java.util);with(imports){var der=Base64.getDecoder().decode(fixture.privateKey.replace(/-----[A-Z ]+-----/g,'').replace(/\\s/g,''));var key=KeyFactory.getInstance('RSA').generatePrivate(PKCS8EncodedKeySpec(der));var cipher=Cipher.getInstance('RSA/ECB/PKCS1Padding');cipher.init(2,key);String(cipher.doFinal(Base64.getDecoder().decode(fixture.publicCipher))).toString()}", result: "", baseURL: base) as? String
+        XCTAssertEqual(result, "三国演义·复杂书源兼容验证")
+    }
     private let base = URL(string: "https://rsa-fixture.example")!
     private func engine() throws -> SourceScript {
         let engine = try SourceScript()

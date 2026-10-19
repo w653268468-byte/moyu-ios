@@ -53,7 +53,7 @@ public final class SourceScript: @unchecked Sendable {
         }
         try context.evaluate("import * as native from 'GavinNative'; globalThis.__native = native;", options: EvalOptions(type: .module))
         try context.evaluate(Self.bootstrap)
-        for name in ["crypto-js", "legado-bridge"] {
+        for name in ["crypto-js", "legado-bridge", "java-compat"] {
             #if SWIFT_PACKAGE
             let bundle = Bundle.module
             let url = bundle.url(forResource: name, withExtension: "js", subdirectory: "ScriptAssets")
