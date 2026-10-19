@@ -1,6 +1,15 @@
 import XCTest
 
 final class ReaderInteractionTests: XCTestCase {
+    @MainActor func testBundledSourceSamplesPreviewAndImportWithoutDownloadingCollection() {
+        let app = application(); app.launchArguments = ["--ui-tab", "2", "--ui-import-samples"]; app.launch()
+        let sample = app.buttons["source.import.samples"]
+        XCTAssertTrue(sample.waitForExistence(timeout: 15)); sample.tap()
+        let confirm = app.buttons["确认导入 3 个书源"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 10)); confirm.tap()
+        XCTAssertTrue(app.staticTexts["奇异网"].firstMatch.waitForExistence(timeout: 10))
+        app.terminate()
+    }
     @MainActor func testSourceRequestedLoginAndImageCodeResumeScript() {
         let app = application(); app.launchArguments = ["--ui-verification-check"]; app.launch()
         let done = app.buttons["source.verification.done"]

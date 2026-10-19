@@ -19,6 +19,7 @@ def quote(value):
 def generate_project():
     sources = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Sources").rglob("*") if p.is_file() and p.suffix in [".swift", ".c"])
     resources = ["Resources/Assets.xcassets", "Resources/PrivacyInfo.xcprivacy"]
+    resources += ["Examples/verified-sources.json"]
     resources += sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Sources/ReaderCore/ScriptAssets").glob("*.js"))
     ui_sources = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "Tests/AppUITests").glob("*.swift"))
     objects = []
@@ -30,7 +31,7 @@ def generate_project():
         return "(" + ", ".join(uid(n) for n in names) + ",)"
 
     for path in sources + resources + ui_sources:
-        filetype = "sourcecode.swift" if path.endswith(".swift") else "sourcecode.c.c" if path.endswith(".c") else ("sourcecode.javascript" if path.endswith(".js") else "folder.assetcatalog" if path.endswith(".xcassets") else "text.xml")
+        filetype = "sourcecode.swift" if path.endswith(".swift") else "sourcecode.c.c" if path.endswith(".c") else ("sourcecode.javascript" if path.endswith(".js") else "text.json" if path.endswith(".json") else "folder.assetcatalog" if path.endswith(".xcassets") else "text.xml")
         obj("file:" + path, f"isa = PBXFileReference; lastKnownFileType = {filetype}; path = {quote(path)}; sourceTree = SOURCE_ROOT;")
         obj("build:" + path, f"isa = PBXBuildFile; fileRef = {uid('file:' + path)};")
 

@@ -28,6 +28,14 @@ struct SourceImportView: View {
                         .disabled(busy || link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 Section("其他导入方式") {
+                    Button("导入实测示例书源", systemImage: "checkmark.circle") {
+                        do {
+                            guard let file = Bundle.main.url(forResource: "verified-sources", withExtension: "json") else { throw SourceError.message("缺少示例书源文件。") }
+                            parse(try Data(contentsOf: file))
+                        } catch { failure = error.localizedDescription }
+                    }.disabled(busy).accessibilityIdentifier("source.import.samples")
+                    Text("示例规则可离线导入；网站曾通过搜索、目录和正文测试，后续可用性仍取决于网站。")
+                        .font(.caption).foregroundStyle(.secondary)
                     Button("选择 JSON 文件", systemImage: "doc") { importingFile = true }.disabled(busy)
                     Text("文件或粘贴 JSON 可直接导入，无需下载网址。若链接无法访问，可在 Safari 下载 JSON 后选择文件。")
                         .font(.caption).foregroundStyle(.secondary)

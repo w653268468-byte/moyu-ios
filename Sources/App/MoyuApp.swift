@@ -65,7 +65,7 @@ struct MoyuApp: App {
                     if ProcessInfo.processInfo.arguments.contains("--ui-font-check") { Task { await FontImportCheck.run() } }
                     if ProcessInfo.processInfo.arguments.contains("--ui-speech-check") { Task { await ReaderSpeech.checkContinuousPlayback() } }
                     if ProcessInfo.processInfo.arguments.contains("--ui-search-model-check") { Task { await SearchModelCheck.run() } }
-                    if ProcessInfo.processInfo.arguments.contains("--ui-import-preview") { showSourceImportPreview = true }
+                    if ProcessInfo.processInfo.arguments.contains("--ui-import-preview") || ProcessInfo.processInfo.arguments.contains("--ui-import-samples") { showSourceImportPreview = true }
                     if ProcessInfo.processInfo.arguments.contains("--ui-preferences") { showReaderPreferences = true }
                     if ProcessInfo.processInfo.arguments.contains("--ui-all-next") { UserDefaults.standard.set(ReadingTapMap.allNext.stored, forKey: "reader.tapMap") }
                     if ProcessInfo.processInfo.arguments.contains("--ui-reading") || ProcessInfo.processInfo.arguments.contains("--ui-scroll") || ProcessInfo.processInfo.arguments.contains("--ui-epub") {

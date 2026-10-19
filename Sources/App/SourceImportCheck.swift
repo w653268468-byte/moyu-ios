@@ -66,6 +66,8 @@ private actor SearchCheckGate {
         let reportURL = URL.documentsDirectory.appendingPathComponent("source-import-check.json")
         do {
             let interpreter = try SourceScript()
+            guard let sampleURL = Bundle.main.url(forResource: "verified-sources", withExtension: "json"),
+                  try SourceImport.parse(Data(contentsOf: sampleURL)).sources.count == 3 else { throw SourceError.message("打包的实测示例书源无法读取。") }
             let nativeNamespace = "https://native-" + UUID().uuidString.lowercased() + ".example"
             try interpreter.setJSONGlobal("source", json: String(decoding: JSONSerialization.data(withJSONObject: ["bookSourceUrl": nativeNamespace]), as: UTF8.self))
             defer { SourceScriptCache.shared.delete(nativeNamespace, "source:@loginHeader") }
