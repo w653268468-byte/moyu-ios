@@ -51,7 +51,8 @@ private final class RenderSession: NSObject, WKNavigationDelegate, WKUIDelegate 
                     guard self.continuation != nil else { return }
                     let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow)
                     window?.addSubview(web)
-                    web.load(request)
+                    if let html = SourceRequest.webHTML(request) { web.loadHTMLString(html, baseURL: request.url) }
+                    else { web.load(request) }
                 }
             }
         } onCancel: { Task { @MainActor [weak self] in self?.finish(.failure(CancellationError())) } }
@@ -74,7 +75,8 @@ private final class RenderSession: NSObject, WKNavigationDelegate, WKUIDelegate 
                 if let custom, !custom.isEmpty {
                     let value = try await web.evaluateJavaScript(custom)
                     try Task.checkCancellation()
-                    if let text = value as? String, !text.isEmpty { try complete(text); return }
+                    if let text = value as? String { try complete(text); return }
+                    if let number = value as? NSNumber { try complete(number.stringValue); return }
                 }
                 var previous = "", stable = 0
                 for _ in 0..<20 {
@@ -95,7 +97,8 @@ private final class RenderSession: NSObject, WKNavigationDelegate, WKUIDelegate 
         }
     }
     private func complete(_ text: String) throws {
-        guard let url = web.url ?? request.url, ["http", "https"].contains(url.scheme?.lowercased() ?? ""), text.utf8.count <= 8 * 1024 * 1024 else { throw SourceError.message("动态网页的地址或内容大小无效。") }
+        let finalURL = web.url.flatMap { ["http", "https"].contains($0.scheme?.lowercased() ?? "") ? $0 : nil } ?? request.url
+        guard let url = finalURL, ["http", "https"].contains(url.scheme?.lowercased() ?? ""), text.utf8.count <= 8 * 1024 * 1024 else { throw SourceError.message("动态网页的地址或内容大小无效。") }
         finish(.success((Data(text.utf8), url)))
     }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { finish(.failure(error)) }

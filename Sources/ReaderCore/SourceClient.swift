@@ -137,7 +137,7 @@ public actor SourceClient {
         let rules = [source.ruleSearch, source.ruleExplore, source.ruleBookInfo, source.ruleToc, source.ruleContent].compactMap { $0 }.flatMap(\.values) + [source.searchUrl, source.exploreUrl, source.header].compactMap { $0 }
         guard rules.contains(where: { ScriptTemplate.needsScript($0) }) || source.jsLib?.isEmpty == false else { return nil }
         if let cached = scriptEngines[source.id], cached.0 == source { return cached.1 }
-        let engine = try SourceScript(configuration: session.configuration)
+        let engine = try SourceScript(configuration: session.configuration, webRenderer: webRenderer)
         let json = try source.originalJSON ?? String(decoding: JSONEncoder().encode(source), as: UTF8.self)
         try engine.setJSONGlobal("source", json: json)
         if let library = source.jsLib, !library.isEmpty, let base = URL(string: source.bookSourceUrl) {

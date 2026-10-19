@@ -21,7 +21,8 @@ private actor SourceAuditProgress {
         if let error {
             result.error = error
             let lower = error.lowercased()
-            if ["http 403", "http 429", "验证", "验证码", "登录", "captcha"].contains(where: lower.contains) { result.category = "authentication_or_rate_limit" }
+            if lower.contains("没有 webview 渲染器") { result.status = "requires_webview"; result.category = "runtime_environment" }
+            else if ["http 403", "http 429", "验证", "验证码", "登录", "captcha"].contains(where: lower.contains) { result.category = "authentication_or_rate_limit" }
             else if ["http 404", "http 410", "域名", "dns", "超时", "超过 45", "timeout", "network", "网络", "https"].contains(where: lower.contains) { result.category = "network_or_dead_endpoint" }
             else { result.category = "rule_or_bridge" }
         }

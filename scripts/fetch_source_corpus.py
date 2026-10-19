@@ -6,6 +6,9 @@ import ast, hashlib, json, re, time, urllib.request
 ROOT=Path(__file__).resolve().parents[1]
 OUTPUT=ROOT/'.build/source-audit'
 URLS=[
+    # Independent collections listed by 52liulian/yuanc; availability is audited, not assumed.
+    'https://www.yckceo.com/yuedu/shuyuans/json/id/1042.json',
+    'https://cdn.jsdelivr.net/gh/tickmao/Novel@master/sources/legado/full.json',
     'https://raw.githubusercontent.com/XIU2/Yuedu/master/shuyuan',
     'https://raw.githubusercontent.com/aoaostar/legado/release/sources/b778fe6b.json',
     'https://raw.githubusercontent.com/aoaostar/legado/release/sources/71e56d4f.json',

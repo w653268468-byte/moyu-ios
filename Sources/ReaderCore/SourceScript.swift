@@ -25,15 +25,17 @@ public final class SourceScript: @unchecked Sendable {
     private let context: JSContext
     private let http: ScriptHTTP
     private let configuration: URLSessionConfiguration
+    private let webRenderer: (@Sendable (URLRequest, [HTTPCookie]) async throws -> (Data, URL))?
     private var input = ""
     private var base = URL(string: "https://example.com")!
     private var variables: [String: String] = [:]
     private var sourceNamespace = "unscoped"
 
-    public init(configuration: URLSessionConfiguration = .ephemeral) throws {
+    public init(configuration: URLSessionConfiguration = .ephemeral, webRenderer: (@Sendable (URLRequest, [HTTPCookie]) async throws -> (Data, URL))? = nil) throws {
         let limit = Limit()
         self.limit = limit
         self.configuration = configuration
+        self.webRenderer = webRenderer
         self.http = ScriptHTTP(configuration: configuration)
         guard let runtime = JSRuntime(options: JSRuntimeOptions(memoryLimit: 64 * 1024 * 1024, enableStdModules: false, enableHelpers: false, interruptHandler: { limit.exceeded() }, flushJobsAfterEval: false)),
               let context = runtime.createContext() else { throw SourceError.message("无法初始化 JavaScript 引擎。") }
@@ -229,6 +231,22 @@ public final class SourceScript: @unchecked Sendable {
             limit.beginIO(); defer { limit.endIO() }
             let response = try http.request(request, allowHTTPError: method != "ajax", cancelled: { self.limit.exceeded() })
             result = method == "ajax" ? response.text : response.json
+        case "webView":
+            guard let renderer = webRenderer else { throw SourceError.message("当前运行环境没有 WebView 渲染器，无法执行 java.webView。") }
+            let url = string(1).isEmpty ? base : try SourceClient.resolve(string(1), base: base)
+            let html = args.first is NSNull ? nil : args.first as? String
+            var request = try SourceRequest.renderRequest(url: url, html: html?.isEmpty == false ? html : nil, script: args.indices.contains(2) ? args[2] as? String : nil)
+            request.setValue(base.absoluteString, forHTTPHeaderField: "Referer")
+            request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
+            if args.indices.contains(3), args[3] as? Bool == true { request.cachePolicy = .returnCacheDataElseLoad }
+            if let login = SourceScriptCache.shared.get(sourceNamespace, "source:@loginHeader") {
+                for (name, value) in try SourceHeaders.parse(login) where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
+            }
+            let cookies = configuration.httpCookieStorage?.cookies(for: url) ?? []
+            let renderRequest = request
+            limit.beginIO(); defer { limit.endIO() }
+            let rendered = try ScriptAsync.run(cancelled: { self.limit.exceeded() }) { try await renderer(renderRequest, cookies) }
+            result = String(decoding: rendered.0, as: UTF8.self)
         case "getCookie", "removeCookie":
             let url = try SourceClient.resolve(string(0), base: base)
             if method == "removeCookie" {
@@ -291,7 +309,7 @@ public final class SourceScript: @unchecked Sendable {
             }
             result = formatter.string(from: Date(timeIntervalSince1970: milliseconds / 1000))
         case "resolve": result = try SourceClient.resolve(string(0), base: base).absoluteString
-        case "log", "toast", "longToast": result = NSNull()
+        case "log", "toast", "longToast": result = args.first ?? NSNull()
         default: throw SourceError.message("尚未实现书源脚本接口 java.\(method)")
         }
         let encoded = try JSONSerialization.data(withJSONObject: result, options: [.fragmentsAllowed, .sortedKeys])

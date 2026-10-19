@@ -3,6 +3,18 @@ import Foundation
 public enum SourceRequest {
     public static func requiresWebView(_ request: URLRequest) -> Bool { URLProtocol.property(forKey: "GavinWebView", in: request) as? Bool == true }
     public static func webScript(_ request: URLRequest) -> String? { URLProtocol.property(forKey: "GavinWebScript", in: request) as? String }
+    public static func webHTML(_ request: URLRequest) -> String? { URLProtocol.property(forKey: "GavinWebHTML", in: request) as? String }
+    static func renderRequest(url: URL, html: String?, script: String?) throws -> URLRequest {
+        guard ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host != nil,
+              (html?.utf8.count ?? 0) <= 4 * 1024 * 1024, (script?.utf8.count ?? 0) <= 512 * 1024 else {
+            throw SourceError.message("动态网页的地址或内容大小无效。")
+        }
+        let request = NSMutableURLRequest(url: url)
+        URLProtocol.setProperty(true, forKey: "GavinWebView", in: request)
+        if let html { URLProtocol.setProperty(html, forKey: "GavinWebHTML", in: request) }
+        if let script { URLProtocol.setProperty(script, forKey: "GavinWebScript", in: request) }
+        return request as URLRequest
+    }
     static func navigation(_ text: String, base: URL, script: SourceScript?) throws -> (url: URL, template: String?) {
         let expanded = try ScriptTemplate.expand(text, using: script, query: "", base: base)
         let request = try make(expanded, query: "", base: base, script: script)

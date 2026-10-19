@@ -2,6 +2,10 @@
 
 当前任务仅处理书源兼容和真实搜索→目录→正文；书架、排版、听书等其他功能暂停迭代。
 
+审计集合也包含 52liulian/yuanc 的 books.json 所列 yckceo 和 tickmao/Novel 地址。集合介绍中的“实时可用”等描述不作为验证结果；下载、解析与真实网站链路分别记录。
+
+java.webView 桥接已接入现有 WebKit 渲染器，支持提供 HTML、基准 URL、提取脚本和缓存优先选项，并共享 Cookie 与源登录头。后台脚本等待可取消，主线程不得同步等待；未配备 WebKit 的命令行审计标为 requires_webview，不能计入通过。原生 Cookie 检查同时验证动态请求选项和 java.webView 调用。交互式 startBrowserAwait 与图片验证码输入接口尚未接入，不能视为这些接口已实现。以上新增检查尚待云端执行。
+
 HTTP 兼容：get/post/connect 可读取非 2xx 响应的状态与正文；ajax 保留明确 HTTP 失败。书源显式配置的 Authorization/Cookie 和请求选项头按源请求应用，Host 不允许覆盖，头部值经过换行检查；source 登录头保存在本机钥匙串并复用到该源后续请求。采样任务使用与 App 相同的浏览器 User-Agent 和 60 秒下载预算，超过 20 MB 的合集单独记录为导入限制。
 
 本轮接入固定版本 CryptoJS 4.2.0 和独立实现的 Legado 适配层，补充 AES/DES/TripleDES、字节编码、source/book/chapter 变量、按源隔离的限额缓存及 Cookie 辅助接口；支持嵌套 getString/getElements，保存并恢复外层脚本状态，嵌套不能重新获得执行预算。所有新增项须通过 Swift/iOS 检查后才能认定集成通过，RSA 和其余 Android 平台接口另行补齐。

@@ -57,7 +57,12 @@ enum BrowserSessions {
             let chapter = OnlineChapter(title: "Dynamic chapter", url: URL(string: "http://127.0.0.1:18765/dynamic")!, requestTemplate: "http://127.0.0.1:18765/dynamic,{'webView':true}")
             let text = try await client.chapter(chapter, source: source)
             guard text == "GAVIN_RENDERED_DYNAMIC_CHAPTER" else { throw SourceError.message("动态网页未执行页面脚本或未复用登录状态。") }
-            try Data(#"{"status":"passed"}"#.utf8).write(to: file, options: .atomic)
+            phase("script_webview_bridge")
+            let scripted = try JSONDecoder().decode(BookSource.self, from: Data(##"{"bookSourceName":"Scripted dynamic fixture","bookSourceUrl":"http://127.0.0.1:18765","ruleContent":{"content":"@js:java.webView(null,baseUrl,\"document.querySelector('#content').textContent\")"}}"##.utf8))
+            let scriptedChapter = OnlineChapter(title: "Script dynamic", url: URL(string: "http://127.0.0.1:18765/dynamic")!)
+            let rendered = try await client.chapter(scriptedChapter, source: scripted)
+            guard rendered == "GAVIN_RENDERED_DYNAMIC_CHAPTER" else { throw SourceError.message("java.webView 未执行页面脚本或未复用 Cookie。") }
+            try Data(#"{"status":"passed","scriptWebView":true}"#.utf8).write(to: file, options: .atomic)
         } catch {
             let report = try? JSONSerialization.data(withJSONObject: ["status": "failed", "error": error.localizedDescription])
             try? report?.write(to: file, options: .atomic)

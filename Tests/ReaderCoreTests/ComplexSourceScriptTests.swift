@@ -3,6 +3,26 @@ import XCTest
 @testable import ReaderCore
 
 final class ComplexSourceScriptTests: XCTestCase {
+    func testWebViewBridgePreservesHTMLScriptURLAndCancellation() async throws {
+        let engine = try SourceScript(webRenderer: { request, _ in
+            XCTAssertTrue(SourceRequest.requiresWebView(request))
+            XCTAssertEqual(SourceRequest.webHTML(request), "<p>正文</p>")
+            XCTAssertEqual(SourceRequest.webScript(request), "document.body.textContent")
+            XCTAssertEqual(request.url?.absoluteString, "https://fixture.example/chapter")
+            return (Data("渲染后正文".utf8), request.url!)
+        })
+        let value = try await Task.detached {
+            try engine.evaluate("java.webView('<p>正文</p>','/chapter','document.body.textContent')", result: "", baseURL: URL(string: "https://fixture.example")!) as? String
+        }.value
+        XCTAssertEqual(value, "渲染后正文")
+        let blocked = try SourceScript(webRenderer: { _, _ in
+            try await Task.sleep(for: .seconds(20)); throw CancellationError()
+        })
+        let task = Task.detached { try blocked.evaluate("java.webView(null,baseUrl,null)", result: "", baseURL: URL(string: "https://fixture.example")!) as? String }
+        try await Task.sleep(for: .milliseconds(100)); blocked.cancel()
+        do { _ = try await task.value; XCTFail("Cancelled renderer returned a result") } catch { }
+        XCTAssertEqual(try engine.evaluate("java.log('retained')", result: "", baseURL: URL(string: "https://fixture.example")!) as? String, "retained")
+    }
     private let base = URL(string: "https://fixture.example/books/1")!
     func testInclusiveLegacyRangesExclusionAndPerParentIndexes() throws {
         let doc = try RuleDocument.parse(Data("<section><a>0</a><a>1</a><a>2</a><a>3</a><a>4</a></section><div data-kind='a@b'>匹配</div>".utf8), base: base)
