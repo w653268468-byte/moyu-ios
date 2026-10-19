@@ -2,11 +2,30 @@ import Foundation
 import XCTest
 @testable import ReaderCore
 
+private final class ScriptAjaxBarrier: @unchecked Sendable {
+    static let shared = ScriptAjaxBarrier()
+    private let lock = NSLock()
+    private var open = false
+    private var callback: (() -> Void)?
+    func reset() { lock.lock(); open = false; callback = nil; lock.unlock() }
+    func wait(_ action: @escaping () -> Void) { lock.lock(); if open { lock.unlock(); action() } else { callback = action; lock.unlock() } }
+    func release() { lock.lock(); open = true; let action = callback; callback = nil; lock.unlock(); action?() }
+}
+
 private final class FixtureProtocol: URLProtocol {
     private var pending: DispatchWorkItem?
     override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "fixture.example" }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
+        if let url = request.url, url.path == "/blocked-script" {
+            ScriptAjaxBarrier.shared.wait { [weak self] in
+                guard let self else { return }
+                self.client?.urlProtocol(self, didReceive: HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+                self.client?.urlProtocol(self, didLoad: Data("ready".utf8)); self.client?.urlProtocolDidFinishLoading(self)
+            }
+            return
+        }
+        if request.url?.path == "/release-script" { ScriptAjaxBarrier.shared.release() }
         if let url = request.url, url.path == "/lease-search" {
             let slow = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "slow" })?.value == "1"
             let work = DispatchWorkItem { [weak self] in
@@ -47,6 +66,7 @@ private final class FixtureProtocol: URLProtocol {
         ]
         guard let url = request.url else { return }
         var body = url.path == "/js-search" && request.value(forHTTPHeaderField: "X-Reader") == "Gavin" ? routes["/search"] : routes[url.path]
+        if url.path == "/release-script" { body = routes["/search"] }
         if url.path == "/paged-search" {
             let page = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "page" })?.value ?? "1"
             body = page == "1" ? routes["/search"] : page == "2" ? "<div class='book'><a href='/book/2'>第二本</a></div>" : "<p>No more results</p>"
@@ -66,6 +86,30 @@ private actor SearchOutcomeRecorder {
 }
 
 final class SourceClientTests: XCTestCase {
+    func testScriptAjaxDoesNotBlockOtherSourceActors() async throws {
+        ScriptAjaxBarrier.shared.reset(); defer { ScriptAjaxBarrier.shared.release() }
+        var slow = try source(), fast = try source()
+        slow.bookSourceUrl = "https://fixture.example/slow"
+        slow.searchUrl = "@js:java.ajax('https://fixture.example/blocked-script'); '/search'"
+        fast.bookSourceUrl = "https://fixture.example/fast"; fast.searchUrl = "/release-script"
+        let client = makeClient(), recorder = SearchOutcomeRecorder()
+        try await SourceSearch.run(requests: [slow, fast].map { SourceSearchRequest(source: $0, page: 1) }, concurrency: 2, timeoutSeconds: 5, search: { source, page in
+            try await client.searchIndependent("公版", source: source, page: page)
+        }, onResult: { await recorder.append($0); return true })
+        let outcomes = await recorder.values
+        XCTAssertEqual(outcomes.count, 2)
+        XCTAssertTrue(outcomes.allSatisfy { $0.failure == nil && $0.novels.count == 1 }, "A script waiting for another source must not serialize the global search")
+    }
+    func testIndependentSourceKeepsScriptVariablesAcrossPages() async throws {
+        var source = try source()
+        source.searchUrl = "@js:java.put('visits',String(Number(java.get('visits')||0)+1)); '/search'"
+        source.ruleSearch?.name = "a@text@js:result + java.get('visits')"
+        let client = makeClient()
+        let first = try await client.searchIndependent("故事", source: source, page: 1)
+        let second = try await client.searchIndependent("故事", source: source, page: 2)
+        XCTAssertEqual(first.first?.title, "山海来信1")
+        XCTAssertEqual(second.first?.title, "山海来信2")
+    }
     func testSearchIsNotBlockedByUnsupportedBodyRule() async throws {
         var source = try source()
         source.ruleContent?.content = "{{java.get()}"

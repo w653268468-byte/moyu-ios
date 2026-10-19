@@ -9,6 +9,8 @@ public actor SourceClient {
     private let webRenderer: (@Sendable (URLRequest, [HTTPCookie]) async throws -> (Data, URL))?
     private var scriptEngines: [String: (BookSource, SourceScript)] = [:]
     private var scriptUsers: [String: Int] = [:]
+    private var searchWorkers: [String: (BookSource, SourceClient)] = [:]
+    private var searchWorkerUsers: [String: Int] = [:]
 
     private func retainScript(_ id: String) { scriptUsers[id, default: 0] += 1 }
     private func releaseScript(_ id: String) {
@@ -30,6 +32,7 @@ public actor SourceClient {
         self.webRenderer = webRenderer
         session = URLSession(configuration: config)
     }
+    deinit { session.invalidateAndCancel() }
 
     public func replaceCookies(_ cookies: [HTTPCookie], for url: URL) {
         for old in cookieStorage?.cookies ?? [] where SourceCookies.belongs(old, to: url) { cookieStorage?.deleteCookie(old) }
@@ -239,6 +242,35 @@ public actor SourceClient {
         retainScript(source.id); defer { releaseScript(source.id) }
         guard (1...10000).contains(page) else { throw SourceError.message("搜索页码无效。") }
         if let reason = source.searchIncompatibility { throw SourceError.message(reason) }
+        let script = try scriptEngine(for: source)
+        return try await withTaskCancellationHandler {
+            try await searchImpl(query, source: source, page: page)
+        } onCancel: { script?.cancel() }
+    }
+
+    /// Synchronous java.ajax runs inside its source interpreter. Give each global-
+    /// search job its own actor so a slow script cannot block unrelated websites.
+    public func searchIndependent(_ query: String, source: BookSource, page: Int = 1) async throws -> [OnlineNovel] {
+        let worker: SourceClient
+        if let existing = searchWorkers[source.id], existing.0 == source { worker = existing.1 }
+        else {
+            if searchWorkers.count >= 8, let idle = searchWorkers.keys.first(where: { searchWorkerUsers[$0] == nil }) { searchWorkers.removeValue(forKey: idle) }
+            worker = SourceClient(configuration: session.configuration, cookieProvider: cookieProvider, webRenderer: webRenderer)
+            searchWorkers[source.id] = (source, worker)
+        }
+        searchWorkerUsers[source.id, default: 0] += 1
+        defer {
+            if (searchWorkerUsers[source.id] ?? 0) <= 1 { searchWorkerUsers.removeValue(forKey: source.id) }
+            else { searchWorkerUsers[source.id, default: 1] -= 1 }
+            while searchWorkers.count > 8 {
+                guard let idle = searchWorkers.keys.first(where: { searchWorkerUsers[$0] == nil }) else { break }
+                searchWorkers.removeValue(forKey: idle)
+            }
+        }
+        return try await worker.search(query, source: source, page: page)
+    }
+
+    private func searchImpl(_ query: String, source: BookSource, page: Int) async throws -> [OnlineNovel] {
         guard let template = source.searchUrl, !template.isEmpty, let rule = source.ruleSearch,
               let list = rule.bookList, let name = rule.name, let bookURL = rule.bookUrl else {
             throw SourceError.message("此书源没有完整的搜索规则，可以尝试直接粘贴小说详情页链接。")

@@ -75,7 +75,7 @@ import SwiftUI
         task = Task { [weak self] in
             do {
                 try await SourceSearch.run(requests: jobs, concurrency: workers, timeoutSeconds: seconds, search: { source, page in
-                    try await client.search(query, source: source, page: page)
+                    try await client.searchIndependent(query, source: source, page: page)
                 }, onResult: { [weak self] outcome in
                     guard let self else { return false }; return await self.receive(outcome, token: token)
                 })
@@ -192,6 +192,7 @@ struct SourceHubView: View {
                 HStack { Text("搜索历史").font(.headline); Spacer(); Button("清空") { clearHistory = true }.buttonStyle(.borderless) }
                 ForEach(preferences.history.keywords, id: \.self) { word in
                     Button { query = word; performSearch() } label: { Label(word, systemImage: "clock.arrow.circlepath").foregroundStyle(.primary) }
+                        .accessibilityIdentifier("search.history." + word)
                         .swipeActions { Button("删除", role: .destructive) { preferences.remove(word) } }
                 }
             }
@@ -276,6 +277,7 @@ struct SourceHubView: View {
                 let imported = try await online.client.importText("http://127.0.0.1:18765/search-test-sources")
                 try online.addSources(imported.sources); refreshSources()
                 scopeRaw = "分组：搜索测试"; query = "公版"; exact = false; merged = true; fieldRaw = "all"; sortRaw = "relevance"
+                if ProcessInfo.processInfo.arguments.contains("--ui-search-auto") { try await Task.sleep(for: .milliseconds(300)); performSearch() }
             } catch { failure = error.localizedDescription }
         }
         #endif

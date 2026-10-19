@@ -65,12 +65,13 @@ final class ReaderInteractionTests: XCTestCase {
         app.swipeUp()
         let more = app.buttons["search.more"]
         XCTAssertTrue(more.waitForExistence(timeout: 5)); more.tap()
+        app.swipeDown()
         expectation(for: NSPredicate(format: "label == %@", "3 本 · 6 条书源结果"), evaluatedWith: count)
         waitForExpectations(timeout: 10)
         app.terminate()
         app.launchArguments = ["--ui-tab", "1"]
         app.launch()
-        XCTAssertTrue(app.buttons.containing(.staticText, identifier: "公版").firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["search.history.公版"].waitForExistence(timeout: 10))
         app.terminate()
     }
 }

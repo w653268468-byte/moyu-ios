@@ -74,6 +74,7 @@ public final class SourceScript: @unchecked Sendable {
 
     /// Returns JSON, including scalar strings, so arrays and objects survive extraction.
     public func evaluate(_ code: String, result: Any, baseURL: URL, globals: [String: String] = [:], timeout: Double = 2, document: String? = nil, persistentDefinitions: Bool = false) throws -> Any {
+        try Task.checkCancellation()
         let data = try JSONSerialization.data(withJSONObject: result, options: .fragmentsAllowed)
         guard code.utf8.count <= 512 * 1024, data.count <= 8 * 1024 * 1024 else { throw SourceError.message("脚本或输入超过大小限制。") }
         gate.lock(); defer { gate.unlock() }

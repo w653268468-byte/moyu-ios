@@ -147,6 +147,9 @@ jobs:
           xcrun simctl launch --terminate-running-process "$DEVICE_ID" org.moyu.reader --ui-tab 3 --ui-preferences
           sleep 3
           xcrun simctl io "$DEVICE_ID" screenshot build/ui/reader-preferences.png
+          xcrun simctl launch --terminate-running-process "$DEVICE_ID" org.moyu.reader --ui-tab 1 --ui-search-fixture --ui-search-auto
+          sleep 4
+          xcrun simctl io "$DEVICE_ID" screenshot build/ui/search-results.png
           xcrun simctl launch --terminate-running-process "$DEVICE_ID" org.moyu.reader --ui-reading
           sleep 4
           xcrun simctl io "$DEVICE_ID" screenshot build/ui/reading-fullscreen.png
