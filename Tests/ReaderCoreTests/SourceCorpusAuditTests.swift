@@ -34,6 +34,7 @@ private actor SourceAuditProgress {
             else if lower.contains("没有交互式书源验证窗口") { result.status = "requires_login"; result.category = "runtime_environment" }
             else if ["域名停放", "广告跳转", "脚本跳转页", "网站返回 html 页面"].contains(where: lower.contains) { result.category = "unexpected_website_response" }
             else if lower.contains("正文不足") { result.category = "short_or_placeholder_body" }
+            else if lower.contains("暂不支持") || lower.contains("尚未支持") || lower.contains("未实现") { result.category = "rule_or_bridge" }
             else if ["http 401", "http 403", "http 429", "验证", "验证码", "登录", "captcha"].contains(where: lower.contains) { result.category = "authentication_or_rate_limit" }
             else if ["http 404", "http 410", "http 5", "域名", "dns", "超时", "超过 45", "timeout", "network", "网络", "https"].contains(where: lower.contains) { result.category = "network_or_dead_endpoint" }
             else { result.category = "rule_or_bridge" }
@@ -53,6 +54,7 @@ final class SourceCorpusAuditTests: XCTestCase {
         for object in objects {
             guard let source = object["source"] as? [String: Any], let collection = object["collection"] as? String,
                   let parsed = try? SourceImport.parse(JSONSerialization.data(withJSONObject: source)).sources.first else { continue }
+            if let required = environment["GAVIN_AUDIT_COLLECTION"], !required.isEmpty, !collection.contains(required) { continue }
             candidates.append(SourceAuditCase(source: parsed, collection: collection, scripted: object["scripted"] as? Bool ?? false, requiresPersonalLogin: object["requiresPersonalLogin"] as? Bool ?? false))
         }
         let limit = min(60, max(1, Int(environment["GAVIN_AUDIT_LIMIT"] ?? "32") ?? 32))

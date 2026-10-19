@@ -67,12 +67,23 @@ final class ReaderInteractionTests: XCTestCase {
         let confirm = app.buttons["确认导入 1 个书源"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 15))
         confirm.tap()
-        XCTAssertTrue(app.staticTexts["Gavin 导入链路测试"].firstMatch.waitForExistence(timeout: 5))
+        findImportedSource(in: app)
         app.terminate()
         app.launchArguments = ["--ui-tab", "2"]
         app.launch()
-        XCTAssertTrue(app.staticTexts["Gavin 导入链路测试"].firstMatch.waitForExistence(timeout: 10))
+        findImportedSource(in: app)
         app.terminate()
+    }
+
+    @MainActor private func findImportedSource(in app: XCUIApplication) {
+        // Earlier tests import bundled samples into this same installed app.
+        // A virtualized List need not expose a newly appended row until scrolled.
+        let row = app.staticTexts["Gavin 导入链路测试"].firstMatch
+        for _ in 0..<8 {
+            if row.waitForExistence(timeout: 1) { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(row.exists, "The imported source must be present before and after relaunch")
     }
 
     @MainActor func testSearchAggregatesSourcesPagesAndRemembersHistory() {

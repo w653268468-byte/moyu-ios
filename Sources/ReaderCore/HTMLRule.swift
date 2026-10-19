@@ -7,8 +7,9 @@ public enum HTMLRule {
         let lower = rule.components(separatedBy: "||")
             .map { metadataCSS($0.components(separatedBy: "##")[0]).lowercased() }.joined(separator: "||")
         let isXPath = XPathRule.isXPath(lower)
-        let unsupported = ["@js:", "<js>", "{{", "$.", "$[", "@json:", "&&", "%%", "@put:", "@get:"] + (isXPath ? [] : ["//", "@xpath:"])
-        return !unsupported.contains(where: { lower.contains($0) })
+        let unsupported = ["@js:", "<js>", "{{", "$.", "$[", "@json:", "&&", "%%", "@put:", "@get:"] + (isXPath ? [] : ["@xpath:"])
+        // An absolute URL inside a CSS attribute regex is not an XPath axis.
+        return !unsupported.contains(where: { lower.contains($0) }) && (isXPath || RuleComposition.split(lower, operator: "//").count == 1)
     }
 
     public static func elements(_ rule: String, in element: Element) throws -> [Element] {

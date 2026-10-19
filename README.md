@@ -1,6 +1,6 @@
 # Gavin · iOS 阅读器
 
-本轮改版：搜索历史、分组/指定书源、同书聚合、多源选择、排序与精准筛选；自定义字体、在线书签备注、连续听书和简化设置首页。验证进度见 `docs/PARITY_STATUS.md`，尚不能声称已实现 Android 阅读九成还原。
+本轮重点：复杂书源脚本兼容、真实网站搜索→目录→正文验证、原生登录与验证码回传、安装包内置实测样例。验证记录见 [真实书源审计](docs/SOURCE_VALIDATION.md)，兼容边界见 [规则兼容记录](docs/SOURCE_COMPATIBILITY.md)。完整 Android 桥仍未完成，不声称九成还原或所有网站可读。
 
 原生 SwiftUI 小说阅读器，iOS 17+，主程序 MIT 开源，libmobi 为 LGPL-3.0-or-later。以 Android 阅读/Legado 为开发目标；**当前 2.0 重构预览不等同 Legado 完整功能或完整规则兼容性**。
 

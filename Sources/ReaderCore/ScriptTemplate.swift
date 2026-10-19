@@ -16,8 +16,10 @@ enum ScriptTemplate {
             return String(decoding: try JSONSerialization.data(withJSONObject: result, options: .fragmentsAllowed), as: UTF8.self)
         }
         if let parts = try ScriptRule.parts(template) {
-            guard parts.suffix.isEmpty else { throw SourceError.message("网址脚本之后含提取规则，请把规则放到正文或列表字段。") }
-            return try run(parts.code, input: parts.prefix)
+            if parts.suffix.isEmpty { return try run(parts.code, input: parts.prefix) }
+            guard ["http://", "https://", "/", "./", "../"].contains(where: parts.suffix.hasPrefix) else { throw SourceError.message("网址脚本之后含提取规则，请把规则放到正文或列表字段。") }
+            let value = try run(parts.code, input: parts.prefix)
+            return try expand(parts.suffix.replacingOccurrences(of: "{{result}}", with: value), using: script, query: query, base: base, page: page)
         }
         let chars = Array(template)
         var i = 0, output = "", count = 0
