@@ -50,13 +50,17 @@ public enum SourceValidator {
         try await Task.sleep(for: .milliseconds(500))
         let novel = try await client.catalog(book, source: source)
         guard !novel.chapters.isEmpty else { throw SourceError.message("目录为空") }
-        for (index, chapter) in novel.chapters.prefix(3).enumerated() {
+        let opening = Array(novel.chapters.prefix(10).enumerated())
+        // Prefer numbered story chapters to author notices and character summaries.
+        // Reading itself still exposes every catalog entry unchanged.
+        let numbered = opening.filter { $0.element.title.range(of: #"(?i)^(?:第[0-9０-９一二三四五六七八九十百千万零〇两壹贰叁肆伍陆柒捌玖拾佰仟]+[章回节]|chapter\s*[0-9]+)"#, options: .regularExpression) != nil }
+        for (index, chapter) in (numbered.isEmpty ? opening : numbered).prefix(3) {
             await progress?(SourceValidationProgress(stage: "content", keyword: keyword, title: novel.title, chapters: novel.chapters.count, chapterIndex: index, chapterTitle: chapter.title))
             try await Task.sleep(for: .milliseconds(500))
             let text = try await client.chapter(chapter, source: source)
             await progress?(SourceValidationProgress(stage: "content", keyword: keyword, title: novel.title, chapters: novel.chapters.count, chapterIndex: index, chapterTitle: chapter.title, characters: text.count))
             if text.count >= minimumCharacters { return SourceValidationResult(keyword: keyword, title: novel.title, chapters: novel.chapters.count, chapterIndex: index, chapterTitle: chapter.title, characters: text.count) }
         }
-        throw SourceError.message("检查前三章正文不足 \(minimumCharacters) 字，暂不认定链路可用")
+        throw SourceError.message("检查三个候选章节的正文不足 \(minimumCharacters) 字，暂不认定链路可用")
     }
 }

@@ -53,6 +53,7 @@ private final class FixtureProtocol: URLProtocol {
             "/api/book": #"{"name":"三国","toc":"/api/toc"}"#,
             "/api/toc": #"{"chapters":[{"title":"第一回","url":"/api/chapter"}]}"#,
             "/api/chapter": #"{"text":"滚滚长江东逝水。"}"#,
+            "/toc/preface": "<div id='list'><a href='/chapter/2?preface=1'>感谢支持</a><a href='/chapter/2?preface=2'>作品相关</a><a href='/chapter/2?preface=3'>人物资料</a><a href='/chapter/2'>第一章 山边小村</a></div>",
             "/api/script-search": #"{"data":{"books":[{"title":"公版故事","sourceUuid":"one"}]}}"#,
             "/source/one": "<div class='m-book-recent'><a>最新章</a></div>",
             "/helpers.js": "function sharedTitle(value) { return value + '共享脚本'; }",
@@ -97,6 +98,14 @@ private actor SearchOutcomeRecorder {
 }
 
 final class SourceClientTests: XCTestCase {
+    func testSharedSourceValidatorPrefersStoryChapterToLongAuthorNotices() async throws {
+        var item = try source()
+        item.ruleBookInfo?.tocUrl = "@js:'https://fixture.example/toc/preface'"
+        let report = try await SourceValidator.validate(item, client: makeClient())
+        XCTAssertEqual(report.chapterIndex, 3)
+        XCTAssertEqual(report.chapterTitle, "第一章 山边小村")
+        XCTAssertEqual(report.chapters, 4)
+    }
     func testSharedSourceValidatorReadsPastShortPrefaceBeforePassing() async throws {
         let report = try await SourceValidator.validate(source(), client: makeClient())
         XCTAssertEqual(report.title, "山海来信"); XCTAssertEqual(report.chapters, 2)
