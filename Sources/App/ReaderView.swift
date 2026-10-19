@@ -9,7 +9,9 @@ struct ReaderLoader: View {
 
     var body: some View {
         Group {
-            if let document {
+            if book.originalEPUB == true {
+                EPUBReaderLoader(book: book)
+            } else if let document {
                 ReaderView(book: book, document: document)
             } else if let failure {
                 ContentUnavailableView("无法打开小说", systemImage: "exclamationmark.triangle",
@@ -17,6 +19,7 @@ struct ReaderLoader: View {
                     .toolbar { ToolbarItem(placement: .topBarLeading) { Button("返回") { dismiss() } } }
             } else { ProgressView("正在打开…") }
         }.task {
+            guard book.originalEPUB != true else { return }
             do { document = try await library.document(for: book) }
             catch { failure = error.localizedDescription }
         }

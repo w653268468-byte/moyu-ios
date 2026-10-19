@@ -32,7 +32,7 @@ struct MoyuApp: App {
                         Task { await BrowserSessions.checkCookieSharing(client: online.client) }
                     }
                     if ProcessInfo.processInfo.arguments.contains("--ui-preferences") { showReaderPreferences = true }
-                    if ProcessInfo.processInfo.arguments.contains("--ui-reading") || ProcessInfo.processInfo.arguments.contains("--ui-scroll") {
+                    if ProcessInfo.processInfo.arguments.contains("--ui-reading") || ProcessInfo.processInfo.arguments.contains("--ui-scroll") || ProcessInfo.processInfo.arguments.contains("--ui-epub") {
                         UserDefaults.standard.set(ProcessInfo.processInfo.arguments.contains("--ui-curl") ? "curl" : "slide", forKey: "reader.pageAnimation")
                         UserDefaults.standard.set(!ProcessInfo.processInfo.arguments.contains("--ui-scroll"), forKey: "reader.paged")
                         UserDefaults.standard.set(true, forKey: "reader.fullScreen")
@@ -42,9 +42,13 @@ struct MoyuApp: App {
                 }
                 .fullScreenCover(isPresented: $showReadingPreview) {
                     #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--ui-epub"), let book = library.books.first(where: { $0.originalEPUB == true }) {
+                        NavigationStack { EPUBReaderLoader(book: book) }.environmentObject(library)
+                    } else {
                     let sample = "第一章 春日\n" + String(repeating: "清晨的阳光透过树叶，洒在安静的小路上。他翻开手中的书，故事从这一刻开始。阅读让旅途有了另一种风景。\n", count: 100)
                     let document = try! TextParser.parse(sample)
                     NavigationStack { ReaderView(book: Book(title: "Gavin 分页预览", document: document), document: document) }.environmentObject(library)
+                    }
                     #endif
                 }
                 .sheet(isPresented: $showReaderPreferences) { NavigationStack { ReadingPreferences() } }

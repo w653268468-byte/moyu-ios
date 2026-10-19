@@ -19,7 +19,7 @@ enum BackupService {
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
             for file in try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey]) {
                 let info = try file.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-                guard info.isRegularFile == true, ["json", "txt"].contains(file.pathExtension) else { continue }
+                guard info.isRegularFile == true, ["json", "txt", "epub"].contains(file.pathExtension) else { continue }
                 total += info.fileSize ?? 0
                 guard total <= maximumBytes else { throw SourceError.message("备份超过 200 MB，请先清理章节缓存。") }
                 files[folder + "/" + file.lastPathComponent] = try Data(contentsOf: file)
@@ -39,13 +39,14 @@ enum BackupService {
             let parts = path.components(separatedBy: "/")
             guard parts.count == 2, folders.contains(parts[0]), !parts[1].isEmpty,
                   parts[1] != ".", parts[1] != "..", !parts[1].contains("\\"),
-                  ["json", "txt"].contains((parts[1] as NSString).pathExtension) else { throw SourceError.message("备份中含无效文件路径。") }
+                  ["json", "txt", "epub"].contains((parts[1] as NSString).pathExtension) else { throw SourceError.message("备份中含无效文件路径。") }
             total += content.count
             guard total <= maximumBytes else { throw SourceError.message("备份内容超过 200 MB。") }
         }
         if let manifest = backup.files["Moyu/library.json"] {
             let books = try JSONDecoder().decode([Book].self, from: manifest)
             for book in books {
+                if book.originalEPUB == true, backup.files["Moyu/\(book.id.uuidString).epub"] == nil { throw SourceError.message("备份缺少《\(book.title)》EPUB 原书。") }
                 guard let file = backup.files["Moyu/\(book.id.uuidString).json"] else { throw SourceError.message("备份缺少《\(book.title)》正文。") }
                 let document = try JSONDecoder().decode(BookDocument.self, from: file)
                 guard !document.pages.isEmpty, document.pages.allSatisfy({ document.chapters.indices.contains($0.chapter) }) else { throw TextImportError.empty }
@@ -133,7 +134,7 @@ struct AppSettingsView: View {
                         catch { message = error.localizedDescription }
                     }
                     Button("从备份恢复", systemImage: "arrow.counterclockwise") { importing = true }
-                    Text("包含本地文字书、书架、进度、书签、书源、章节缓存及阅读设置。备份可能包含你的私人阅读内容，请保存在自己的位置。")
+                    Text("包含本地文字书、原始 EPUB、书架、进度、书签、书源、章节缓存及阅读设置。备份可能包含你的私人阅读内容，请保存在自己的位置。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("存储") {
@@ -143,7 +144,7 @@ struct AppSettingsView: View {
                 }
                 Section("导入格式") {
                     Text("TXT · EPUB · PDF · Markdown · HTML · RTF · DOCX")
-                    Text("EPUB、DOCX 与富文本以纯文字重排；PDF 按页提取文字。扫描页自动尝试本机 OCR；MOBI/AZW3 尚待实现。")
+                    Text("EPUB 保留原文件、图片和 CSS，可切换原书样式与重排。旧版已导入的 EPUB 需重新导入原文件。DOCX 与富文本以文字重排；扫描 PDF 尝试本机 OCR；MOBI/AZW3 尚待实现。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("兼容性") {

@@ -93,6 +93,31 @@ final class RebuildTests: XCTestCase {
         XCTAssertTrue(book.pages[0].text.contains("第一段\n\n第二段"))
     }
 
+    func testEPUBPreservesImagesCSSNavigationAndFixedLayout() throws {
+        let data = try archive([
+            "META-INF/container.xml": "<container><rootfiles><rootfile full-path='OPS/package.opf'/></rootfiles></container>",
+            "OPS/package.opf": "<package><metadata><meta property='rendition:layout'>pre-paginated</meta></metadata><manifest><item id='page' href='text/one.xhtml' media-type='application/xhtml+xml'/><item id='nav' properties='nav' href='nav.xhtml' media-type='application/xhtml+xml'/></manifest><spine><itemref idref='page'/></spine></package>",
+            "OPS/text/one.xhtml": "<html><head><link href='../style.css' rel='stylesheet'/></head><body><img src='../images/cover.svg'/></body></html>",
+            "OPS/style.css": "body{color:green;}",
+            "OPS/images/cover.svg": "<svg xmlns='http://www.w3.org/2000/svg' width='100' height='200'><rect width='100' height='200' fill='green'/></svg>",
+            "OPS/nav.xhtml": "<html><body><nav epub:type='toc'><a href='text/one.xhtml#start'>插图章节</a></nav></body></html>"
+        ])
+        let publication = try EPUBPublication.load(data)
+        XCTAssertEqual(publication.chapters.count, 1)
+        XCTAssertTrue(publication.chapters[0].fixedLayout)
+        XCTAssertEqual(publication.navigation.first?.title, "插图章节")
+        XCTAssertEqual(publication.navigation.first?.fragment, "start")
+        XCTAssertEqual(publication.resources["OPS/style.css"], Data("body{color:green;}".utf8))
+        let book = try LocalBookImporter.parse(data, filename: "picture.epub")
+        XCTAssertEqual(book.chapters.count, 1, "Image-only chapters must not disappear")
+        XCTAssertNotNil(publication.resources["OPS/images/cover.svg"])
+        XCTAssertEqual(try EPUBPublication.resolve("../images/cover.svg", relativeTo: "OPS/text/one.xhtml").path, "OPS/images/cover.svg")
+        XCTAssertThrowsError(try EPUBPublication.resolve("https://remote.example/chapter", relativeTo: "OPS/package.opf"))
+        XCTAssertFalse(EPUBPublication.safePath("../outside"))
+        XCTAssertFalse(EPUBPublication.safePath("OPS\\outside"))
+        XCTAssertThrowsError(try EPUBPublication.load(archive(["../outside": "escape"])))
+    }
+
     func testHTMLImportAndUnsupportedFormats() throws {
         let book = try LocalBookImporter.parse(Data("<p>山海</p><p>来信</p><style>bad</style>".utf8), filename: "test.html")
         XCTAssertTrue(book.pages[0].text.contains("山海\n\n来信"))

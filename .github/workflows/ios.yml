@@ -107,6 +107,14 @@ jobs:
           xcrun simctl launch --terminate-running-process "$DEVICE_ID" org.moyu.reader --ui-scroll
           sleep 4
           xcrun simctl io "$DEVICE_ID" screenshot build/ui/reading-scroll.png
+          xcrun simctl launch --terminate-running-process "$DEVICE_ID" org.moyu.reader --ui-epub --ui-epub-check
+          for ATTEMPT in $(seq 1 30); do
+            if [ -f "$CONTAINER/Documents/epub-check.json" ]; then break; fi
+            sleep 1
+          done
+          cp "$CONTAINER/Documents/epub-check.json" build/ui/epub-check.json || true
+          python3 -c 'import json,pathlib,sys; d=json.loads(pathlib.Path(sys.argv[1]).read_text()); print(d); assert d["status"] == "passed"' "$CONTAINER/Documents/epub-check.json"
+          xcrun simctl io "$DEVICE_ID" screenshot build/ui/reading-epub-original.png
           xcrun simctl terminate "$DEVICE_ID" org.moyu.reader
       - name: Upload simulator screens
         if: always()
@@ -129,13 +137,26 @@ jobs:
           path: build/Gavin-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
-      - name: Publish rebuild preview
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Package matching source and build manifest
         run: |
           python3 scripts/package_source.py
           python3 -c 'import json,os,pathlib; pathlib.Path("build/build-info.json").write_text(json.dumps({"commit":os.environ["GITHUB_SHA"],"run":os.environ["GITHUB_RUN_ID"],"version":"2.0.0","bundle":"org.moyu.reader"},indent=2))'
           shasum -a 256 build/Gavin-unsigned.ipa dist/Gavin-iOS-source.zip > build/SHA256SUMS.txt
+      - name: Upload matching source and build manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gavin-source-and-build-info
+          path: |
+            dist/Gavin-iOS-source.zip
+            build/build-info.json
+            build/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish rebuild preview
+        continue-on-error: true
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
           RELEASE_TAG="v2.0.0-preview.${GITHUB_RUN_NUMBER}"
           gh release create "$RELEASE_TAG" build/Gavin-unsigned.ipa dist/Gavin-iOS-source.zip build/build-info.json build/SHA256SUMS.txt --target "$GITHUB_SHA" --prerelease --title "Gavin 2.0 重构预览 ${GITHUB_RUN_NUMBER}" --notes-file docs/RELEASE_2.md

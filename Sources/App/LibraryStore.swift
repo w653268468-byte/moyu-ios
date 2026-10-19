@@ -8,7 +8,8 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var isImporting = false
     @Published private(set) var importProgress = ""
     private var importTask: Task<Void, Never>?
-    private var parseTask: Task<BookDocument, Error>?
+    private struct ImportedBook: Sendable { var document: BookDocument; var epub: Data? }
+    private var parseTask: Task<ImportedBook, Error>?
     @Published private(set) var storageLocked = false
     private let directory: URL
     private var manifest: URL { directory.appendingPathComponent("library.json") }
@@ -68,16 +69,22 @@ final class LibraryStore: ObservableObject {
         }.value
     }
 
-    private func add(title: String, document: BookDocument) throws {
+    func epubURL(for book: Book) -> URL { directory.appendingPathComponent("\(book.id.uuidString).epub") }
+
+    private func add(title: String, document: BookDocument, epub: Data? = nil) throws {
         guard !storageLocked else { return }
-        let book = Book(title: title, document: document, colorIndex: books.count % 5)
+        var book = Book(title: title, document: document, colorIndex: books.count % 5)
+        book.originalEPUB = epub == nil ? nil : true
         let url = documentURL(book.id)
         try JSONEncoder().encode(document).write(to: url, options: .atomic)
+        do { if let epub { try epub.write(to: epubURL(for: book), options: .atomic) } }
+        catch { try? FileManager.default.removeItem(at: url); throw error }
         books.insert(book, at: 0)
         do { try persist() }
         catch {
             books.removeAll { $0.id == book.id }
             try? FileManager.default.removeItem(at: url)
+            try? FileManager.default.removeItem(at: epubURL(for: book))
             throw error
         }
     }
@@ -98,14 +105,15 @@ final class LibraryStore: ObservableObject {
                         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
                         guard size <= LocalBookImporter.maximumFileBytes else { throw SourceError.message("单本文件不能超过 100 MB。") }
                         let data = try Data(contentsOf: url, options: .mappedIfSafe)
-                        return try LocalBookImporter.parse(data, filename: url.lastPathComponent) { [weak self] completed, total in
+                        let document = try LocalBookImporter.parse(data, filename: url.lastPathComponent) { [weak self] completed, total in
                             Task { @MainActor [weak self] in self?.importProgress = "\(url.lastPathComponent) · PDF / OCR \(completed)/\(total) 页" }
                         }
+                        return ImportedBook(document: document, epub: url.pathExtension.lowercased() == "epub" ? data : nil)
                     }
                     parseTask = parser
-                    let document = try await parser.value
+                    let imported = try await parser.value
                     try Task.checkCancellation()
-                    try add(title: url.deletingPathExtension().lastPathComponent, document: document)
+                    try add(title: url.deletingPathExtension().lastPathComponent, document: imported.document, epub: imported.epub)
                 } catch {
                     if Task.isCancelled { break }
                     failures.append("\(url.lastPathComponent)：\(error.localizedDescription)")
@@ -123,6 +131,13 @@ final class LibraryStore: ObservableObject {
             $0.lastReadAt = Date()
             $0.textOffset = textOffset
             $0.scrollFraction = scrollFraction
+        }
+    }
+    func updateEPUBPosition(bookID: UUID, chapter: Int, progress: Double, page: Int) {
+        update(bookID) {
+            $0.epubChapter = min(max(0, chapter), max(0, $0.chapterCount - 1))
+            $0.epubProgress = progress.isFinite ? min(1, max(0, progress)) : 0
+            $0.page = min(max(0, page), max(0, $0.pageCount - 1)); $0.lastReadAt = Date()
         }
     }
 
@@ -157,6 +172,7 @@ final class LibraryStore: ObservableObject {
             // Keep the prior index coherent with deletion; orphan files are harmless if removal fails.
             try? JSONEncoder().encode(books).write(to: backup, options: .atomic)
             try? FileManager.default.removeItem(at: documentURL(book.id))
+            try? FileManager.default.removeItem(at: epubURL(for: book))
         } catch {
             books = old
             errorMessage = "删除失败：\(error.localizedDescription)"

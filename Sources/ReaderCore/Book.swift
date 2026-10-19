@@ -50,6 +50,9 @@ public struct Book: Codable, Identifiable, Equatable, Sendable {
     public var wordCount: Int
     public var bookmarks: [Bookmark]
     public var colorIndex: Int
+    public var originalEPUB: Bool?
+    public var epubChapter: Int?
+    public var epubProgress: Double?
 
     public init(title: String, document: BookDocument, colorIndex: Int = 0) {
         id = UUID()

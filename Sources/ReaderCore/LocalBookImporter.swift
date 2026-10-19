@@ -92,53 +92,27 @@ public enum LocalBookImporter {
     }
 
     private static func epub(_ data: Data) throws -> BookDocument {
-        let archive = try Archive(data: data, accessMode: .read)
-        guard archive.reduce(0, { count, _ in count + 1 }) <= 20000 else { throw SourceError.message("EPUB 文件数过多。") }
-        let container = try XMLBookNode.parse(read("META-INF/container.xml", archive: archive))
-        guard let opf = container.descendants("rootfile").first?.attributes["full-path"] else { throw SourceError.message("EPUB 缺少内容清单。") }
-        if archive["META-INF/encryption.xml"] != nil {
-            let encryption = try XMLBookNode.parse(read("META-INF/encryption.xml", archive: archive))
-            let protected = encryption.descendants("CipherReference").compactMap { $0.attributes["URI"] }
-            if protected.contains(where: { ["xhtml", "html", "htm", "xml"].contains(($0 as NSString).pathExtension.lowercased()) }) {
-                throw SourceError.message("此 EPUB 的正文受 DRM 保护，无法导入。")
-            }
-        }
-        let package = try XMLBookNode.parse(read(opf, archive: archive))
-        let items = package.descendants("item")
-        let refs = package.descendants("itemref").filter { $0.attributes["linear"] != "no" }
-        guard refs.count <= 10000 else { throw SourceError.message("EPUB 章节数过多。") }
-        var pages: [ReadingPage] = []
-        var chapters: [Chapter] = []
-        var count = 0
-        var expandedBytes = 0
-        for ref in refs {
-            guard let id = ref.attributes["idref"], let item = items.first(where: { $0.attributes["id"] == id }),
-                  let href = item.attributes["href"] else { throw SourceError.message("EPUB 阅读顺序引用了缺失章节。") }
-            guard item.attributes["media-type"]?.contains("html") == true else { continue }
-            let base = URL(fileURLWithPath: "/" + opf)
-            guard let resolved = URL(string: href, relativeTo: base)?.absoluteURL else { throw SourceError.message("EPUB 章节路径无效。") }
-            let path = String(resolved.standardizedFileURL.path.dropFirst())
-            let content = try read(path, archive: archive)
+        let publication = try EPUBPublication.load(data)
+        var pages: [ReadingPage] = [], chapters: [Chapter] = []
+        var count = 0, expandedBytes = 0
+        for item in publication.chapters {
+            try Task.checkCancellation()
+            guard let content = publication.resources[item.path] else { throw SourceError.message("EPUB 缺少章节正文。") }
             expandedBytes += content.count
             guard expandedBytes <= 40 * 1024 * 1024 else { throw SourceError.message("EPUB 解压文字超过 40 MB。") }
             let text = try htmlText(content)
-            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { continue }
-            let html = try SwiftSoup.parse(TextParser.decode(content))
-            let heading = try html.select("h1, h2, h3").first()?.text() ?? ""
-            let title = heading.isEmpty ? "第 \(chapters.count + 1) 节" : heading
-            let parsed = try TextParser.parse(text)
+            let parsed = try TextParser.parse(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "本节包含图片或原书版式，请使用 EPUB 原版阅读查看。" : text)
             let chapter = chapters.count
-            chapters.append(Chapter(id: chapter, title: title, firstPage: pages.count))
+            chapters.append(Chapter(id: chapter, title: item.title, firstPage: pages.count))
             let firstPage = pages.count
             pages += parsed.pages.map { ReadingPage(id: firstPage + $0.id, chapter: chapter, text: $0.text) }
             count += parsed.wordCount
         }
-        guard !pages.isEmpty else { throw SourceError.message("EPUB 没有可提取的文字，图片版或特殊排版暂不支持。") }
         return BookDocument(chapters: chapters, pages: pages, wordCount: count)
     }
 }
 
-private final class XMLBookNode: NSObject, XMLParserDelegate {
+final class XMLBookNode: NSObject, XMLParserDelegate {
     let name: String
     var attributes: [String: String]
     var text = ""
