@@ -21,18 +21,25 @@ struct CurlReadingView: UIViewControllerRepresentable {
         controller.view.backgroundColor = paper
         context.coordinator.controller = controller
         controller.setViewControllers([context.coordinator.content(page)], direction: .forward, animated: false)
-        // Preserve native edge taps and drags; the middle third opens the reader controls.
-        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.tap(_:)))
-        tap.delegate = context.coordinator
-        tap.cancelsTouchesInView = false
-        controller.view.addGestureRecognizer(tap)
+        // The full viewport owns configured tap zones. Keep native pan gestures only,
+        // otherwise a left-edge tap can turn backward while the configured action turns forward.
+        for gesture in controller.gestureRecognizers where gesture is UITapGestureRecognizer { gesture.isEnabled = false }
         return controller
     }
     func updateUIViewController(_ controller: UIPageViewController, context: Context) {
         context.coordinator.parent = self
         guard !context.coordinator.turning,
               (controller.viewControllers?.first as? CurlPageController)?.index != page else { return }
-        controller.setViewControllers([context.coordinator.content(page)], direction: .forward, animated: false)
+        let old = (controller.viewControllers?.first as? CurlPageController)?.index ?? page
+        context.coordinator.turning = true
+        controller.setViewControllers([context.coordinator.content(page)], direction: page >= old ? .forward : .reverse, animated: true) { _ in
+            context.coordinator.turning = false
+            // Fast taps can update the SwiftUI target during the native animation.
+            let latest = context.coordinator.parent.page
+            if latest != page, context.coordinator.parent.ranges.indices.contains(latest) {
+                controller.setViewControllers([context.coordinator.content(latest)], direction: latest >= page ? .forward : .reverse, animated: false)
+            }
+        }
     }
     static func dismantleUIViewController(_ controller: UIPageViewController, coordinator: Coordinator) {
         controller.delegate = nil; controller.dataSource = nil

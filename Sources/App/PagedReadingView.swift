@@ -78,15 +78,6 @@ struct PagedReadingView: View {
                             .transition(.asymmetric(insertion: .move(edge: forward ? .trailing : .leading), removal: .move(edge: forward ? .leading : .trailing)))
                     } else { ProgressView("正在分页…") }
                 }.frame(width: width, height: height).clipped()
-                    .overlay {
-                        if style.pageAnimation != "curl" { GeometryReader { _ in
-                            HStack(spacing: 0) {
-                                Color.clear.contentShape(Rectangle()).onTapGesture { move(-1) }.accessibilityLabel("上一页").accessibilityAddTraits(.isButton)
-                                Color.clear.contentShape(Rectangle()).onTapGesture { toggleChrome() }.accessibilityLabel("显示或隐藏阅读菜单").accessibilityAddTraits(.isButton)
-                                Color.clear.contentShape(Rectangle()).onTapGesture { move(1) }.accessibilityLabel("下一页").accessibilityAddTraits(.isButton)
-                            }
-                        } }
-                    }
                     .gesture(DragGesture(minimumDistance: 25).onEnded { value in
                         guard style.pageAnimation != "curl" else { return }
                         guard abs(value.translation.width) > abs(value.translation.height) else { return }
@@ -95,6 +86,22 @@ struct PagedReadingView: View {
                 Text(pages.isEmpty ? "" : "\(page + 1) / \(pages.count)").font(.caption2).monospacedDigit().opacity(0.6).frame(height: 26, alignment: .bottom)
             }.frame(width: width).padding(.vertical, style.verticalMargin)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .contentShape(Rectangle())
+                .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).exclusively(before: SpatialTapGesture()).onEnded { value in
+                    switch value {
+                    case .first: toggleChrome()
+                    case .second(let tap):
+                        switch style.tapMap.action(x: tap.location.x, y: tap.location.y, width: geometry.size.width, height: geometry.size.height) {
+                        case .previous: move(-1)
+                        case .next: move(1)
+                        case .menu: toggleChrome()
+                        case .none: break
+                        }
+                    }
+                })
+                .accessibilityAction(named: "下一页") { move(1) }
+                .accessibilityAction(named: "上一页") { move(-1) }
+                .accessibilityAction(named: "阅读菜单") { toggleChrome() }
                 .task(id: "\(width)-\(height)-\(style.fontSize)-\(style.fontFamily)-\(style.bold)-\(style.letterSpacing)-\(style.lineSpacing)-\(style.paragraphSpacing)-\(style.indent)-\(style.paperName)") {
                     await repaginate(size: CGSize(width: width, height: height))
                 }

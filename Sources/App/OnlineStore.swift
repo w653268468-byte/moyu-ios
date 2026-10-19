@@ -8,13 +8,16 @@ final class OnlineStore: ObservableObject {
     @Published var errorMessage: String?
     @Published private(set) var locked = false
     let client = SourceClient(cookieProvider: { url in await BrowserSessions.cookies(for: url) }, webRenderer: { request, cookies in try await SourceWebRenderer.render(request, cookies: cookies) })
-    private let directory = URL.documentsDirectory.appendingPathComponent("MoyuOnline", isDirectory: true)
+    private let directory: URL
     private var indexURL: URL { directory.appendingPathComponent("index.json") }
     private var backupURL: URL { directory.appendingPathComponent("index.backup.json") }
 
     private struct Index: Codable { var sources: [BookSource]; var novels: [OnlineNovel] }
 
-    init() { reload() }
+    init(directory: URL = URL.documentsDirectory.appendingPathComponent("MoyuOnline", isDirectory: true)) {
+        self.directory = directory
+        reload()
+    }
 
     func reload() {
         do {

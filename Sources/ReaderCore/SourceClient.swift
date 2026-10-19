@@ -150,13 +150,48 @@ public actor SourceClient {
         try await importURL(url, depth: 0)
     }
 
+    /// Shared by the import screen and native integration checks. A failed link never
+    /// discards successfully downloaded sources from other links in the same batch.
+    public func importText(_ text: String) async throws -> SourceImport {
+        switch try SourceImportInput.detect(text) {
+        case .json(let data):
+            var result = try SourceImport.parse(data)
+            result.diagnostics = ["已识别粘贴的 JSON · \(data.count) 字节 · \(result.sources.count) 个书源"]
+            return result
+        case .links(let urls):
+            var merged = SourceImport(sources: [], failures: [])
+            for (index, url) in urls.enumerated() {
+                try Task.checkCancellation()
+                do {
+                    let result = try await importURL(url)
+                    merged.diagnostics += result.diagnostics
+                    merged.failures += result.failures.map { "链接 \(index + 1)：\($0)" }
+                    for source in result.sources {
+                        if let old = merged.sources.firstIndex(where: { $0.id == source.id }) { merged.sources[old] = source }
+                        else {
+                            guard merged.sources.count < 5000 else { throw SourceError.message("合并超过 5000 个书源，请分批导入。") }
+                            merged.sources.append(source)
+                        }
+                    }
+                } catch {
+                    try Task.checkCancellation()
+                    merged.failures.append("链接 \(index + 1)（\(url.absoluteString)）：\(error.localizedDescription)")
+                }
+            }
+            guard !merged.sources.isEmpty else { throw SourceError.message(merged.failures.joined(separator: "\n")) }
+            return merged
+        }
+    }
+
     private func importURL(_ input: URL, depth: Int) async throws -> SourceImport {
         let url = try SourceSubscription.normalize(input)
         let (data, finalURL) = try await fetch(url, limit: SourceImport.maximumBytes)
+        let trace = "\(input.absoluteString)\n实际地址：\(finalURL.absoluteString) · \(data.count) 字节"
         if let links = try SourceSubscription.links(in: data, base: finalURL) {
             guard depth == 0 else { throw SourceError.message("订阅索引嵌套过深，请直接导入其中的书源 JSON 链接。") }
             var sources: [BookSource] = []
             var failures: [String] = []
+            var diagnostics = [trace + " · 订阅索引"]
             for link in links {
                 try Task.checkCancellation()
                 do {
@@ -169,6 +204,7 @@ public actor SourceClient {
                         }
                     }
                     failures += result.failures
+                    diagnostics += result.diagnostics
                     guard sources.count <= 5000 else { throw SourceError.message("合并书源超过 5000 个，请分批导入。") }
                 } catch {
                     if Task.isCancelled { throw error }
@@ -176,10 +212,15 @@ public actor SourceClient {
                 }
             }
             guard !sources.isEmpty else { throw SourceError.message("索引已读取，但实际书源下载失败：\n" + failures.joined(separator: "\n")) }
-            return SourceImport(sources: sources, failures: failures)
+            return SourceImport(sources: sources, failures: failures, diagnostics: diagnostics)
         }
-        do { return try SourceImport.parse(data) }
-        catch let error as SourceError { throw error }
+        do {
+            var parsed = try SourceImport.parse(data)
+            parsed.diagnostics = [trace + " · \(parsed.sources.count) 个书源"]
+            guard !parsed.sources.isEmpty else { throw SourceError.message("未读到有效书源：" + parsed.failures.joined(separator: "\n")) }
+            return parsed
+        }
+        catch let error as SourceError { throw SourceError.message(trace + "\n" + error.localizedDescription) }
         catch { throw SourceError.message("书源链接下载成功，但内容不是有效的阅读 JSON。可能返回了网页或验证页。\(error.localizedDescription)") }
     }
 

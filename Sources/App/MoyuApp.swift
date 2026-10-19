@@ -22,6 +22,7 @@ struct MoyuApp: App {
     }()
     @State private var showReaderPreferences = false
     @State private var showReadingPreview = false
+    @State private var showSourceImportPreview = false
 
     var body: some Scene {
         WindowGroup {
@@ -45,6 +46,10 @@ struct MoyuApp: App {
                     if ProcessInfo.processInfo.arguments.contains("--ui-cookie-check") {
                         Task { await BrowserSessions.checkCookieSharing(client: online.client) }
                     }
+                    if ProcessInfo.processInfo.arguments.contains("--ui-import-check") {
+                        Task { await SourceImportCheck.run() }
+                    }
+                    if ProcessInfo.processInfo.arguments.contains("--ui-import-preview") { showSourceImportPreview = true }
                     if ProcessInfo.processInfo.arguments.contains("--ui-preferences") { showReaderPreferences = true }
                     if ProcessInfo.processInfo.arguments.contains("--ui-reading") || ProcessInfo.processInfo.arguments.contains("--ui-scroll") || ProcessInfo.processInfo.arguments.contains("--ui-epub") {
                         UserDefaults.standard.set(ProcessInfo.processInfo.arguments.contains("--ui-curl") ? "curl" : "slide", forKey: "reader.pageAnimation")
@@ -66,6 +71,7 @@ struct MoyuApp: App {
                     #endif
                 }
                 .sheet(isPresented: $showReaderPreferences) { NavigationStack { ReadingPreferences() } }
+                .sheet(isPresented: $showSourceImportPreview) { SourceImportView().environmentObject(online) }
                 .tint(Color(red: 0.24, green: 0.40, blue: 0.34))
                 .alert("Gavin提示", isPresented: Binding(
                     get: { library.errorMessage != nil || online.errorMessage != nil },

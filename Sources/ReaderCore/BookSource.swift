@@ -82,6 +82,7 @@ public struct SourceImport: Sendable {
     public static let maximumBytes = 20 * 1024 * 1024
     public var sources: [BookSource]
     public var failures: [String]
+    public var diagnostics: [String] = []
 
     public static func parse(_ data: Data) throws -> SourceImport {
         guard data.count <= maximumBytes else { throw SourceError.message("书源文件超过 20 MB。") }

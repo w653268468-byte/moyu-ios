@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import UIKit
 
 @MainActor
 private final class SearchViewModel: ObservableObject {
@@ -207,7 +208,7 @@ struct SourceImportView: View {
     @EnvironmentObject private var online: OnlineStore
     @Environment(\.dismiss) private var dismiss
     @State private var link = ""
-    @State private var json = ""
+    @State private var selected: Set<String> = []
     @State private var importingFile = false
     @State private var busy = false
     @State private var importStatus = ""
@@ -218,20 +219,20 @@ struct SourceImportView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("通过链接导入") {
+                Section("粘贴书源网址或 JSON") {
                     Text("网址或完整 JSON 均可粘贴，自动识别内容。一次最多获取 20 个网址；JSON 不按行数计算。")
                         .font(.caption).foregroundStyle(.secondary)
                     TextEditor(text: $link).frame(minHeight: 90)
                         .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                         .accessibilityLabel("书源链接，每行一个")
-                    Button("识别并预览书源") { importText(link) }
+                    Button("读取剪贴板", systemImage: "doc.on.clipboard") { link = UIPasteboard.general.string ?? "" }.disabled(busy)
+                    Button("获取并预览书源") { importText(link) }
                         .disabled(busy || link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 Section("其他导入方式") {
                     Button("选择 JSON 文件", systemImage: "doc") { importingFile = true }.disabled(busy)
-                    TextEditor(text: $json).frame(minHeight: 100).font(.caption.monospaced())
-                        .accessibilityLabel("粘贴 JSON 书源文本")
-                    Button("识别并预览粘贴内容") { importText(json) }.disabled(busy || json.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Text("文件或粘贴 JSON 可直接导入，无需下载网址。若链接无法访问，可在 Safari 下载 JSON 后选择文件。")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 if busy {
                     ProgressView(importStatus.isEmpty ? "正在解析书源…" : importStatus)
@@ -240,20 +241,28 @@ struct SourceImportView: View {
                 if let failure { Section("提示") { Text(failure).foregroundStyle(.red).textSelection(.enabled) } }
                 if let preview {
                     Section("预览 · \(preview.sources.count) 个书源") {
+                        HStack {
+                            Button("全选") { selected = Set(preview.sources.map(\.id)) }
+                            Spacer()
+                            Button("全不选") { selected = [] }
+                        }.buttonStyle(.borderless)
                         ForEach(preview.sources) { source in
-                            VStack(alignment: .leading, spacing: 5) {
+                            Toggle(isOn: Binding(get: { selected.contains(source.id) }, set: { if $0 { selected.insert(source.id) } else { selected.remove(source.id) } })) {
+                              VStack(alignment: .leading, spacing: 5) {
                                 Text(source.bookSourceName)
                                 Text(source.incompatibility ?? "规则可识别，导入后可测试搜索")
                                     .font(.caption).foregroundStyle(source.incompatibility == nil ? Color.secondary : Color.orange)
+                              }
                             }
                         }
                         ForEach(Array(preview.failures.enumerated()), id: \.offset) { _, failure in
                             Text(failure).font(.caption).foregroundStyle(.red)
                         }
-                        Button("确认导入 \(preview.sources.count) 个书源") {
-                            do { try online.addSources(preview.sources); dismiss() }
-                            catch { failure = error.localizedDescription }
-                        }.disabled(preview.sources.isEmpty || busy)
+                    }
+                    if !preview.diagnostics.isEmpty {
+                        Section { DisclosureGroup("获取详情") {
+                            ForEach(Array(preview.diagnostics.enumerated()), id: \.offset) { _, text in Text(text).font(.caption).textSelection(.enabled) }
+                        } }
                     }
                 }
                 Section {
@@ -262,8 +271,26 @@ struct SourceImportView: View {
                     Text(AppBuildIdentity.label).font(.caption2).foregroundStyle(.secondary)
                 }
             }.navigationTitle("导入书源").navigationBarTitleDisplayMode(.inline)
+                .safeAreaInset(edge: .bottom) {
+                    if let preview {
+                        Button("确认导入 \(selected.count) 个书源") {
+                            do { try online.addSources(preview.sources.filter { selected.contains($0.id) }); dismiss() }
+                            catch { failure = error.localizedDescription }
+                        }.buttonStyle(.borderedProminent).disabled(selected.isEmpty || busy)
+                            .padding().frame(maxWidth: .infinity).background(.bar)
+                    }
+                }
+                .onDisappear { importTask?.cancel() }
+                .onAppear {
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--ui-import-preview") {
+                        link = "http://127.0.0.1:18765/source-start"
+                        importText(link)
+                    }
+                    #endif
+                }
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { importTask?.cancel(); dismiss() } } }
-                .fileImporter(isPresented: $importingFile, allowedContentTypes: [.json]) { result in
+                .fileImporter(isPresented: $importingFile, allowedContentTypes: [.json, .plainText, .data]) { result in
                     do {
                         let url = try result.get()
                         let access = url.startAccessingSecurityScopedResource()
@@ -278,43 +305,14 @@ struct SourceImportView: View {
 
     private func importText(_ text: String) {
         guard !busy else { return }
-        do {
-            switch try SourceImportInput.detect(text) {
-            case .json(let data): parse(data)
-            case .links(let urls): fetchLinks(urls)
-            }
-        } catch { preview = nil; failure = error.localizedDescription }
-    }
-
-    private func fetchLinks(_ links: [URL]) {
         busy = true; failure = nil; preview = nil
+        importStatus = "正在识别内容并获取书源…"
         importTask = Task {
-            var merged: [BookSource] = []
-            var issues: [String] = []
-            for (number, entry) in links.enumerated() {
-                if Task.isCancelled { return }
-                importStatus = "正在获取第 \(number + 1) / \(links.count) 个链接…"
-                do {
-                    let fetched = try await online.client.importURL(entry)
-                    issues += fetched.failures.map { "链接 \(number + 1)：\($0)" }
-                    for source in fetched.sources {
-                        if let index = merged.firstIndex(where: { $0.id == source.id }) { merged[index] = source }
-                        else {
-                            guard merged.count < 5000 else { throw SourceError.message("合并超过 5000 个书源，请分批导入。") }
-                            merged.append(source)
-                        }
-                    }
-                } catch {
-                    if Task.isCancelled { return }
-                    issues.append("链接 \(number + 1)：\(error.localizedDescription)")
-                }
-            }
-            guard !Task.isCancelled else { return }
-            if merged.isEmpty {
-                failure = issues.isEmpty ? "没有读取到书源。" : issues.joined(separator: "\n")
-            } else {
-                preview = SourceImport(sources: merged, failures: issues)
-            }
+            do {
+                let parsed = try await online.client.importText(text)
+                try Task.checkCancellation()
+                preview = parsed; selected = Set(parsed.sources.map(\.id))
+            } catch { if Task.isCancelled { return }; failure = error.localizedDescription }
             importStatus = ""
             busy = false
         }
@@ -327,6 +325,7 @@ struct SourceImportView: View {
                 let parsed = try await Task.detached { try SourceImport.parse(data) }.value
                 try Task.checkCancellation()
                 preview = parsed
+                selected = Set(parsed.sources.map(\.id))
             } catch { if Task.isCancelled { return }; failure = error.localizedDescription }
             busy = false
         }

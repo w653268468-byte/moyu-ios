@@ -66,6 +66,22 @@ private actor SearchOutcomeRecorder {
 }
 
 final class SourceClientTests: XCTestCase {
+    func testImportTextRecognizesJSONAndPreservesSuccessfulLinks() async throws {
+        let client = makeClient()
+        let json = try SourceImport.export([source()])
+        let pasted = try await client.importText(String(decoding: json, as: UTF8.self))
+        XCTAssertEqual(pasted.sources.count, 1)
+        XCTAssertTrue(pasted.diagnostics.first?.contains("JSON") == true)
+        do {
+            _ = try await client.importText("https://fixture.example/timeout\nhttps://fixture.example/tlsfailure")
+            XCTFail("Failed downloads must not yield an empty success preview")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("链接 1"))
+            XCTAssertTrue(error.localizedDescription.contains("链接 2"))
+            XCTAssertTrue(error.localizedDescription.contains("超时"))
+            XCTAssertTrue(error.localizedDescription.contains("HTTPS"))
+        }
+    }
     func testActiveScriptVariablesSurviveOtherSourcesFinishingFirst() async throws {
         let client = makeClient(), recorder = SearchOutcomeRecorder()
         let jobs = try (0..<14).map { index -> SourceSearchRequest in

@@ -47,6 +47,8 @@ struct ReadingStyle: DynamicProperty {
     @AppStorage("reader.paged") var paged = true
     @AppStorage("reader.pageAnimation") var pageAnimation = "slide"
     @AppStorage("reader.fullScreen") var fullScreen = false
+    @AppStorage("reader.tapMap") var tapMapValue = ReadingTapMap.allNext.stored
+    var tapMap: ReadingTapMap { ReadingTapMap(stored: tapMapValue) }
     @AppStorage("reader.autoChangeSource") var autoChangeSource = false
     var paper: Paper { Paper(rawValue: paperName) ?? .cream }
     var font: Font {
@@ -68,6 +70,7 @@ struct ReadingStyle: DynamicProperty {
         keepAwake = false; brightness = 1; speechRate = 0.5; paged = true; fullScreen = false
         autoChangeSource = false
         pageAnimation = "slide"
+        tapMapValue = ReadingTapMap.allNext.stored
     }
 }
 
@@ -145,13 +148,33 @@ struct ReadingPreferences: View {
                 Toggle("全屏阅读", isOn: Binding(get: { style.fullScreen }, set: { style.fullScreen = $0 }))
                 Toggle("正文失败时自动换源", isOn: Binding(get: { style.autoChangeSource }, set: { style.autoChangeSource = $0 }))
                 Text("自动换源只接受同书名、同作者且能匹配当前章节的结果；信息不足时请手动选择。").font(.caption).foregroundStyle(.secondary)
-                Text("左右滑动或点击两侧翻页，点击正文中间显示菜单。关闭左右翻页后上下滚动，双击正文显示菜单。")
+                Text("分页阅读时，点击动作按下方九宫格执行，长按任意位置打开菜单；左右滑动仍可翻页。滚动阅读时双击正文打开菜单。")
                     .font(.caption).foregroundStyle(.secondary)
                 control("左右边距", value: Binding(get: { style.horizontalMargin }, set: { style.horizontalMargin = $0 }), range: 10...55)
                 control("上下边距", value: Binding(get: { style.verticalMargin }, set: { style.verticalMargin = $0 }), range: 8...60)
                 control("页面亮度", value: Binding(get: { style.brightness }, set: { style.brightness = $0 }), range: 0.35...1, step: 0.05)
                 Toggle("阅读时保持屏幕常亮", isOn: Binding(get: { style.keepAwake }, set: { style.keepAwake = $0 }))
                 Text("亮度仅作用于阅读页面，退出后恢复。排版设置在本地与在线阅读中共用。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("点击翻页区域") {
+                Button("全屏点击下一页") { style.tapMapValue = ReadingTapMap.allNext.stored }
+                Button("左侧上一页 · 中间菜单 · 右侧下一页") { style.tapMapValue = ReadingTapMap.classic.stored }
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 8) {
+                    ForEach(0..<9, id: \.self) { index in
+                        Menu {
+                            ForEach(ReadingTapAction.allCases, id: \.rawValue) { action in
+                                Button(action.name) {
+                                    var map = style.tapMap; map.actions[index] = action; style.tapMapValue = map.stored
+                                }
+                            }
+                        } label: {
+                            Text(style.tapMap.actions[index].name).frame(maxWidth: .infinity, minHeight: 52)
+                                .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                        }.accessibilityLabel("第 \(index / 3 + 1) 行第 \(index % 3 + 1) 列，\(style.tapMap.actions[index].name)")
+                    }
+                }
+                Text("点击格子可改为上一页、下一页、菜单或无操作。全屏点击模式包含正文、标题、页码和空白边距；屏幕上已打开的菜单按钮仍执行自己的操作。适用于本地和在线文字分页，EPUB 原版式视图仍按书内链接和滚动操作。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("听书") {
