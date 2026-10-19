@@ -9,6 +9,12 @@ private final class FixtureProtocol: URLProtocol {
         if request.url?.path == "/timeout" {
             client?.urlProtocol(self, didFailWithError: URLError(.timedOut)); return
         }
+        if request.url?.path == "/tlsfailure" {
+            client?.urlProtocol(self, didFailWithError: URLError(.secureConnectionFailed, userInfo: [NSURLErrorFailingURLErrorKey: URL(string: "https://redirect.example/source.json")!])); return
+        }
+        if request.url?.path == "/certificate" {
+            client?.urlProtocol(self, didFailWithError: URLError(.serverCertificateUntrusted)); return
+        }
         let routes: [String: String] = [
             "/api/search": #"{"data":{"books":[{"name":"三国","url":"/api/book","bid":42}]}}"#,
             "/api/book": #"{"name":"三国","toc":"/api/toc"}"#,
@@ -37,6 +43,20 @@ private final class FixtureProtocol: URLProtocol {
 }
 
 final class SourceClientTests: XCTestCase {
+    func testTLSHandshakeAndCertificateFailuresAreDistinguished() async {
+        do {
+            _ = try await makeClient().fetch(URL(string: "https://fixture.example/tlsfailure")!)
+            XCTFail("Expected handshake failure")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("redirect.example"))
+            XCTAssertTrue(error.localizedDescription.contains("加密连接建立失败"))
+            XCTAssertFalse(error.localizedDescription.contains("证书验证失败"))
+        }
+        do {
+            _ = try await makeClient().fetch(URL(string: "https://fixture.example/certificate")!)
+            XCTFail("Expected certificate failure")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("证书验证失败")) }
+    }
     func testSharedScriptLibrariesLoadBeforeSearchRules() async throws {
         for library in ["function sharedTitle(value) { return value + '共享脚本'; }", #"{"helpers":"/helpers.js"}"#] {
             var source = try source()

@@ -86,11 +86,13 @@ public actor SourceClient {
             case .cannotFindHost, .dnsLookupFailed: cause = "域名解析失败"
             case .notConnectedToInternet: cause = "手机未连接网络，或此 App 的联网权限已关闭"
             case .cannotConnectToHost: cause = "无法连接网站服务器"
-            case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate: cause = "网站 HTTPS 证书验证失败"
+            case .secureConnectionFailed: cause = "HTTPS 加密连接建立失败，可能与网站、网络或代理有关"
+            case .serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid: cause = "网站 HTTPS 证书验证失败"
             case .networkConnectionLost: cause = "网络连接中断"
             default: cause = error.localizedDescription
             }
-            throw SourceError.message("\(url.host ?? "网站")：\(cause)（网络错误 \(error.code.rawValue)）。请用手机 Safari 打开同一网址对比，书源导入与网站正文是不同的请求。")
+            let failedURL = (error as NSError).userInfo[NSURLErrorFailingURLErrorKey] as? URL ?? url
+            throw SourceError.message("\(failedURL.host ?? url.host ?? "网站")：\(cause)（网络错误 \(error.code.rawValue)）。请用手机 Safari 打开同一网址对比，书源导入与网站正文是不同的请求。")
         }
     }
 

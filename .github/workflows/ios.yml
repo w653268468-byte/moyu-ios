@@ -15,6 +15,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Stamp app build identity
+        run: |
+          python3 -c 'import os,pathlib,plistlib; p=pathlib.Path("Resources/Info.plist"); d=plistlib.loads(p.read_bytes()); d["CFBundleVersion"]=os.environ["GITHUB_RUN_NUMBER"]; d["GavinBuildCommit"]=os.environ["GITHUB_SHA"]; p.write_bytes(plistlib.dumps(d,sort_keys=False))'
       - name: Start browser login fixture
         run: |
           mkdir -p build/ui

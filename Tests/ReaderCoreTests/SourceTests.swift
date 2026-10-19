@@ -21,6 +21,31 @@ final class SourceTests: XCTestCase {
         XCTAssertEqual(result.sources[0].searchUrl, "/search?q={{key}}&page={{page}}")
     }
 
+    func testFormattedJSONIsNotCountedAsSubscriptionLinks() throws {
+        let text = "\u{FEFF}\n[\n" + String(repeating: "\n", count: 30) + sourceJSON + "\n]"
+        guard case .json(let data) = try SourceImportInput.detect(text) else { return XCTFail("Formatted JSON was treated as links") }
+        XCTAssertEqual(try SourceImport.parse(data).sources.count, 1)
+        let collection = "[" + Array(repeating: sourceJSON, count: 21).joined(separator: ",\n") + "]"
+        guard case .json = try SourceImportInput.detect(collection) else { return XCTFail("JSON entries must not use the URL limit") }
+    }
+
+    func testPastedURLsUseTheSameClassifierInEitherEditor() throws {
+        guard case .links(let urls) = try SourceImportInput.detect(" https://example.org/a.json\r\n\r\nhttp://example.org/b.json ") else { return XCTFail("URLs not detected") }
+        XCTAssertEqual(urls.count, 2)
+        guard case .links(let shared) = try SourceImportInput.detect("legado://booksource/import?src=https%3A%2F%2Fexample.org%2Fa.json") else { return XCTFail("Share URL not detected") }
+        XCTAssertEqual(shared.first?.absoluteString, "https://example.org/a.json")
+        XCTAssertThrowsError(try SourceImportInput.detect(Array(repeating: "https://example.org/a", count: 21).joined(separator: "\n")))
+        for value in ["", "example.org/a", "file:///tmp/a", "https://user:password@example.org/a", "legado://import"] { XCTAssertThrowsError(try SourceImportInput.detect(value)) }
+    }
+
+    func testMalformedImportsHaveActionableMessages() {
+        for (text, expected) in [("<html>login</html>", "网页"), ("https://example.org/a", "网址"), ("[{broken]", "JSON 格式")] {
+            XCTAssertThrowsError(try SourceImport.parse(Data(text.utf8))) { error in
+                XCTAssertTrue(error.localizedDescription.contains(expected), error.localizedDescription)
+            }
+        }
+    }
+
     func testPartialImportReportsInvalidEntries() throws {
         let result = try SourceImport.parse(Data("[\(sourceJSON), {\"name\":\"bad\"}, 5]".utf8))
         XCTAssertEqual(result.sources.count, 1)

@@ -85,7 +85,16 @@ public struct SourceImport: Sendable {
 
     public static func parse(_ data: Data) throws -> SourceImport {
         guard data.count <= maximumBytes else { throw SourceError.message("书源文件超过 20 MB。") }
-        let value = try JSONSerialization.jsonObject(with: data)
+        let value: Any
+        do { value = try JSONSerialization.jsonObject(with: data) }
+        catch {
+            let text = String(data: data.prefix(1024), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if text.hasPrefix("<") { throw SourceError.message("收到的是网页，不是 JSON 书源。可能是短链接跳转页、登录页或网站验证页，请使用实际的 JSON 地址或文件。") }
+            if text.hasPrefix("http://") || text.hasPrefix("https://") || text.hasPrefix("legado://") {
+                throw SourceError.message("内容是书源网址，不是 JSON 文件，请通过网址获取书源。")
+            }
+            throw SourceError.message("JSON 格式不正确，请复制完整的书源对象或数组，保留开头和结尾的括号。")
+        }
         let entries: [Any]
         if let array = value as? [Any] { entries = array }
         else if value is [String: Any] { entries = [value] }

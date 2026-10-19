@@ -153,6 +153,7 @@ struct AppSettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Gavin 2.0") {
+                    Text(AppBuildIdentity.label).font(.caption).textSelection(.enabled)
                     Link("项目源码与安装包", destination: URL(string: "https://github.com/w653268468-byte/moyu-ios")!)
                     Text("主程序 MIT · libmobi LGPL-3.0-or-later · 无广告")
                     Link("第三方许可与重新编译说明", destination: URL(string: "https://github.com/w653268468-byte/moyu-ios/blob/main/THIRD_PARTY_NOTICES.md")!)

@@ -218,7 +218,8 @@ private struct AboutView: View {
                 Section {
                     Label("Gavin", systemImage: "book.pages.fill").font(.title2)
                     Text("把日子，读慢一点。").foregroundStyle(.secondary)
-                    Text("版本 2.0.0 · 主程序 MIT / libmobi LGPL-3.0-or-later")
+                    Text(AppBuildIdentity.label)
+                    Text("主程序 MIT / libmobi LGPL-3.0-or-later")
                 }
                 Section("支持的格式") {
                     Text("TXT、EPUB、PDF、Markdown、HTML、RTF、DOCX、未加密 MOBI/AZW3。单文件 100 MB；TXT 文本 20 MB。")

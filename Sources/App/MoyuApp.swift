@@ -1,5 +1,14 @@
 import SwiftUI
 
+enum AppBuildIdentity {
+    static var label: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.0.0"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "开发版"
+        let commit = Bundle.main.object(forInfoDictionaryKey: "GavinBuildCommit") as? String
+        return "版本 \(version) · 构建 \(build)" + (commit.map { " · " + String($0.prefix(7)) } ?? "")
+    }
+}
+
 @main
 struct MoyuApp: App {
     @StateObject private var library = LibraryStore()

@@ -134,19 +134,19 @@ struct SourceImportView: View {
         NavigationStack {
             Form {
                 Section("通过链接导入") {
-                    Text("粘贴书源链接，每行一个，最多 20 个。")
+                    Text("网址或完整 JSON 均可粘贴，自动识别内容。一次最多获取 20 个网址；JSON 不按行数计算。")
                         .font(.caption).foregroundStyle(.secondary)
                     TextEditor(text: $link).frame(minHeight: 90)
                         .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                         .accessibilityLabel("书源链接，每行一个")
-                    Button("获取并预览书源") { fetchLink() }
+                    Button("识别并预览书源") { importText(link) }
                         .disabled(busy || link.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 Section("其他导入方式") {
                     Button("选择 JSON 文件", systemImage: "doc") { importingFile = true }.disabled(busy)
                     TextEditor(text: $json).frame(minHeight: 100).font(.caption.monospaced())
                         .accessibilityLabel("粘贴 JSON 书源文本")
-                    Button("解析粘贴的 JSON") { parse(Data(json.utf8)) }.disabled(busy || json.isEmpty)
+                    Button("识别并预览粘贴内容") { importText(json) }.disabled(busy || json.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 if busy {
                     ProgressView(importStatus.isEmpty ? "正在解析书源…" : importStatus)
@@ -174,6 +174,7 @@ struct SourceImportView: View {
                 Section {
                     Text("同地址书源会更新已有规则。不支持的书源也可保存，但不能用于搜索和解析。书源脚本在受限引擎中执行，部分 Java/Android 接口仍待实现；缺少接口会明确报错。")
                         .font(.caption).foregroundStyle(.secondary)
+                    Text(AppBuildIdentity.label).font(.caption2).foregroundStyle(.secondary)
                 }
             }.navigationTitle("导入书源").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { importTask?.cancel(); dismiss() } } }
@@ -190,11 +191,17 @@ struct SourceImportView: View {
         }
     }
 
-    private func fetchLink() {
-        let links = link.components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-        guard !links.isEmpty else { return }
-        guard links.count <= 20 else { failure = "一次最多处理 20 个书源链接，请分批导入。"; return }
+    private func importText(_ text: String) {
+        guard !busy else { return }
+        do {
+            switch try SourceImportInput.detect(text) {
+            case .json(let data): parse(data)
+            case .links(let urls): fetchLinks(urls)
+            }
+        } catch { preview = nil; failure = error.localizedDescription }
+    }
+
+    private func fetchLinks(_ links: [URL]) {
         busy = true; failure = nil; preview = nil
         importTask = Task {
             var merged: [BookSource] = []
@@ -203,18 +210,14 @@ struct SourceImportView: View {
                 if Task.isCancelled { return }
                 importStatus = "正在获取第 \(number + 1) / \(links.count) 个链接…"
                 do {
-                    var raw = entry
-                    if raw.hasPrefix("legado://"), let components = URLComponents(string: raw),
-                       let embedded = components.queryItems?.first(where: { $0.name == "src" })?.value { raw = embedded }
-                    let url = try SourceClient.resolve(raw, base: URL(string: "https://example.com")!)
-                    guard ["http", "https"].contains(URLComponents(string: raw)?.scheme?.lowercased() ?? "") else {
-                        throw SourceError.message("请输入完整的 HTTP/HTTPS JSON 书源链接。")
-                    }
-                    let fetched = try await online.client.importURL(url)
+                    let fetched = try await online.client.importURL(entry)
                     issues += fetched.failures.map { "链接 \(number + 1)：\($0)" }
                     for source in fetched.sources {
                         if let index = merged.firstIndex(where: { $0.id == source.id }) { merged[index] = source }
-                        else { merged.append(source) }
+                        else {
+                            guard merged.count < 5000 else { throw SourceError.message("合并超过 5000 个书源，请分批导入。") }
+                            merged.append(source)
+                        }
                     }
                 } catch {
                     if Task.isCancelled { return }
@@ -234,9 +237,12 @@ struct SourceImportView: View {
 
     private func parse(_ data: Data) {
         busy = true; failure = nil; preview = nil
-        Task {
-            do { preview = try await Task.detached { try SourceImport.parse(data) }.value }
-            catch { failure = error.localizedDescription }
+        importTask = Task {
+            do {
+                let parsed = try await Task.detached { try SourceImport.parse(data) }.value
+                try Task.checkCancellation()
+                preview = parsed
+            } catch { if Task.isCancelled { return }; failure = error.localizedDescription }
             busy = false
         }
     }
