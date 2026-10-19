@@ -1,14 +1,14 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-private struct ReaderBackup: Codable {
+struct ReaderBackup: Codable {
     var version: Int
     var createdAt: Date
     var files: [String: Data]
     var preferences: Data
 }
 
-private enum BackupService {
+enum BackupService {
     static let folders = ["Moyu", "MoyuOnline"]
     static let maximumBytes = 200 * 1024 * 1024
     static func create() throws -> Data {
@@ -127,6 +127,7 @@ struct AppSettingsView: View {
                     LabeledContent("书源", value: "\(online.sources.count) 个")
                 }
                 Section("备份与恢复") {
+                    NavigationLink("WebDAV 跨设备同步") { WebDAVSettingsView() }
                     Button("导出完整备份", systemImage: "square.and.arrow.up") {
                         do { export = JSONExport(data: try BackupService.create()); exporting = true }
                         catch { message = error.localizedDescription }
@@ -147,7 +148,7 @@ struct AppSettingsView: View {
                 }
                 Section("兼容性") {
                     Text("CSS、旧式选择器、XPath 1.0、基础 JSONPath、静态 GET/POST、目录及正文分页。")
-                    Text("脚本引擎及常用接口已接入，完整 Java/Android 桥、发现页、仿真卷页与 WebDAV 同步仍待实现；当前版本不等同 Android Legado 完整版。")
+                    Text("支持常用脚本接口、发现分类、换源与仿真卷页；完整 Java/Android 桥仍待补齐，当前版本不等同 Android Legado 完整版。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Gavin 2.0") {
