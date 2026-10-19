@@ -53,7 +53,7 @@ enum BrowserSessions {
             let (data, _) = try await client.fetch(URL(string: "http://127.0.0.1:18765/private")!)
             guard String(data: data, encoding: .utf8) == "GAVIN_AUTHENTICATED_CHAPTER" else { throw SourceError.message("Cookie sharing failed") }
             phase("dynamic_webview_request")
-            let source = try JSONDecoder().decode(BookSource.self, from: Data(#"{"bookSourceName":"Dynamic fixture","bookSourceUrl":"http://127.0.0.1:18765","ruleContent":{"content":"#content@text"}}"#.utf8))
+            let source = try JSONDecoder().decode(BookSource.self, from: Data(##"{"bookSourceName":"Dynamic fixture","bookSourceUrl":"http://127.0.0.1:18765","ruleContent":{"content":"#content@text"}}"##.utf8))
             let chapter = OnlineChapter(title: "Dynamic chapter", url: URL(string: "http://127.0.0.1:18765/dynamic")!, requestTemplate: "http://127.0.0.1:18765/dynamic,{'webView':true}")
             let text = try await client.chapter(chapter, source: source)
             guard text == "GAVIN_RENDERED_DYNAMIC_CHAPTER" else { throw SourceError.message("动态网页未执行页面脚本或未复用登录状态。") }

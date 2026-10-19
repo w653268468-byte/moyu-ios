@@ -54,7 +54,7 @@ jobs:
         run: >-
           xcodebuild -project Moyu.xcodeproj -scheme Moyu -configuration Debug
           -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'
-          -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO build
+          -derivedDataPath build/simulator ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build
       - name: Build unsigned iPhone app
         run: >-
           xcodebuild -project Moyu.xcodeproj -scheme Moyu -configuration Release
