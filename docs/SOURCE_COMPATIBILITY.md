@@ -2,6 +2,8 @@
 
 当前任务仅处理书源兼容和真实搜索→目录→正文；书架、排版、听书等其他功能暂停迭代。
 
+第 50 次提交对应的审计已取得 3/32 个完整链路，通过的规则及精确记录在 SOURCE_VALIDATION.md 与 Examples/verified-sources.json。新增近期维护的 cjj200011222/legado-booksource 公开集合，并给 macOS 审计接入独立、临时 Cookie 存储的 WKWebView：动态源不再仅因命令行缺少浏览器而跳过，报告标记 usedWebView；交互式登录仍须用户在 App 内完成。
+
 公开样本中 14 个源使用 JavaImporter，22 处调用 toNumChapter。新增显式 Java 兼容包：JavaImporter、SecretKeySpec/IvParameterSpec、Cipher、RSA KeyFactory/EncodedKeySpec、Signature、MessageDigest、Base64、Arrays、ByteArrayOutputStream、String 字节构造和中文章节数字；只实现列出的接口，不暴露任意 Java/Android 类。Node 中使用真实 JavaImporter/with 解密流程对照独立 OpenSSL AES 结果，Swift/iOS 与 RSA 向量检查另行验证；OkHttp、Hutool、字体反混淆等尚需真实案例适配。
 
 第 49 次真实集合抽样已生成报告：32 个域名中 1 个通过完整链路，2 个需本人登录，1 个需 WebView，其余有网络、网站响应和兼容问题；不能把审计任务绿色当作 32 个源均可用。本地复核确认 leeyegy 返回域名广告跳转、kuaishu5 返回 ParkLogic 页面，增加网站响应诊断。qsyz 搜索同时返回衍生作品与原作，审计优先选同名书，并可先用作者提供的 checkKeyWord。

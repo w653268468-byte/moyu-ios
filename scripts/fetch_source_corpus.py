@@ -6,6 +6,7 @@ import ast, hashlib, json, re, time, urllib.request
 ROOT=Path(__file__).resolve().parents[1]
 OUTPUT=ROOT/'.build/source-audit'
 URLS=[
+    'https://raw.githubusercontent.com/cjj200011222/legado-booksource/master/all.json',
     # Independent collections listed by 52liulian/yuanc; availability is audited, not assumed.
     'https://www.yckceo.com/yuedu/shuyuans/json/id/1042.json',
     'https://cdn.jsdelivr.net/gh/tickmao/Novel@master/sources/legado/full.json',

@@ -7,6 +7,7 @@ private struct SourceAuditResult: Codable, Sendable {
     var name: String; var source: String; var collection: String; var scripted: Bool
     var status = "failed"; var stage = "search"; var keyword = "三国演义"
     var title: String?; var chapters: Int?; var characters: Int?; var error: String?; var category: String?
+    var usedWebView = false
 }
 private actor SourceAuditProgress {
     var value: SourceAuditResult
@@ -15,6 +16,7 @@ private actor SourceAuditProgress {
         value.stage = stage
         if let keyword { value.keyword = keyword }; if let title { value.title = title }; if let chapters { value.chapters = chapters }
     }
+    func usedWebView() { value.usedWebView = true }
     func result(_ text: String? = nil, error: String? = nil) -> SourceAuditResult {
         var result = value
         if let text { result.status = "passed"; result.stage = "content"; result.characters = text.count }
@@ -83,7 +85,13 @@ final class SourceCorpusAuditTests: XCTestCase {
         do {
             return try await withThrowingTaskGroup(of: SourceAuditResult.self) { group in
                 group.addTask {
+                    #if os(macOS)
+                    let client = SourceClient(cookieProvider: { await CorpusWebRenderer.cookies($0) }, webRenderer: { request, cookies in
+                        await progress.usedWebView(); return try await CorpusWebRenderer.render(request, cookies: cookies)
+                    })
+                    #else
                     let client = SourceClient()
+                    #endif
                     var books: [OnlineNovel] = []
                     let original = item.source.originalJSON.flatMap { $0.data(using: .utf8) }.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
                     let suggested = (original?["ruleSearch"] as? [String: Any])?["checkKeyWord"] as? String
