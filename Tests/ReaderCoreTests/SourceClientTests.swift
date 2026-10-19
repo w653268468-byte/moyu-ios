@@ -36,6 +36,28 @@ private final class FixtureProtocol: URLProtocol {
 }
 
 final class SourceClientTests: XCTestCase {
+    func testAutomaticSourceSwitchReadsBodyBeforeMigratingIdentity() async throws {
+        let client = makeClient()
+        let working = try source()
+        var failed = working
+        failed.bookSourceUrl = "https://fixture.example/broken"
+        failed.searchUrl = "/timeout"
+        let originalURL = URL(string: "https://original.example/book")!
+        var original = OnlineNovel(title: "《山海来信》", author: "作者：Gavin", url: originalURL, sourceID: "old-source")
+        original.chapters = [OnlineChapter(title: "第1章", url: originalURL)]
+        let result = try await SourceSwitcher(client: client).automatic(original, chapterIndex: 0, sources: [failed, working])
+        XCTAssertEqual(result.novel.id, original.id)
+        XCTAssertEqual(result.novel.sourceID, working.id)
+        XCTAssertEqual(result.novel.chapterIndex, 0)
+        XCTAssertEqual(result.novel.textOffset, 0)
+        XCTAssertTrue(result.text.contains("风从海边来。"))
+        original.author = "其他作者"
+        do {
+            _ = try await SourceSwitcher(client: client).automatic(original, chapterIndex: 0, sources: [working])
+            XCTFail("Same title by a different author must never switch automatically")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("未找到可靠")) }
+    }
+
     private func makeClient() -> SourceClient {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [FixtureProtocol.self]

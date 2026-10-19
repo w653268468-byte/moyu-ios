@@ -46,6 +46,7 @@ struct ReadingStyle: DynamicProperty {
     @AppStorage("reader.speechRate") var speechRate = 0.5
     @AppStorage("reader.paged") var paged = true
     @AppStorage("reader.fullScreen") var fullScreen = false
+    @AppStorage("reader.autoChangeSource") var autoChangeSource = false
     var paper: Paper { Paper(rawValue: paperName) ?? .cream }
     var font: Font {
         let size = min(44, max(12, fontSize))
@@ -64,6 +65,7 @@ struct ReadingStyle: DynamicProperty {
         fontFamily = "宋体"; bold = false; letterSpacing = 0; paragraphSpacing = 18
         horizontalMargin = 26; verticalMargin = 24; indent = true; showChapterTitle = true
         keepAwake = false; brightness = 1; speechRate = 0.5; paged = true; fullScreen = false
+        autoChangeSource = false
     }
 }
 
@@ -133,6 +135,8 @@ struct ReadingPreferences: View {
             Section("页面") {
                 Toggle("左右翻页", isOn: Binding(get: { style.paged }, set: { style.paged = $0 }))
                 Toggle("全屏阅读", isOn: Binding(get: { style.fullScreen }, set: { style.fullScreen = $0 }))
+                Toggle("正文失败时自动换源", isOn: Binding(get: { style.autoChangeSource }, set: { style.autoChangeSource = $0 }))
+                Text("自动换源只接受同书名、同作者且能匹配当前章节的结果；信息不足时请手动选择。").font(.caption).foregroundStyle(.secondary)
                 Text("左右滑动或点击两侧翻页，点击正文中间显示菜单。关闭左右翻页后上下滚动，双击正文显示菜单。")
                     .font(.caption).foregroundStyle(.secondary)
                 control("左右边距", value: Binding(get: { style.horizontalMargin }, set: { style.horizontalMargin = $0 }), range: 10...55)

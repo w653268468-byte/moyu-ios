@@ -105,6 +105,17 @@ final class OnlineStore: ObservableObject {
         do { try keep(updated) } catch { errorMessage = error.localizedDescription }
     }
 
+    func commitReplacement(_ original: OnlineNovel, replacement: SourceSwitchResult) throws {
+        guard !locked, replacement.novel.chapters.indices.contains(replacement.novel.chapterIndex) else { throw SourceError.message("替代书源或章节无效。") }
+        var updated = replacement.novel
+        updated.shelfID = original.id
+        try replacement.text.write(to: cacheURL(updated.chapters[updated.chapterIndex], sourceID: updated.sourceID), atomically: true, encoding: .utf8)
+        let before = novels
+        if let index = novels.firstIndex(where: { $0.id == original.id && $0.sourceID == original.sourceID }) { novels[index] = updated }
+        else { novels.insert(updated, at: 0) }
+        do { try save() } catch { novels = before; throw error }
+    }
+
     private func cacheURL(_ chapter: OnlineChapter, sourceID: String) -> URL {
         let hash = SHA256.hash(data: Data((sourceID + "|" + chapter.url.absoluteString).utf8))
             .map { String(format: "%02x", $0) }.joined()

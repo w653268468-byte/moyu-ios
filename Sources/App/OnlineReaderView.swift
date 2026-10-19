@@ -3,7 +3,7 @@ import SwiftUI
 struct OnlineReaderView: View {
     @EnvironmentObject private var online: OnlineStore
     @Environment(\.dismiss) private var dismiss
-    let novel: OnlineNovel
+    @State private var novel: OnlineNovel
     @State private var index: Int
     @State private var text = ""
     @State private var failure: String?
@@ -12,6 +12,11 @@ struct OnlineReaderView: View {
     @State private var showSettings = false
     @State private var official = false
     @State private var retry = 0
+    @State private var showSourceSwitch = false
+    @State private var switching = false
+    @State private var switchStatus = ""
+    @State private var switchTask: Task<Void, Never>?
+    @State private var switchID = UUID()
     @State private var resumeOffset = 0
     @State private var resumeFraction: Double?
     @State private var openAtEnd = false
@@ -19,13 +24,16 @@ struct OnlineReaderView: View {
     private var style = ReadingStyle()
 
     init(novel: OnlineNovel) {
-        self.novel = novel
+        _novel = State(initialValue: novel)
         _index = State(initialValue: min(max(0, novel.chapterIndex), max(0, novel.chapters.count - 1)))
     }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                if switching {
+                    HStack { ProgressView(); Text(switchStatus).font(.caption); Spacer(); Button("取消换源") { cancelSwitch() } }.padding(12)
+                }
                 if novel.chapters.isEmpty {
                     ContentUnavailableView("章节目录为空", systemImage: "list.bullet")
                 } else if loading {
@@ -36,6 +44,7 @@ struct OnlineReaderView: View {
                     } description: { Text(failure) } actions: {
                         Button("重试") { retry += 1 }
                         Button("网页登录 / 验证", systemImage: "safari") { official = true }
+                        Button("手动换源", systemImage: "arrow.triangle.2.circlepath") { showSourceSwitch = true }
                     }
                 } else if style.paged {
                     PagedReadingView(text: text, title: novel.chapters[index].title, resumeOffset: resumeOffset,
@@ -78,12 +87,16 @@ struct OnlineReaderView: View {
                             Button(speech.active ? (speech.paused ? "继续朗读" : "暂停朗读") : "朗读当前章节", systemImage: "speaker.wave.2") { speech.play(text, rate: style.speechRate) }.disabled(loading || text.isEmpty)
                             if speech.active { Button("停止朗读", systemImage: "stop.circle") { speech.stop() } }
                         } label: { Image(systemName: "speaker.wave.2") }
+                        Menu {
+                            Button("手动选择书源和章节") { showSourceSwitch = true }
+                            Button("自动寻找可用书源") { startSwitch() }.disabled(switching)
+                        } label: { Image(systemName: "arrow.triangle.2.circlepath") }
                         Button { official = true } label: { Image(systemName: "safari") }.accessibilityLabel("打开官方网页")
                         Button { showContents = true } label: { Image(systemName: "list.bullet") }.accessibilityLabel("章节目录")
                         Button { showSettings = true } label: { Image(systemName: "textformat.size") }.accessibilityLabel("阅读设置")
                     }
                 }
-                .task(id: "\(index)-\(retry)") {
+                .task(id: "\(novel.sourceID)-\(index)-\(retry)") {
                     guard novel.chapters.indices.contains(index) else { loading = false; return }
                     speech.stop()
                     let target = index
@@ -103,9 +116,15 @@ struct OnlineReaderView: View {
                         guard !Task.isCancelled, target == index else { return }
                         failure = error.localizedDescription
                         loading = false
+                        if style.autoChangeSource { startSwitch() }
                     }
                 }
-                .onDisappear { speech.stop() }
+                .onDisappear { speech.stop(); cancelSwitch() }
+                .onChange(of: index) { _, _ in cancelSwitch() }
+                .onChange(of: showSourceSwitch) { _, shown in if shown { cancelSwitch() } }
+                .sheet(isPresented: $showSourceSwitch) {
+                    SourceSwitchView(novel: novel, chapterIndex: index, onChanged: applyReplacement)
+                }
                 .alert("听书提示", isPresented: Binding(get: { speech.message != nil }, set: { if !$0 { speech.message = nil } })) { Button("知道了") { speech.message = nil } } message: { Text(speech.message ?? "") }
                 .sheet(isPresented: $showSettings) {
                     NavigationStack {
@@ -135,4 +154,32 @@ struct OnlineReaderView: View {
                 }
         }
     }
+    private func cancelSwitch() {
+        switchTask?.cancel(); switchID = UUID(); switching = false; switchStatus = ""
+    }
+    private func applyReplacement(_ updated: OnlineNovel) {
+        speech.stop()
+        novel = updated; index = updated.chapterIndex
+        resumeOffset = updated.textOffset ?? 0; resumeFraction = updated.scrollFraction
+        text = ""; failure = nil; loading = true
+    }
+    private func startSwitch() {
+        guard !switching, novel.chapters.indices.contains(index) else { return }
+        let original = novel, target = index
+        switchID = UUID(); let token = switchID
+        switching = true; switchStatus = "正在查找同书名、同作者的替代书源…"
+        switchTask = Task {
+            defer { if switchID == token { switching = false; switchStatus = "" } }
+            do {
+                let result = try await SourceSwitcher(client: online.client).automatic(original, chapterIndex: target, sources: online.sources) { message in
+                    await MainActor.run { if switchID == token { switchStatus = message } }
+                }
+                try Task.checkCancellation()
+                guard token == switchID, index == target, novel.sourceID == original.sourceID else { return }
+                try online.commitReplacement(original, replacement: result)
+                applyReplacement(result.novel)
+            } catch { if !Task.isCancelled && token == switchID { failure = error.localizedDescription } }
+        }
+    }
+
 }

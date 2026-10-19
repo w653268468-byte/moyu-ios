@@ -127,7 +127,8 @@ public struct OnlineChapter: Codable, Identifiable, Equatable, Sendable {
 }
 
 public struct OnlineNovel: Codable, Identifiable, Equatable, Sendable {
-    public var id: String { url.absoluteString }
+    public var id: String { shelfID ?? url.absoluteString }
+    public var shelfID: String?
     public var title: String
     public var author: String
     public var intro: String
