@@ -1,0 +1,36 @@
+// Local, independent vectors for the JavaScript adapters. Native Swift tests also run in CI.
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),crypto=require('node:crypto');
+const variables=new Map(),cache=new Map();
+const context=vm.createContext({__native:{call(name,payload){const a=JSON.parse(payload);let value=null;
+    if(name==='randomBytes')value=Array.from(crypto.randomBytes(a[0]));
+    else if(name==='put'){variables.set(a[0],a[1]);value=a[1];}
+    else if(name==='get')value=variables.get(a[0])??'';
+    else if(name==='cacheGet')value=cache.get(a[0])??null;
+    else if(name==='cachePut')cache.set(a[0],a[1]);
+    else if(name==='cacheDelete')cache.delete(a[0]);
+    else if(name==='decodeBytes')value=Buffer.from(a[0].map(x=>x&255)).toString('utf8');
+    else if(name==='encodeBytes')value=Array.from(Buffer.from(a[0])).map(x=>x<<24>>24);
+    else throw Error('Unexpected native call '+name);
+    return JSON.stringify(value);
+}}});
+const swift=fs.readFileSync('Sources/ReaderCore/SourceScript.swift','utf8');
+vm.runInContext(swift.match(/private static let bootstrap = #"""\r?\n([\s\S]*?)\r?\n    """#/)[1],context);
+for(const file of ['crypto-js','legado-bridge'])vm.runInContext(fs.readFileSync('Sources/ReaderCore/ScriptAssets/'+file+'.js','utf8'),context);
+const run=code=>vm.runInContext(code,context,{timeout:3000});
+assert.equal(run("java.createSymmetricCrypto('AES/CBC/NoPadding',java.hexDecodeToByteArray ? CryptoJS.enc.Hex.parse('2b7e151628aed2a6abf7158809cf4f3c') : null,CryptoJS.enc.Hex.parse('000102030405060708090a0b0c0d0e0f')).encryptHex(CryptoJS.enc.Hex.parse('6bc1bee22e409f96e93d7e117393172a'))"),'7649abac8119b246cee98e9b12e9197d');
+const key='0123456789abcdef',iv='abcdef0123456789',plain='中文正文 🌸';
+const oracle=crypto.createCipheriv('aes-128-cbc',key,iv);const expected=Buffer.concat([oracle.update(plain),oracle.final()]).toString('base64');
+context.expected=expected;context.plain=plain;
+assert.equal(run("java.createSymmetricCrypto('AES/CBC/PKCS5Padding','0123456789abcdef','abcdef0123456789').encryptBase64(plain)"),expected);
+assert.equal(run("java.createSymmetricCrypto('AES/CBC/PKCS5Padding','0123456789abcdef','abcdef0123456789').decryptStr(expected)"),plain);
+assert.equal(run("java.aesDecodeArgsBase64Str(expected, CryptoJS.enc.Utf8.parse('0123456789abcdef').toString(CryptoJS.enc.Base64), 'CBC','PKCS5Padding',CryptoJS.enc.Utf8.parse('abcdef0123456789').toString(CryptoJS.enc.Base64))"),plain);
+assert.throws(()=>run("java.createSymmetricCrypto('AES/CBC/PKCS5Padding','wrongwrongwrong!!','abcdef0123456789').decryptStr(expected)"));
+assert.throws(()=>run("java.createSymmetricCrypto('AES/CBC/NoPadding','0123456789abcdef','abcdef0123456789').encryptHex('short')"));
+assert.equal(run("String(new java.lang.String(java.byteArrayToString ? 'abc'.getBytes() : [],'UTF-8'))"),'abc');
+assert.equal(run("source=__gavinHydrate('source',{bookSourceUrl:'https://books.example'});source.put('test','kept');source.getKey()+'|'+source.get('test')"),'https://books.example|kept');
+assert.equal(run("book=__gavinHydrate('book',{bookUrl:'https://books.example/1'});book.putVariable('id','42'); book.getVariable('id')"),'42');
+assert.equal(run("CryptoJS.AES.decrypt(CryptoJS.AES.encrypt('正文','password').toString(),'password').toString(CryptoJS.enc.Utf8)"),'正文');
+const tkey='123456789012345678901234',tiv='12345678',t=crypto.createCipheriv('des-ede3-cbc',tkey,tiv);
+const triple=Buffer.concat([t.update(plain),t.final()]).toString('base64');
+assert.equal(run("java.createSymmetricCrypto('DESede/CBC/PKCS5Padding','123456789012345678901234','12345678').encryptBase64(plain)"),triple);
+console.log('PASS: NIST AES, Node/OpenSSL AES and TripleDES, invalid padding, byte arrays, scoped variables, CryptoJS passphrase randomness');

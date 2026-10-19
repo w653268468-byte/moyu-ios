@@ -376,6 +376,7 @@ public actor SourceClient {
         if let reason = source.incompatibility { throw SourceError.message(reason) }
         var result = novel
         if let variables = novel.ruleVariables { try scriptEngine(for: source)?.restoreVariables(variables) }
+        try installBookContext(result, source: source)
         let detailRequest = try SourceRequest.make(novel.requestTemplate ?? novel.url.absoluteString, query: "", base: novel.url, script: scriptEngine(for: source))
         let (detail, detailURL) = try await document(detailRequest, source: source)
         if let initialization = source.ruleBookInfo?.initialization, !initialization.isEmpty { _ = try detail.value(initialization) }
@@ -388,6 +389,7 @@ public actor SourceClient {
             if !intro.isEmpty { result.intro = intro }
         }
         let toc = try detail.value(source.ruleBookInfo?.tocUrl)
+        try installBookContext(result, source: source)
         var nextRequest = try SourceRequest.make(toc.isEmpty ? detailURL.absoluteString : toc, query: "", base: detailURL, script: scriptEngine(for: source))
         var visited: Set<String> = []
         var seenChapters: Set<String> = []
@@ -404,7 +406,12 @@ public actor SourceClient {
                 let raw = try element.value(rule.chapterUrl)
                 guard !title.isEmpty, !raw.isEmpty else { continue }
                 let link = try SourceRequest.navigation(raw, base: pageURL, script: scriptEngine(for: source))
-                if seenChapters.insert(link.template ?? link.url.absoluteString).inserted { chapters.append(OnlineChapter(title: title, url: link.url, ruleVariables: try scriptEngine(for: source)?.snapshotVariables(), requestTemplate: link.template)) }
+                if seenChapters.insert(link.template ?? link.url.absoluteString).inserted {
+                    let context: [String: Any] = ["title": title, "url": link.url.absoluteString, "index": chapters.count, "baseUrl": pageURL.absoluteString, "bookUrl": result.url.absoluteString]
+                    let json = String(decoding: try JSONSerialization.data(withJSONObject: context), as: UTF8.self)
+                    try scriptEngine(for: source)?.putVariable("__gavin:chapter", value: json)
+                    chapters.append(OnlineChapter(title: title, url: link.url, ruleVariables: try scriptEngine(for: source)?.snapshotVariables(), requestTemplate: link.template))
+                }
                 guard chapters.count <= 20000 else { throw SourceError.message("目录超过 20000 章，暂不支持。") }
             }
             let next = try doc.value(rule.nextTocUrl)
@@ -422,6 +429,13 @@ public actor SourceClient {
     public func chapter(_ chapter: OnlineChapter, source: BookSource) async throws -> String {
         retainScript(source.id); defer { releaseScript(source.id) }
         if let variables = chapter.ruleVariables { try scriptEngine(for: source)?.restoreVariables(variables) }
+        if let engine = try scriptEngine(for: source) {
+            let savedBook = engine.variable("__gavin:book")
+            try engine.setJSONGlobal("book", json: savedBook.isEmpty ? "{}" : savedBook)
+            let fallback: [String: Any] = ["title": chapter.title, "url": chapter.url.absoluteString, "index": 0, "baseUrl": chapter.url.absoluteString]
+            let saved = engine.variable("__gavin:chapter")
+            try engine.setJSONGlobal("chapter", json: saved.isEmpty ? String(decoding: JSONSerialization.data(withJSONObject: fallback), as: UTF8.self) : saved)
+        }
         guard let rule = source.ruleContent, let content = rule.content else { throw SourceError.message("缺少正文规则。") }
         var nextRequest = try SourceRequest.make(chapter.requestTemplate ?? chapter.url.absoluteString, query: "", base: chapter.url, script: scriptEngine(for: source))
         var visited: Set<String> = []
@@ -446,5 +460,13 @@ public actor SourceClient {
     }
     private func requestKey(_ request: URLRequest) -> String {
         (request.url?.absoluteString ?? "") + "|" + (request.httpMethod ?? "GET") + "|" + SHA256.hash(data: request.httpBody ?? Data()).map { String(format: "%02x", $0) }.joined()
+    }
+    private func installBookContext(_ novel: OnlineNovel, source: BookSource) throws {
+        let values: [String: Any] = ["name": novel.title, "author": novel.author, "intro": novel.intro, "bookUrl": novel.url.absoluteString, "origin": source.bookSourceUrl, "originName": source.bookSourceName, "durChapterIndex": novel.chapterIndex, "type": 0, "kind": novel.kind ?? "", "coverUrl": novel.coverURL?.absoluteString ?? ""]
+        let json = String(decoding: try JSONSerialization.data(withJSONObject: values), as: UTF8.self)
+        if let engine = try scriptEngine(for: source) {
+            try engine.setJSONGlobal("book", json: json)
+            try engine.putVariable("__gavin:book", value: json)
+        }
     }
 }

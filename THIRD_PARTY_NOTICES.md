@@ -1,5 +1,11 @@
 # Third-party notices
 
+## CryptoJS 4.2.0 (MIT)
+
+Source: https://github.com/brix/crypto-js/tree/4.2.0
+
+The complete upstream JavaScript bundle is included at `Sources/ReaderCore/ScriptAssets/crypto-js.js`, with its MIT notice prepended. The npm SHA-512 integrity and file SHA-256 values are recorded at `Vendor/CryptoJS/UPSTREAM.json`; the full license is at `Vendor/CryptoJS/LICENSE`. `scripts/vendor_cryptojs.py` reproduces the download and verification. Gavin's compatibility adapters are separate from the upstream implementation.
+
 ## QuickJS C engine (2026-06-04)
 
 Source: https://bellard.org/quickjs/

@@ -1,0 +1,9 @@
+{
+  "version": "4.2.0",
+  "source": "https://github.com/brix/crypto-js",
+  "tarball": "https://registry.npmjs.org/crypto-js/-/crypto-js-4.2.0.tgz",
+  "npmIntegrity": "sha512-KALDyEYgpY+Rlob/iriUtjV6d5Eq+Y191A5g4UqLAi8CyGP9N1+FdVbkc1SxKc2r4YAYqG8JzO2KGL+AizD70Q==",
+  "upstreamJavascriptSHA256": "ee02257ffbaf0a9b481c7039b0f3bb20c360c9674fe4be8b38ae709b2ea59bbe",
+  "javascriptSHA256": "aeb32622e42a8c343ed2dccbf826a9da983dd7bfcacbe1802f252526f15c0922",
+  "modifications": "Prepended upstream MIT notice; algorithm implementation unchanged."
+}

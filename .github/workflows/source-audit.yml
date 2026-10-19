@@ -1,0 +1,31 @@
+name: Real source compatibility audit
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - 'Sources/ReaderCore/**'
+      - 'Tests/ReaderCoreTests/**'
+      - 'scripts/fetch_source_corpus.py'
+      - '.github/workflows/source-audit.yml'
+jobs:
+  audit:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch independent public source collections
+        run: python3 scripts/fetch_source_corpus.py
+      - name: Run bounded search catalog and content audit
+        env:
+          GAVIN_SOURCE_AUDIT: '1'
+          GAVIN_AUDIT_LIMIT: '32'
+        run: swift test --filter SourceCorpusAuditTests -Xcc "-I$(xcrun --show-sdk-path)/usr/include/libxml2"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Gavin-real-source-audit
+          path: |
+            .build/source-audit/report.json
+            .build/source-audit/provenance.json
+          if-no-files-found: warn

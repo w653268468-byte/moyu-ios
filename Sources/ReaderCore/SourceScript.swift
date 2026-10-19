@@ -2,6 +2,7 @@ import Foundation
 import CryptoKit
 import QuickJS
 import SwiftSoup
+import Security
 
 /// An isolated, bounded interpreter. Android objects are implemented explicitly by the bridge.
 public final class SourceScript: @unchecked Sendable {
@@ -18,7 +19,8 @@ public final class SourceScript: @unchecked Sendable {
         func exceeded() -> Bool { lock.lock(); defer { lock.unlock() }; let now = ProcessInfo.processInfo.systemUptime; return cancelled || now > absoluteDeadline || (ioStart == nil && now > deadline) }
     }
     private let limit: Limit
-    private let gate = NSLock()
+    private let gate = NSRecursiveLock()
+    private var evaluationDepth = 0
     private let runtime: JSRuntime
     private let context: JSContext
     private let http: ScriptHTTP
@@ -26,6 +28,7 @@ public final class SourceScript: @unchecked Sendable {
     private var input = ""
     private var base = URL(string: "https://example.com")!
     private var variables: [String: String] = [:]
+    private var sourceNamespace = "unscoped"
 
     public init(configuration: URLSessionConfiguration = .ephemeral) throws {
         let limit = Limit()
@@ -44,6 +47,16 @@ public final class SourceScript: @unchecked Sendable {
         }
         try context.evaluate("import * as native from 'GavinNative'; globalThis.__native = native;", options: EvalOptions(type: .module))
         try context.evaluate(Self.bootstrap)
+        for name in ["crypto-js", "legado-bridge"] {
+            #if SWIFT_PACKAGE
+            let bundle = Bundle.module
+            let url = bundle.url(forResource: name, withExtension: "js", subdirectory: "ScriptAssets")
+            #else
+            let url = Bundle.main.url(forResource: name, withExtension: "js")
+            #endif
+            guard let url else { throw SourceError.message("缺少内置脚本：\(name)") }
+            try context.evaluate(String(contentsOf: url, encoding: .utf8))
+        }
     }
 
     public func cancel() { limit.stop() }
@@ -67,8 +80,10 @@ public final class SourceScript: @unchecked Sendable {
     public func setJSONGlobal(_ name: String, json: String) throws {
         gate.lock(); defer { gate.unlock() }
         limit.begin(2)
+        if name == "source", let object = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any], let url = object["bookSourceUrl"] as? String { sourceNamespace = url }
         context.setGlobalProperty(name: "__gavinGlobal", value: json)
-        let value = try context.evaluate("JSON.parse(__gavinGlobal)")
+        context.setGlobalProperty(name: "__gavinGlobalName", value: name)
+        let value = try context.evaluate("__gavinHydrate(__gavinGlobalName, JSON.parse(__gavinGlobal))")
         context.setGlobalProperty(name: name, value: value)
     }
 
@@ -78,7 +93,20 @@ public final class SourceScript: @unchecked Sendable {
         let data = try JSONSerialization.data(withJSONObject: result, options: .fragmentsAllowed)
         guard code.utf8.count <= 512 * 1024, data.count <= 8 * 1024 * 1024 else { throw SourceError.message("脚本或输入超过大小限制。") }
         gate.lock(); defer { gate.unlock() }
-        limit.begin(min(15, max(0.05, timeout)))
+        guard evaluationDepth < 16 else { throw SourceError.message("嵌套脚本超过 16 层。") }
+        let nested = evaluationDepth > 0
+        let savedInput = input, savedBase = base
+        let names = ["result", "baseUrl", "src", "key", "page", "__gavinInput", "__gavinCode", "__gavinResult"] + globals.keys.filter { !["key", "page"].contains($0) }
+        let saved = nested ? names.map { ($0, context.getGlobalProperty($0)) } : []
+        evaluationDepth += 1
+        defer {
+            evaluationDepth -= 1
+            if nested {
+                input = savedInput; base = savedBase
+                for (name, value) in saved { context.setGlobalProperty(name: name, value: value) }
+            }
+        }
+        if !nested { limit.begin(min(15, max(0.05, timeout))) }
         input = document ?? (result as? String ?? String(decoding: data, as: UTF8.self)); base = baseURL
         context.setGlobalProperty(name: "__gavinInput", value: String(decoding: data, as: UTF8.self))
         context.setGlobalProperty(name: "baseUrl", value: baseURL.absoluteString)
@@ -114,12 +142,41 @@ public final class SourceScript: @unchecked Sendable {
             if args[index] is [String: Any] || args[index] is [Any] { return String(decoding: try JSONSerialization.data(withJSONObject: args[index]), as: UTF8.self) }
             return string(index)
         }
-        func document(_ text: String) throws -> RuleDocument { try RuleDocument.parse(Data(text.utf8), base: base) }
-        let result: Any
-        if ["getString", "getStringList", "getElements", "getElement"].contains(method), try ScriptRule.parts(string(0)) != nil {
-            throw SourceError.message("暂未实现 java.\(method) 内的嵌套脚本。")
+        func document(_ text: String) throws -> RuleDocument { try RuleDocument.parse(Data(text.utf8), base: base, script: self) }
+        func encoding(_ name: String) throws -> String.Encoding {
+            switch name.lowercased() {
+            case "", "utf8", "utf-8": return .utf8
+            case "gbk", "gb2312", "gb18030": return String.Encoding(rawValue: 0x80000632)
+            case "ascii", "us-ascii": return .ascii
+            case "iso-8859-1", "latin1": return .isoLatin1
+            case "utf-16", "utf16": return .utf16
+            case "utf-16le": return .utf16LittleEndian
+            case "utf-16be": return .utf16BigEndian
+            default: throw SourceError.message("尚未支持的脚本字符编码：\(name)")
+            }
         }
+        let result: Any
         switch method {
+        case "cacheGet":
+            if let value = SourceScriptCache.shared.get(sourceNamespace, string(0)) { result = value } else { result = NSNull() }
+        case "cachePut":
+            let seconds = (args.count > 2 ? args[2] as? Double : nil) ?? 0
+            try SourceScriptCache.shared.put(sourceNamespace, string(0), string(1), seconds: seconds); result = NSNull()
+        case "cacheDelete": SourceScriptCache.shared.delete(sourceNamespace, string(0)); result = NSNull()
+        case "randomBytes":
+            guard let count = args.first as? Int, (0...65536).contains(count) else { throw SourceError.message("随机字节数量无效。") }
+            var bytes = [UInt8](repeating: 0, count: count)
+            let status = count == 0 ? errSecSuccess : bytes.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, count, $0.baseAddress!) }
+            guard status == errSecSuccess else { throw SourceError.message("系统随机数生成失败。") }
+            result = bytes.map { Int($0) }
+        case "decodeBytes":
+            guard let values = args.first as? [Int], values.count <= 1024 * 1024, values.allSatisfy({ (-128...255).contains($0) }) else { throw SourceError.message("字节数组无效。") }
+            let bytes = Data(values.map { UInt8(truncatingIfNeeded: $0) })
+            guard let text = String(data: bytes, encoding: try encoding(string(1))) else { throw SourceError.message("字节数组无法按指定编码解码。") }; result = text
+        case "encodeBytes", "encodeURI":
+            guard let bytes = string(0).data(using: try encoding(string(1))) else { throw SourceError.message("文本无法按指定编码编码。") }
+            if method == "encodeBytes" { result = bytes.map { Int(Int8(bitPattern: $0)) } }
+            else { result = bytes.map { byte in (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122) || (byte >= 48 && byte <= 57) || [45,46,95,42].contains(byte) ? String(UnicodeScalar(byte)) : byte == 32 ? "+" : String(format: "%%%02X", byte) }.joined() }
         case "getString", "getStringList":
             let value = try document(content(1)).value(string(0))
             let values = value.components(separatedBy: "\n").filter { !$0.isEmpty }
@@ -132,11 +189,11 @@ public final class SourceScript: @unchecked Sendable {
             if args.count > 1, !(args[1] is NSNull), !string(1).isEmpty { base = try SourceClient.resolve(string(1), base: base) }
             result = NSNull()
         case "getElement":
-            let first = try document(input).elements(string(0)).first
+            let first = try document(content(1)).elements(string(0)).first
             if let first { switch first.node { case .html(let element): result = ["__gavinHTML": try element.outerHtml()]; case .json(let value): result = value } }
             else { result = NSNull() }
         case "getElements":
-            result = try document(args.count > 1 ? string(1) : input).elements(string(0)).map { node -> Any in
+            result = try document(content(1)).elements(string(0)).map { node -> Any in
                 switch node.node {
                 case .html(let element): return ["__gavinHTML": try element.outerHtml()]
                 case .json(let value): return value
@@ -164,9 +221,11 @@ public final class SourceScript: @unchecked Sendable {
             limit.beginIO(); defer { limit.endIO() }
             let response = try http.request(request, cancelled: { self.limit.exceeded() })
             result = method == "ajax" ? response.text : response.json
-        case "getCookie":
+        case "getCookie", "removeCookie":
             let url = try SourceClient.resolve(string(0), base: base)
-            result = HTTPCookie.requestHeaderFields(with: configuration.httpCookieStorage?.cookies(for: url) ?? [])["Cookie"] ?? ""
+            if method == "removeCookie" {
+                for cookie in configuration.httpCookieStorage?.cookies(for: url) ?? [] { configuration.httpCookieStorage?.deleteCookie(cookie) }; result = NSNull()
+            } else { result = HTTPCookie.requestHeaderFields(with: configuration.httpCookieStorage?.cookies(for: url) ?? [])["Cookie"] ?? "" }
         case "setCookie":
             let url = try SourceClient.resolve(string(0), base: base)
             for cookie in HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": string(1)], for: url) { configuration.httpCookieStorage?.setCookie(cookie) }
@@ -224,7 +283,7 @@ public final class SourceScript: @unchecked Sendable {
             }
             result = formatter.string(from: Date(timeIntervalSince1970: milliseconds / 1000))
         case "resolve": result = try SourceClient.resolve(string(0), base: base).absoluteString
-        case "log": result = NSNull()
+        case "log", "toast", "longToast": result = NSNull()
         default: throw SourceError.message("尚未实现书源脚本接口 java.\(method)")
         }
         let encoded = try JSONSerialization.data(withJSONObject: result, options: [.fragmentsAllowed, .sortedKeys])
@@ -235,6 +294,11 @@ public final class SourceScript: @unchecked Sendable {
     function gavinCall(name, args) {
         return JSON.parse(__native.call(name, JSON.stringify(args)), (_, v) => v && typeof v.__gavinHTML === 'string' ? new GavinElement(v.__gavinHTML) : v && v.__gavinResponse ? new GavinResponse(v.__gavinResponse) : v);
     }
+    globalThis.crypto = {getRandomValues: function(array) {
+        if (!ArrayBuffer.isView(array) || array instanceof DataView || array instanceof Float32Array || array instanceof Float64Array || array.byteLength > 65536) throw new Error('Invalid random byte buffer');
+        new Uint8Array(array.buffer, array.byteOffset, array.byteLength).set(gavinCall('randomBytes', [array.byteLength]));
+        return array;
+    }};
     class GavinResponse {
         constructor(value) { this.value = value; }
         body() { return this.value.body; }

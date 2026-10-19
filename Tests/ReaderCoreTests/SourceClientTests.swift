@@ -226,6 +226,16 @@ final class SourceClientTests: XCTestCase {
             XCTAssertEqual(found.first?.title, "山海来信共享脚本")
         }
     }
+    func testBookAndChapterScriptContextSurvivesFreshClient() async throws {
+        var source = try source()
+        source.ruleContent?.content = "#content@text@js:book.name + '|' + chapter.title + '|' + chapter.index + '|' + result"
+        let client = makeClient()
+        let book = try await client.search("故事", source: source)[0]
+        let novel = try await client.catalog(book, source: source)
+        let fresh = makeClient()
+        let content = try await fresh.chapter(novel.chapters[1], source: source)
+        XCTAssertTrue(content.hasPrefix("山海来信|第二章|1|"), content)
+    }
     func testWebViewOptionsReachRendererAndSurviveSavedChapter() async throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [FixtureProtocol.self]
         let client = SourceClient(configuration: config, webRenderer: { request, _ in

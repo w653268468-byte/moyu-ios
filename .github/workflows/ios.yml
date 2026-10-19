@@ -39,6 +39,8 @@ jobs:
           xcrun simctl boot "$DEVICE_ID"
       - name: Validate project files
         run: python3 scripts/validate.py
+      - name: Verify JavaScript compatibility adapters
+        run: node scripts/test_script_bridge.cjs
       - name: Test patched JavaScript runtime
         run: swift test --package-path Vendor/QuickJS-Swift
       - name: Test parser and source rules
