@@ -110,6 +110,32 @@ final class SourceClientTests: XCTestCase {
         XCTAssertEqual(first.first?.title, "山海来信1")
         XCTAssertEqual(second.first?.title, "山海来信2")
     }
+    func testIndependentPaginationSurvivesInterpreterCacheEviction() async throws {
+        let client = makeClient()
+        var sources: [BookSource] = []
+        for index in 0..<17 {
+            var item = try source()
+            item.bookSourceUrl = "https://fixture.example/source-\(index)"
+            item.searchUrl = "@js:java.put('visits',String(Number(java.get('visits')||0)+1)); '/search'"
+            item.ruleSearch?.name = "a@text@js:result + java.get('visits')"
+            sources.append(item)
+            let first = try await client.searchIndependent("故事", source: item, page: 1)
+            XCTAssertEqual(first.first?.title, "山海来信1")
+        }
+        for item in sources {
+            let next = try await client.searchIndependent("故事", source: item, page: 2)
+            XCTAssertEqual(next.first?.title, "山海来信2")
+        }
+    }
+    func testIndependentSearchDoesNotLeakVariablesBetweenKeywords() async throws {
+        var source = try source()
+        source.searchUrl = "@js:java.put('visits',String(Number(java.get('visits')||0)+1)); '/search'"
+        source.ruleSearch?.name = "a@text@js:result + java.get('visits')"
+        let client = makeClient()
+        _ = try await client.searchIndependent("第一本", source: source)
+        let second = try await client.searchIndependent("另一本", source: source)
+        XCTAssertEqual(second.first?.title, "山海来信1")
+    }
     func testSearchIsNotBlockedByUnsupportedBodyRule() async throws {
         var source = try source()
         source.ruleContent?.content = "{{java.get()}"

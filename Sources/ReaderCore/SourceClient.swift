@@ -11,6 +11,14 @@ public actor SourceClient {
     private var scriptUsers: [String: Int] = [:]
     private var searchWorkers: [String: (BookSource, SourceClient)] = [:]
     private var searchWorkerUsers: [String: Int] = [:]
+    private var searchQuery: String?
+    private var searchGeneration = UUID()
+    private var searchVariables: [String: (BookSource, [String: String])] = [:]
+    private var searchVariableBytes = 0
+
+    private static func variableBytes(_ values: [String: String]) -> Int {
+        values.reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count }
+    }
 
     private func retainScript(_ id: String) { scriptUsers[id, default: 0] += 1 }
     private func releaseScript(_ id: String) {
@@ -251,23 +259,47 @@ public actor SourceClient {
     /// Synchronous java.ajax runs inside its source interpreter. Give each global-
     /// search job its own actor so a slow script cannot block unrelated websites.
     public func searchIndependent(_ query: String, source: BookSource, page: Int = 1) async throws -> [OnlineNovel] {
+        try Task.checkCancellation()
+        if searchQuery != query {
+            searchQuery = query; searchGeneration = UUID()
+            searchVariables.removeAll(); searchVariableBytes = 0
+            for key in Array(searchWorkers.keys) where searchWorkerUsers[key] == nil { searchWorkers.removeValue(forKey: key) }
+        }
+        let generation = searchGeneration
+        let key = generation.uuidString + source.id
         let worker: SourceClient
-        if let existing = searchWorkers[source.id], existing.0 == source { worker = existing.1 }
+        if let existing = searchWorkers[key], existing.0 == source { worker = existing.1 }
         else {
             if searchWorkers.count >= 8, let idle = searchWorkers.keys.first(where: { searchWorkerUsers[$0] == nil }) { searchWorkers.removeValue(forKey: idle) }
             worker = SourceClient(configuration: session.configuration, cookieProvider: cookieProvider, webRenderer: webRenderer)
-            searchWorkers[source.id] = (source, worker)
+            searchWorkers[key] = (source, worker)
         }
-        searchWorkerUsers[source.id, default: 0] += 1
+        searchWorkerUsers[key, default: 0] += 1
         defer {
-            if (searchWorkerUsers[source.id] ?? 0) <= 1 { searchWorkerUsers.removeValue(forKey: source.id) }
-            else { searchWorkerUsers[source.id, default: 1] -= 1 }
+            if (searchWorkerUsers[key] ?? 0) <= 1 { searchWorkerUsers.removeValue(forKey: key) }
+            else { searchWorkerUsers[key, default: 1] -= 1 }
             while searchWorkers.count > 8 {
                 guard let idle = searchWorkers.keys.first(where: { searchWorkerUsers[$0] == nil }) else { break }
                 searchWorkers.removeValue(forKey: idle)
             }
         }
-        return try await worker.search(query, source: source, page: page)
+        let saved = searchVariables[source.id]
+        let variables = saved?.0 == source ? saved?.1 : nil
+        let result = try await worker.searchPage(query, source: source, page: page, variables: variables)
+        try Task.checkCancellation()
+        guard generation == searchGeneration else { throw CancellationError() }
+        let bytes = Self.variableBytes(result.1)
+        let total = searchVariableBytes - Self.variableBytes(saved?.1 ?? [:]) + bytes
+        guard total <= 16 * 1024 * 1024 else { throw SourceError.message("本次搜索的书源变量超过 16 MB，请缩小书源范围后重新搜索。") }
+        searchVariableBytes = total
+        searchVariables[source.id] = (source, result.1)
+        return result.0
+    }
+
+    private func searchPage(_ query: String, source: BookSource, page: Int, variables: [String: String]?) async throws -> ([OnlineNovel], [String: String]) {
+        if let variables { try scriptEngine(for: source)?.restoreVariables(variables) }
+        let novels = try await search(query, source: source, page: page)
+        return (novels, try scriptEngine(for: source)?.snapshotVariables() ?? [:])
     }
 
     private func searchImpl(_ query: String, source: BookSource, page: Int) async throws -> [OnlineNovel] {
