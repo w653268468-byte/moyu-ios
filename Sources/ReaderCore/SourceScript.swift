@@ -73,7 +73,7 @@ public final class SourceScript: @unchecked Sendable {
     }
 
     /// Returns JSON, including scalar strings, so arrays and objects survive extraction.
-    public func evaluate(_ code: String, result: Any, baseURL: URL, globals: [String: String] = [:], timeout: Double = 2, document: String? = nil) throws -> Any {
+    public func evaluate(_ code: String, result: Any, baseURL: URL, globals: [String: String] = [:], timeout: Double = 2, document: String? = nil, persistentDefinitions: Bool = false) throws -> Any {
         let data = try JSONSerialization.data(withJSONObject: result, options: .fragmentsAllowed)
         guard code.utf8.count <= 512 * 1024, data.count <= 8 * 1024 * 1024 else { throw SourceError.message("脚本或输入超过大小限制。") }
         gate.lock(); defer { gate.unlock() }
@@ -88,7 +88,11 @@ public final class SourceScript: @unchecked Sendable {
         }
         do {
             try context.evaluate("globalThis.result = JSON.parse(__gavinInput, (_, v) => v && typeof v.__gavinHTML === 'string' ? new GavinElement(v.__gavinHTML) : v)")
-            let value = try context.evaluate(code)
+            // Rule-local let/const bindings must not collide on the next page or query.
+            // Direct eval preserves the script completion value. Shared libraries opt in
+            // to global definitions, while java.put/get remains explicitly persistent.
+            context.setGlobalProperty(name: "__gavinCode", value: code)
+            let value = try context.evaluate(persistentDefinitions ? code : "(function(){ return eval(__gavinCode); }).call(globalThis)")
             context.setGlobalProperty(name: "__gavinResult", value: value)
             guard let json = try context.evaluate("JSON.stringify(typeof __gavinResult === 'undefined' ? result : __gavinResult, (_, v) => v instanceof GavinElement ? {__gavinHTML: v.outerHtml()} : v)").string,
                   let data = json.data(using: .utf8), data.count <= 8 * 1024 * 1024 else { throw SourceError.message("JavaScript 未返回可提取的结果，或结果过大。") }
@@ -103,14 +107,33 @@ public final class SourceScript: @unchecked Sendable {
     private func native(_ method: String, payload: String) throws -> String {
         guard let data = payload.data(using: .utf8), let args = try JSONSerialization.jsonObject(with: data) as? [Any] else { throw SourceError.message("脚本参数无效。") }
         func string(_ index: Int) -> String { args.indices.contains(index) ? (args[index] as? String ?? String(describing: args[index])) : "" }
+        func content(_ index: Int) throws -> String {
+            guard args.indices.contains(index), !(args[index] is NSNull) else { return input }
+            if let html = (args[index] as? [String: Any])?["__gavinHTML"] as? String { return html }
+            if args[index] is [String: Any] || args[index] is [Any] { return String(decoding: try JSONSerialization.data(withJSONObject: args[index]), as: UTF8.self) }
+            return string(index)
+        }
         func document(_ text: String) throws -> RuleDocument { try RuleDocument.parse(Data(text.utf8), base: base) }
         let result: Any
-        if ["getString", "getStringList", "getElements"].contains(method), try ScriptRule.parts(string(0)) != nil {
+        if ["getString", "getStringList", "getElements", "getElement"].contains(method), try ScriptRule.parts(string(0)) != nil {
             throw SourceError.message("暂未实现 java.\(method) 内的嵌套脚本。")
         }
         switch method {
-        case "getString": result = try document(args.count > 1 ? string(1) : input).value(string(0))
-        case "getStringList": result = try document(args.count > 1 ? string(1) : input).value(string(0)).components(separatedBy: "\n").filter { !$0.isEmpty }
+        case "getString", "getStringList":
+            let value = try document(content(1)).value(string(0))
+            let values = value.components(separatedBy: "\n").filter { !$0.isEmpty }
+            let urls = args.count > 2 && (args[2] as? Bool == true)
+            let extracted: [String]
+            if urls { extracted = try values.map { try SourceClient.resolve($0, base: base).absoluteString } } else { extracted = values }
+            result = method == "getString" ? (urls ? extracted.joined(separator: "\n") : value) as Any : extracted as Any
+        case "setContent":
+            input = try content(0)
+            if args.count > 1, !(args[1] is NSNull), !string(1).isEmpty { base = try SourceClient.resolve(string(1), base: base) }
+            result = NSNull()
+        case "getElement":
+            let first = try document(input).elements(string(0)).first
+            if let first { switch first.node { case .html(let element): result = ["__gavinHTML": try element.outerHtml()]; case .json(let value): result = value } }
+            else { result = NSNull() }
         case "getElements":
             result = try document(args.count > 1 ? string(1) : input).elements(string(0)).map { node -> Any in
                 switch node.node {
@@ -153,6 +176,29 @@ public final class SourceScript: @unchecked Sendable {
             result = text
         case "md5Encode": result = Insecure.MD5.hash(data: Data(string(0).utf8)).map { String(format: "%02x", $0) }.joined()
         case "sha256Encode": result = SHA256.hash(data: Data(string(0).utf8)).map { String(format: "%02x", $0) }.joined()
+        case "hexEncodeToString": result = Data(string(0).utf8).map { String(format: "%02x", $0) }.joined()
+        case "hexDecodeToString", "hexDecodeToByteArray":
+            let value = Array(string(0).utf8)
+            guard value.count.isMultiple(of: 2), value.count <= 2 * 1024 * 1024 else { throw SourceError.message("Hex 长度无效或超过限制。") }
+            var bytes = [UInt8](); bytes.reserveCapacity(value.count / 2)
+            for i in stride(from: 0, to: value.count, by: 2) {
+                guard let byte = UInt8(String(decoding: value[i...i+1], as: UTF8.self), radix: 16) else { throw SourceError.message("Hex 包含无效字符。") }; bytes.append(byte)
+            }
+            if method == "hexDecodeToByteArray" { result = bytes.map { Int(Int8(bitPattern: $0)) } }
+            else { guard let text = String(data: Data(bytes), encoding: .utf8) else { throw SourceError.message("Hex 结果不是 UTF-8 文本。") }; result = text }
+        case "randomUUID": result = UUID().uuidString.lowercased()
+        case "getWebViewUA": result = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1"
+        case "t2s", "s2t":
+            guard let text = string(0).applyingTransform(StringTransform("Traditional-Simplified"), reverse: method == "s2t") else { throw SourceError.message("当前系统无法进行繁简转换。") }; result = text
+        case "timeFormat", "timeFormatUTC":
+            guard let milliseconds = Double(string(0)), milliseconds.isFinite, abs(milliseconds) < 8.64e15 else { throw SourceError.message("时间戳无效，应为毫秒。") }
+            let format = method == "timeFormatUTC" ? string(1) : "yyyy-MM-dd HH:mm:ss"
+            guard !format.isEmpty, format.utf8.count <= 128 else { throw SourceError.message("时间格式为空或过长。") }
+            let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = format
+            if method == "timeFormatUTC" {
+                guard let hour = Int(string(2)), (-14...14).contains(hour), let zone = TimeZone(secondsFromGMT: hour * 3600) else { throw SourceError.message("时区偏移无效。") }; formatter.timeZone = zone
+            }
+            result = formatter.string(from: Date(timeIntervalSince1970: milliseconds / 1000))
         case "resolve": result = try SourceClient.resolve(string(0), base: base).absoluteString
         case "log": result = NSNull()
         default: throw SourceError.message("尚未实现书源脚本接口 java.\(method)")
@@ -177,6 +223,7 @@ public final class SourceScript: @unchecked Sendable {
         constructor(html) { this.value = html; }
         toString() { return this.value; }
         outerHtml() { return this.value; }
+        toJSON() { return {__gavinHTML: this.value}; }
         text() { return gavinCall('text', [this.value]); }
         html() { return gavinCall('html', [this.value]); }
         attr(name) { return gavinCall('attr', [this.value, String(name)]); }

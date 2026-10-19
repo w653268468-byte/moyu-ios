@@ -135,9 +135,9 @@ public actor SourceClient {
                     let url = try Self.resolve(value, base: base)
                     let escaped = String(decoding: try JSONSerialization.data(withJSONObject: [url.absoluteString]), as: UTF8.self)
                     guard let code = try engine.evaluate("java.ajax(\(escaped)[0])", result: "", baseURL: base) as? String else { throw SourceError.message("共享脚本下载结果不是文本。") }
-                    _ = try engine.evaluate(code + "\n;void 0;", result: "", baseURL: base, timeout: 8)
+                    _ = try engine.evaluate(code + "\n;void 0;", result: "", baseURL: base, timeout: 8, persistentDefinitions: true)
                 }
-            } else { _ = try engine.evaluate(library + "\n;void 0;", result: "", baseURL: base, timeout: 8) }
+            } else { _ = try engine.evaluate(library + "\n;void 0;", result: "", baseURL: base, timeout: 8, persistentDefinitions: true) }
         }
         // A slower source may still need variables created before its HTTP request.
         // Evict only idle engines, never an engine held by an active operation.

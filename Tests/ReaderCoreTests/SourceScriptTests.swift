@@ -11,6 +11,28 @@ private final class ScriptThreadResult: @unchecked Sendable {
 
 final class SourceScriptTests: XCTestCase {
     let base = URL(string: "https://books.example/book/1")!
+    func testRulesHaveFreshLexicalBindingsWhileLibrariesAndPutRemainShared() throws {
+        let engine = try SourceScript()
+        _ = try engine.evaluate("function sharedName(value) { return value + '共享'; }; void 0", result: "", baseURL: base, persistentDefinitions: true)
+        for value in ["第一页", "第二页"] {
+            XCTAssertEqual(try engine.evaluate("let title = result; const suffix = '结果'; java.put('last', title); sharedName(title + suffix)", result: value, baseURL: base) as? String, value + "结果共享")
+        }
+        XCTAssertEqual(try engine.evaluate("java.get('last')", result: "", baseURL: base) as? String, "第二页")
+    }
+    func testCompatibleContentSelectionAndCommonUtilityHelpers() throws {
+        let engine = try SourceScript()
+        let html = "<a href='/next'>下一章</a><div id='content'>第一段<br><br>第二段</div>"
+        XCTAssertEqual(try engine.evaluate("java.getString('a@href',null,true)", result: html, baseURL: base) as? String, "https://books.example/next")
+        XCTAssertEqual(try engine.evaluate("java.setContent({data:{name:'故事'}}); java.getString('$.data.name')", result: "", baseURL: base) as? String, "故事")
+        XCTAssertEqual(try engine.evaluate("java.setContent('<p>公版</p>'); let e=java.getElement('p'); java.setContent(e); java.getString('text')", result: "", baseURL: base) as? String, "公版")
+        XCTAssertEqual(try engine.evaluate("java.timeFormatUTC(0,'yyyy-MM-dd HH:mm:ss',8)", result: "", baseURL: base) as? String, "1970-01-01 08:00:00")
+        XCTAssertEqual(try engine.evaluate("java.hexDecodeToString(java.hexEncodeToString('中文🌸'))", result: "", baseURL: base) as? String, "中文🌸")
+        XCTAssertEqual(try engine.evaluate("java.t2s('繁體小說')", result: "", baseURL: base) as? String, "繁体小说")
+        XCTAssertEqual(try engine.evaluate("java.s2t('繁体小说')", result: "", baseURL: base) as? String, "繁體小說")
+        let uuid = try engine.evaluate("java.randomUUID()", result: "", baseURL: base) as? String ?? ""
+        XCTAssertNotNil(UUID(uuidString: uuid))
+        XCTAssertThrowsError(try engine.evaluate("java.hexDecodeToString('xy')", result: "", baseURL: base))
+    }
     func testCachedEngineWorksAfterMovingToAnotherOSThread() throws {
         let engine = try SourceScript(), result = ScriptThreadResult()
         let url = base, finished = DispatchSemaphore(value: 0)
