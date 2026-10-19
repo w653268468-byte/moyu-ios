@@ -120,7 +120,7 @@ public enum HTMLRule {
     }
 
     private static func translate(_ rule: String) -> String {
-        rule.components(separatedBy: "@").map { raw in
+        RuleComposition.split(rule, operator: "@").map { raw in
             var selector = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             // Common old-style Legado selectors: class.name, id.name, tag.a and .0 indices.
             for (prefix, replacement) in [("class.", "."), ("id.", "#"), ("tag.", "")] {

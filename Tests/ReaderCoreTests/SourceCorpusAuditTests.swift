@@ -22,6 +22,8 @@ private actor SourceAuditProgress {
             result.error = error
             let lower = error.lowercased()
             if lower.contains("没有 webview 渲染器") { result.status = "requires_webview"; result.category = "runtime_environment" }
+            else if lower.contains("没有交互式书源验证窗口") { result.status = "requires_login"; result.category = "runtime_environment" }
+            else if ["域名停放", "广告跳转", "脚本跳转页", "网站返回 html 页面"].contains(where: lower.contains) { result.category = "unexpected_website_response" }
             else if ["http 403", "http 429", "验证", "验证码", "登录", "captcha"].contains(where: lower.contains) { result.category = "authentication_or_rate_limit" }
             else if ["http 404", "http 410", "域名", "dns", "超时", "超过 45", "timeout", "network", "网络", "https"].contains(where: lower.contains) { result.category = "network_or_dead_endpoint" }
             else { result.category = "rule_or_bridge" }
@@ -83,13 +85,19 @@ final class SourceCorpusAuditTests: XCTestCase {
                 group.addTask {
                     let client = SourceClient()
                     var books: [OnlineNovel] = []
-                    for keyword in ["三国演义", "凡人修仙传"] {
+                    let original = item.source.originalJSON.flatMap { $0.data(using: .utf8) }.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                    let suggested = (original?["ruleSearch"] as? [String: Any])?["checkKeyWord"] as? String
+                    var keywords: [String] = []
+                    for value in [suggested, "三国演义", "凡人修仙传"].compactMap({ $0 }) where !value.isEmpty && value.count <= 32 && !keywords.contains(value) { keywords.append(value) }
+                    for keyword in keywords {
                         await progress.update("search", keyword: keyword)
                         books = try await client.search(keyword, source: item.source)
                         if !books.isEmpty { break }
                         try await Task.sleep(for: .milliseconds(500))
                     }
-                    guard let book = books.first else { throw SourceError.message("两次搜索均没有解析到书籍") }
+                    let keyword = await progress.value.keyword
+                    let exact = books.first { $0.title.trimmingCharacters(in: .whitespacesAndNewlines) == keyword }
+                    guard let book = exact ?? books.first else { throw SourceError.message("测试关键词均没有解析到书籍") }
                     await progress.update("catalog", title: book.title)
                     try await Task.sleep(for: .milliseconds(500))
                     let novel = try await client.catalog(book, source: item.source)

@@ -11,10 +11,11 @@ public final class SourceScript: @unchecked Sendable {
         var deadline = ProcessInfo.processInfo.systemUptime + 10
         var absoluteDeadline = ProcessInfo.processInfo.systemUptime + 30
         var ioStart: Double?
+        var savedAbsoluteDeadline: Double?
         var cancelled = false
         func begin(_ seconds: Double) { lock.lock(); defer { lock.unlock() }; deadline = ProcessInfo.processInfo.systemUptime + seconds; absoluteDeadline = ProcessInfo.processInfo.systemUptime + min(30, seconds + 20); ioStart = nil; cancelled = false }
-        func beginIO() { lock.lock(); defer { lock.unlock() }; ioStart = ProcessInfo.processInfo.systemUptime }
-        func endIO() { lock.lock(); defer { lock.unlock() }; if let start = ioStart { deadline += ProcessInfo.processInfo.systemUptime - start }; ioStart = nil }
+        func beginIO(interactive: Bool = false) { lock.lock(); defer { lock.unlock() }; ioStart = ProcessInfo.processInfo.systemUptime; if interactive { savedAbsoluteDeadline = absoluteDeadline; absoluteDeadline = ioStart! + 180 } }
+        func endIO() { lock.lock(); defer { lock.unlock() }; if let start = ioStart { let elapsed = ProcessInfo.processInfo.systemUptime - start; deadline += elapsed; if let savedAbsoluteDeadline { absoluteDeadline = savedAbsoluteDeadline + elapsed } }; ioStart = nil; savedAbsoluteDeadline = nil }
         func stop() { lock.lock(); defer { lock.unlock() }; cancelled = true }
         func exceeded() -> Bool { lock.lock(); defer { lock.unlock() }; let now = ProcessInfo.processInfo.systemUptime; return cancelled || now > absoluteDeadline || (ioStart == nil && now > deadline) }
     }
@@ -26,16 +27,19 @@ public final class SourceScript: @unchecked Sendable {
     private let http: ScriptHTTP
     private let configuration: URLSessionConfiguration
     private let webRenderer: (@Sendable (URLRequest, [HTTPCookie]) async throws -> (Data, URL))?
+    private let verificationHandler: SourceVerificationHandler?
     private var input = ""
     private var base = URL(string: "https://example.com")!
     private var variables: [String: String] = [:]
     private var sourceNamespace = "unscoped"
+    private var literalSourceHeaders: [String: String] = [:]
 
-    public init(configuration: URLSessionConfiguration = .ephemeral, webRenderer: (@Sendable (URLRequest, [HTTPCookie]) async throws -> (Data, URL))? = nil) throws {
+    public init(configuration: URLSessionConfiguration = .ephemeral, webRenderer: (@Sendable (URLRequest, [HTTPCookie]) async throws -> (Data, URL))? = nil, verificationHandler: SourceVerificationHandler? = nil) throws {
         let limit = Limit()
         self.limit = limit
         self.configuration = configuration
         self.webRenderer = webRenderer
+        self.verificationHandler = verificationHandler
         self.http = ScriptHTTP(configuration: configuration)
         guard let runtime = JSRuntime(options: JSRuntimeOptions(memoryLimit: 64 * 1024 * 1024, enableStdModules: false, enableHelpers: false, interruptHandler: { limit.exceeded() }, flushJobsAfterEval: false)),
               let context = runtime.createContext() else { throw SourceError.message("无法初始化 JavaScript 引擎。") }
@@ -82,7 +86,10 @@ public final class SourceScript: @unchecked Sendable {
     public func setJSONGlobal(_ name: String, json: String) throws {
         gate.lock(); defer { gate.unlock() }
         limit.begin(2)
-        if name == "source", let object = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any], let url = object["bookSourceUrl"] as? String { sourceNamespace = url }
+        if name == "source", let object = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any], let url = object["bookSourceUrl"] as? String {
+            sourceNamespace = url
+            literalSourceHeaders = (object["header"] as? String).flatMap { try? SourceHeaders.parse($0) } ?? [:]
+        }
         context.setGlobalProperty(name: "__gavinGlobal", value: json)
         context.setGlobalProperty(name: "__gavinGlobalName", value: name)
         let value = try context.evaluate("__gavinHydrate(__gavinGlobalName, JSON.parse(__gavinGlobal))")
@@ -208,6 +215,20 @@ public final class SourceScript: @unchecked Sendable {
         case "attr": result = try SwiftSoup.parse(string(0), base.absoluteString).body()?.children().first()?.attr(string(1)) ?? ""
         case "put": try storeVariable(string(0), value: string(1)); result = string(1)
         case "get" where args.count == 1 && !(string(0).hasPrefix("https://") || string(0).hasPrefix("http://") || string(0).hasPrefix("/")): result = variables[string(0)] ?? ""
+        case "cacheFile", "importScript":
+            let url = try SourceClient.resolve(string(0), base: base)
+            let cacheKey = "remote-script:" + url.absoluteString
+            if let cached = SourceScriptCache.shared.get(sourceNamespace, cacheKey) { result = cached; break }
+            var request = URLRequest(url: url)
+            for (name, value) in literalSourceHeaders where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
+            if let login = SourceScriptCache.shared.get(sourceNamespace, "source:@loginHeader") {
+                for (name, value) in try SourceHeaders.parse(login) where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
+            }
+            limit.beginIO(); defer { limit.endIO() }
+            let text = try http.request(request, cancelled: { self.limit.exceeded() }).text
+            guard method != "importScript" || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw SourceError.message("共享脚本下载结果为空。") }
+            try SourceScriptCache.shared.put(sourceNamespace, cacheKey, text, seconds: args.count > 1 ? (args[1] as? Double ?? 0) : 0)
+            result = text
         case "ajax", "get", "post", "connect":
             var request = try SourceRequest.make(string(0), query: "", base: base)
             if method == "post" {
@@ -217,6 +238,7 @@ public final class SourceScript: @unchecked Sendable {
             }
             request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
             request.setValue(base.absoluteString, forHTTPHeaderField: "Referer")
+            for (name, value) in literalSourceHeaders where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
             if let login = SourceScriptCache.shared.get(sourceNamespace, "source:@loginHeader") {
                 for (name, value) in try SourceHeaders.parse(login) where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
             }
@@ -229,8 +251,26 @@ public final class SourceScript: @unchecked Sendable {
                 if let raw { for (name, value) in try SourceHeaders.parse(raw) where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) } }
             }
             limit.beginIO(); defer { limit.endIO() }
-            let response = try http.request(request, allowHTTPError: method != "ajax", cancelled: { self.limit.exceeded() })
+            let response = try http.request(request, allowHTTPError: method != "ajax", followRedirects: method != "get" && method != "post", cancelled: { self.limit.exceeded() })
             result = method == "ajax" ? response.text : response.json
+        case "startBrowserAwait", "getVerificationCode":
+            guard let handler = verificationHandler else { throw SourceError.message("当前运行环境没有交互式书源验证窗口，需在 App 内完成登录或验证码。") }
+            let url = try SourceClient.resolve(string(0), base: base)
+            var request = URLRequest(url: url)
+            for (name, value) in literalSourceHeaders where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
+            if let login = SourceScriptCache.shared.get(sourceNamespace, "source:@loginHeader") {
+                for (name, value) in try SourceHeaders.parse(login) where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
+            }
+            let verification = SourceVerificationRequest(request: request, title: method == "getVerificationCode" ? "输入图片验证码" : string(1), imageCode: method == "getVerificationCode", html: args.indices.contains(3) ? args[3] as? String : nil)
+            limit.beginIO(interactive: true); defer { limit.endIO() }
+            let response = try ScriptAsync.run(timeout: 180, cancelled: { self.limit.exceeded() }) { try await handler(verification) }
+            for cookie in response.cookies where SourceCookies.belongs(cookie, to: url) || SourceCookies.belongs(cookie, to: response.url) { configuration.httpCookieStorage?.setCookie(cookie) }
+            if method == "getVerificationCode" { result = response.text }
+            else if args.indices.contains(2), args[2] as? Bool == false {
+                result = ["__gavinResponse": ["body": response.text, "url": response.url.absoluteString, "status": 200, "headers": [:] as [String: String]]]
+            } else {
+                result = try http.request(request, cancelled: { self.limit.exceeded() }).json
+            }
         case "webView":
             guard let renderer = webRenderer else { throw SourceError.message("当前运行环境没有 WebView 渲染器，无法执行 java.webView。") }
             let url = string(1).isEmpty ? base : try SourceClient.resolve(string(1), base: base)
@@ -238,6 +278,7 @@ public final class SourceScript: @unchecked Sendable {
             var request = try SourceRequest.renderRequest(url: url, html: html?.isEmpty == false ? html : nil, script: args.indices.contains(2) ? args[2] as? String : nil)
             request.setValue(base.absoluteString, forHTTPHeaderField: "Referer")
             request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
+            for (name, value) in literalSourceHeaders where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
             if args.indices.contains(3), args[3] as? Bool == true { request.cachePolicy = .returnCacheDataElseLoad }
             if let login = SourceScriptCache.shared.get(sourceNamespace, "source:@loginHeader") {
                 for (name, value) in try SourceHeaders.parse(login) where name.lowercased() != "host" { request.setValue(value, forHTTPHeaderField: name) }
@@ -330,7 +371,9 @@ public final class SourceScript: @unchecked Sendable {
         body() { return this.value.body; }
         url() { return this.value.url; }
         code() { return this.value.status; }
-        headers() { return this.value.headers; }
+        headers() { const values={...this.value.headers};Object.defineProperty(values,'get',{value:name=>this.header(name),enumerable:false});return values; }
+        header(name) { const key=Object.keys(this.value.headers).find(key=>key.toLowerCase()===String(name).toLowerCase());return key?this.value.headers[key]:null; }
+        statusCode() { return this.code(); }
         toString() { return this.body(); }
     }
     class GavinElement {

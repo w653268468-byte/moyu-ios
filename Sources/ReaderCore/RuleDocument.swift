@@ -5,6 +5,17 @@ struct RuleDocument {
     enum Node { case html(Element), json(Any) }
     let node: Node
     let scope: RuleScope
+    var emptyResultDiagnostic: String? {
+        guard case .html(let element) = node else { return nil }
+        let title = (try? element.select("title").text()) ?? ""
+        let markup = (try? element.outerHtml()) ?? ""
+        if markup.contains("router.parklogic.com") || markup.contains("name=\"redirect-domain\"") || markup.contains("name='redirect-domain'") {
+            return "网站返回域名停放或广告跳转页，当前响应不是小说数据；导入规则不会恢复该网站。"
+        }
+        if title.lowercased().hasPrefix("redirecting") { return "网站返回脚本跳转页（\(title.prefix(80))），当前响应不是小说数据。" }
+        if title.lowercased().contains("just a moment") || markup.contains("cf-chl-") { return "网站返回浏览器验证页，请先完成该网站验证。" }
+        return nil
+    }
 
     static func parse(_ data: Data, base: URL, source: BookSource? = nil, globals: [String: String] = [:], script: SourceScript? = nil) throws -> RuleDocument {
         let scope = RuleScope(baseURL: base, source: source, globals: globals, script: script)
@@ -89,7 +100,11 @@ struct RuleDocument {
             }
         }
         switch node {
-        case .html(let element): return try HTMLRule.elements(rule, in: element).map { child(.html($0)) }
+        case .html(let element):
+            if rule.hasPrefix("$.") || rule.hasPrefix("$[") {
+                throw SourceError.message(emptyResultDiagnostic ?? "书源要求 JSON 数据，但网站返回 HTML 页面；请检查地址是否失效或需要验证。")
+            }
+            return try HTMLRule.elements(rule, in: element).map { child(.html($0)) }
         case .json(let value): return try JSONRule.select(rule, from: value).map { child(.json($0)) }
         }
     }
@@ -143,7 +158,9 @@ struct RuleDocument {
             return String(decoding: try JSONSerialization.data(withJSONObject: result, options: .fragmentsAllowed), as: UTF8.self)
         }
         switch node {
-        case .html(let element): return try HTMLRule.value(rule, in: element, body: body)
+        case .html(let element):
+            if rule.hasPrefix("$.") || rule.hasPrefix("$[") { throw SourceError.message(emptyResultDiagnostic ?? "书源要求 JSON 数据，但网站返回 HTML 页面；请检查地址是否失效或需要验证。") }
+            return try HTMLRule.value(rule, in: element, body: body)
         case .json(let value):
             for alternate in JSONPath.alternatives(rule) {
                 let parts = alternate.components(separatedBy: "##")

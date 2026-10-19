@@ -7,6 +7,7 @@ public actor SourceClient {
     private let cookieStorage: HTTPCookieStorage?
     private let cookieProvider: (@Sendable (URL) async -> [HTTPCookie])?
     private let webRenderer: (@Sendable (URLRequest, [HTTPCookie]) async throws -> (Data, URL))?
+    private let verificationHandler: SourceVerificationHandler?
     private var scriptEngines: [String: (BookSource, SourceScript)] = [:]
     private var scriptUsers: [String: Int] = [:]
     private var searchWorkers: [String: (BookSource, SourceClient)] = [:]
@@ -31,7 +32,7 @@ public actor SourceClient {
         }
     }
     public init(configuration: URLSessionConfiguration = .ephemeral, cookieProvider: (@Sendable (URL) async -> [HTTPCookie])? = nil,
-                webRenderer: (@Sendable (URLRequest, [HTTPCookie]) async throws -> (Data, URL))? = nil) {
+                webRenderer: (@Sendable (URLRequest, [HTTPCookie]) async throws -> (Data, URL))? = nil, verificationHandler: SourceVerificationHandler? = nil) {
         let config = configuration
         config.timeoutIntervalForRequest = 30
         config.timeoutIntervalForResource = 60
@@ -39,6 +40,7 @@ public actor SourceClient {
         cookieStorage = config.httpCookieStorage
         self.cookieProvider = cookieProvider
         self.webRenderer = webRenderer
+        self.verificationHandler = verificationHandler
         session = URLSession(configuration: config)
     }
     deinit { session.invalidateAndCancel() }
@@ -137,7 +139,7 @@ public actor SourceClient {
         let rules = [source.ruleSearch, source.ruleExplore, source.ruleBookInfo, source.ruleToc, source.ruleContent].compactMap { $0 }.flatMap(\.values) + [source.searchUrl, source.exploreUrl, source.header].compactMap { $0 }
         guard rules.contains(where: { ScriptTemplate.needsScript($0) }) || source.jsLib?.isEmpty == false else { return nil }
         if let cached = scriptEngines[source.id], cached.0 == source { return cached.1 }
-        let engine = try SourceScript(configuration: session.configuration, webRenderer: webRenderer)
+        let engine = try SourceScript(configuration: session.configuration, webRenderer: webRenderer, verificationHandler: verificationHandler)
         let json = try source.originalJSON ?? String(decoding: JSONEncoder().encode(source), as: UTF8.self)
         try engine.setJSONGlobal("source", json: json)
         if let library = source.jsLib, !library.isEmpty, let base = URL(string: source.bookSourceUrl) {
@@ -276,7 +278,7 @@ public actor SourceClient {
         if let existing = searchWorkers[key], existing.0 == source { worker = existing.1 }
         else {
             if searchWorkers.count >= 8, let idle = searchWorkers.keys.first(where: { searchWorkerUsers[$0] == nil }) { searchWorkers.removeValue(forKey: idle) }
-            worker = SourceClient(configuration: session.configuration, cookieProvider: cookieProvider, webRenderer: webRenderer)
+            worker = SourceClient(configuration: session.configuration, cookieProvider: cookieProvider, webRenderer: webRenderer, verificationHandler: verificationHandler)
             searchWorkers[key] = (source, worker)
         }
         searchWorkerUsers[key, default: 0] += 1
@@ -336,6 +338,7 @@ public actor SourceClient {
             novel.requestTemplate = navigation.template
             results.append(novel)
         }
+        if results.isEmpty, let diagnostic = doc.emptyResultDiagnostic { throw SourceError.message(diagnostic) }
         return results
     }
 
@@ -348,6 +351,10 @@ public actor SourceClient {
 
     public func explore(_ category: ExploreCategory, page: Int, source: BookSource) async throws -> [OnlineNovel] {
         retainScript(source.id); defer { releaseScript(source.id) }
+        let engine = try scriptEngine(for: source)
+        return try await withTaskCancellationHandler { try await exploreImpl(category, page: page, source: source) } onCancel: { engine?.cancel() }
+    }
+    private func exploreImpl(_ category: ExploreCategory, page: Int, source: BookSource) async throws -> [OnlineNovel] {
         guard !category.isHeading, (1...10000).contains(page), let base = URL(string: source.bookSourceUrl) else { throw SourceError.message("分类网址或页码无效。") }
         if let reason = source.incompatibility { throw SourceError.message(reason) }
         let specific = source.ruleExplore
@@ -376,13 +383,21 @@ public actor SourceClient {
 
     public func catalog(_ novel: OnlineNovel, source: BookSource) async throws -> OnlineNovel {
         retainScript(source.id); defer { releaseScript(source.id) }
+        let engine = try scriptEngine(for: source)
+        return try await withTaskCancellationHandler { try await catalogImpl(novel, source: source) } onCancel: { engine?.cancel() }
+    }
+    private func catalogImpl(_ novel: OnlineNovel, source: BookSource) async throws -> OnlineNovel {
         if let reason = source.incompatibility { throw SourceError.message(reason) }
         var result = novel
         if let variables = novel.ruleVariables { try scriptEngine(for: source)?.restoreVariables(variables) }
         try installBookContext(result, source: source)
         let detailRequest = try SourceRequest.make(novel.requestTemplate ?? novel.url.absoluteString, query: "", base: novel.url, script: scriptEngine(for: source))
-        let (detail, detailURL) = try await document(detailRequest, source: source)
-        if let initialization = source.ruleBookInfo?.initialization, !initialization.isEmpty { _ = try detail.value(initialization) }
+        let (originalDetail, detailURL) = try await document(detailRequest, source: source)
+        var detail = originalDetail
+        if let initialization = source.ruleBookInfo?.initialization, !initialization.isEmpty {
+            let initialized = try detail.value(initialization)
+            detail = try RuleDocument.parse(Data(initialized.utf8), base: detailURL, source: source, script: scriptEngine(for: source))
+        }
         if let info = source.ruleBookInfo {
             let title = try detail.optionalValue(info.name)
             if !title.isEmpty { result.title = title }
@@ -423,6 +438,7 @@ public actor SourceClient {
             try await Task.sleep(for: .milliseconds(350))
         }
         guard !chapters.isEmpty else { throw SourceError.message("没有解析到章节。请检查目录规则、网站结构或访问限制。") }
+        for index in chapters.indices where index + 1 < chapters.count { chapters[index].nextChapterURL = chapters[index + 1].url }
         result.chapters = chapters
         result.chapterIndex = min(max(0, novel.chapterIndex), chapters.count - 1)
         result.ruleVariables = try scriptEngine(for: source)?.snapshotVariables()
@@ -431,6 +447,10 @@ public actor SourceClient {
 
     public func chapter(_ chapter: OnlineChapter, source: BookSource) async throws -> String {
         retainScript(source.id); defer { releaseScript(source.id) }
+        let engine = try scriptEngine(for: source)
+        return try await withTaskCancellationHandler { try await chapterImpl(chapter, source: source) } onCancel: { engine?.cancel() }
+    }
+    private func chapterImpl(_ chapter: OnlineChapter, source: BookSource) async throws -> String {
         if let variables = chapter.ruleVariables { try scriptEngine(for: source)?.restoreVariables(variables) }
         if let engine = try scriptEngine(for: source) {
             let savedBook = engine.variable("__gavin:book")
@@ -456,7 +476,11 @@ public actor SourceClient {
             texts.append(text)
             let next = try doc.value(rule.nextContentUrl)
             if next.isEmpty { break }
-            nextRequest = try SourceRequest.make(next, query: "", base: pageURL, script: scriptEngine(for: source))
+            let candidate = try SourceRequest.make(next, query: "", base: pageURL, script: scriptEngine(for: source))
+            // A source's “next” selector may point to the next chapter rather than
+            // the next page of this chapter. Catalog boundaries take precedence.
+            if let boundary = chapter.nextChapterURL, boundary != chapter.url, candidate.url == boundary { break }
+            nextRequest = candidate
             try await Task.sleep(for: .milliseconds(350))
         }
         return texts.joined(separator: "\n\n")

@@ -127,7 +127,15 @@ enum SourceRSA {
                 if overhead == 0 { chunk = Data(repeating: 0, count: block-chunk.count) + chunk }
                 result = SecKeyCreateEncryptedData(rsaKey, crypto, chunk as CFData, &error) as Data?
             } else if !encrypting && !publicKey {
-                result = SecKeyCreateDecryptedData(rsaKey, crypto, chunk as CFData, &error) as Data?
+                if padding == "PKCS1PADDING", let raw = SecKeyCreateDecryptedData(rsaKey, .rsaEncryptionRaw, chunk as CFData, &error) as Data? {
+                    // Validate the encoded message explicitly: some system providers use
+                    // implicit rejection for invalid PKCS#1 v1.5 ciphertexts.
+                    let bytes = [UInt8](raw)
+                    guard bytes.count == block, bytes[0] == 0, bytes[1] == 2,
+                          let end = bytes.dropFirst(2).firstIndex(of: 0), end >= 10 else { throw SourceError.message("RSA 私钥解密填充无效，密钥或密文不匹配。") }
+                    result = Data(bytes[(end+1)...])
+                } else if padding == "PKCS1PADDING" { result = nil }
+                else { result = SecKeyCreateDecryptedData(rsaKey, crypto, chunk as CFData, &error) as Data? }
             } else {
                 guard overhead == 0 || padding == "PKCS1PADDING" else { throw SourceError.message("OAEP 仅支持公钥加密、私钥解密。") }
                 if encrypting {

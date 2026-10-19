@@ -9,15 +9,15 @@ enum ScriptAsync {
         func finish(_ value: Result<T, Error>) { lock.lock(); result = value; lock.unlock(); signal.signal() }
         func get() throws -> T { lock.lock(); defer { lock.unlock() }; return try result!.get() }
     }
-    static func run<T: Sendable>(cancelled: () -> Bool, operation: @escaping @Sendable () async throws -> T) throws -> T {
+    static func run<T: Sendable>(timeout: Double = 30, cancelled: () -> Bool, operation: @escaping @Sendable () async throws -> T) throws -> T {
         guard !Thread.isMainThread else { throw SourceError.message("动态网页脚本需要在后台书源任务执行。") }
         let box = Box<T>()
         let task = Task.detached { do { box.finish(.success(try await operation())) } catch { box.finish(.failure(error)) } }
         defer { task.cancel() }
-        let deadline = ProcessInfo.processInfo.systemUptime + 30
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
         while box.signal.wait(timeout: .now() + .milliseconds(50)) == .timedOut {
             if cancelled() { throw CancellationError() }
-            if ProcessInfo.processInfo.systemUptime >= deadline { throw SourceError.message("动态网页脚本等待超过 30 秒。") }
+            if ProcessInfo.processInfo.systemUptime >= deadline { throw SourceError.message("书源网页操作等待超过 \(Int(timeout)) 秒。") }
         }
         return try box.get()
     }

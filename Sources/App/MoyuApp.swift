@@ -23,6 +23,7 @@ struct MoyuApp: App {
     @State private var showReaderPreferences = false
     @State private var showReadingPreview = false
     @State private var showSourceImportPreview = false
+    @State private var verificationCheckResult = "running"
 
     var body: some Scene {
         WindowGroup {
@@ -33,6 +34,13 @@ struct MoyuApp: App {
                 AppSettingsView().tabItem { Label("设置", systemImage: "gearshape") }.tag(3)
             }
                 .overlay(alignment: .bottom) { SpeechMiniPlayer() }
+                .overlay(alignment: .top) {
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--ui-verification-check") {
+                        Text(verificationCheckResult).accessibilityIdentifier("source.verification.result")
+                    }
+                    #endif
+                }
                 .environmentObject(library)
                 .environmentObject(online)
                 .onAppear {
@@ -47,6 +55,9 @@ struct MoyuApp: App {
                     }
                     if ProcessInfo.processInfo.arguments.contains("--ui-cookie-check") {
                         Task { await BrowserSessions.checkCookieSharing(client: online.client) }
+                    }
+                    if ProcessInfo.processInfo.arguments.contains("--ui-verification-check") {
+                        Task { verificationCheckResult = await SourceVerificationCheck.run() }
                     }
                     if ProcessInfo.processInfo.arguments.contains("--ui-import-check") {
                         Task { await SourceImportCheck.run() }

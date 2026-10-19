@@ -16,7 +16,11 @@ final class ScriptHTTP {
         var response: HTTPURLResponse?
         var outcome: Result<Response, Error>?
         let allowHTTPError: Bool
-        init(allowHTTPError: Bool) { self.allowHTTPError = allowHTTPError; super.init() }
+        let followRedirects: Bool
+        init(allowHTTPError: Bool, followRedirects: Bool) { self.allowHTTPError = allowHTTPError; self.followRedirects = followRedirects; super.init() }
+        func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+            completionHandler(followRedirects ? request : nil)
+        }
         func finish(_ value: Result<Response, Error>) {
             lock.lock(); defer { lock.unlock() }
             guard outcome == nil else { return }
@@ -49,9 +53,9 @@ final class ScriptHTTP {
     }
     private let configuration: URLSessionConfiguration
     init(configuration: URLSessionConfiguration) { self.configuration = configuration }
-    func request(_ request: URLRequest, allowHTTPError: Bool = false, cancelled: () -> Bool) throws -> Response {
+    func request(_ request: URLRequest, allowHTTPError: Bool = false, followRedirects: Bool = true, cancelled: () -> Bool) throws -> Response {
         guard !SourceRequest.requiresWebView(request) else { throw SourceError.message("同步 ajax 不能执行 WebView 请求，请在书源请求地址中设置 webView 选项。") }
-        let collector = Collector(allowHTTPError: allowHTTPError)
+        let collector = Collector(allowHTTPError: allowHTTPError, followRedirects: followRedirects)
         let config = configuration.copy() as! URLSessionConfiguration
         config.timeoutIntervalForRequest = 10; config.timeoutIntervalForResource = 15
         let session = URLSession(configuration: config, delegate: collector, delegateQueue: nil)

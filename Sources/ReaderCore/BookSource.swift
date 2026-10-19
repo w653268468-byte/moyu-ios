@@ -154,6 +154,7 @@ public struct OnlineChapter: Codable, Identifiable, Equatable, Sendable {
     public var url: URL
     public var ruleVariables: [String: String]?
     public var requestTemplate: String?
+    public var nextChapterURL: URL? = nil
 }
 
 public struct OnlineNovel: Codable, Identifiable, Equatable, Sendable {

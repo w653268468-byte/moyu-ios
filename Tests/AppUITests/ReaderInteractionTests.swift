@@ -1,6 +1,28 @@
 import XCTest
 
 final class ReaderInteractionTests: XCTestCase {
+    @MainActor func testSourceRequestedLoginAndImageCodeResumeScript() {
+        let app = application(); app.launchArguments = ["--ui-verification-check"]; app.launch()
+        let done = app.buttons["source.verification.done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 15))
+        expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: done); waitForExpectations(timeout: 15)
+        done.tap()
+        let code = app.textFields["source.verification.code"]
+        XCTAssertTrue(code.waitForExistence(timeout: 15)); code.tap(); code.typeText("7319")
+        expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: done); waitForExpectations(timeout: 15)
+        done.tap()
+        let result = app.staticTexts["source.verification.result"]
+        expectation(for: NSPredicate(format: "label == %@", "passed"), evaluatedWith: result); waitForExpectations(timeout: 15)
+        app.terminate()
+    }
+    @MainActor func testCancellingSourceVerificationReturnsToApp() {
+        let app = application(); app.launchArguments = ["--ui-verification-check"]; app.launch()
+        let cancel = app.buttons["source.verification.cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15)); cancel.tap()
+        let result = app.staticTexts["source.verification.result"]
+        expectation(for: NSPredicate(format: "label == %@", "cancelled"), evaluatedWith: result); waitForExpectations(timeout: 10)
+        app.terminate()
+    }
     override func setUp() { super.setUp(); continueAfterFailure = false }
     @MainActor private func application() -> XCUIApplication {
         let app = XCUIApplication()

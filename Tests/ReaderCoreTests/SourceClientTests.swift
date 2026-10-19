@@ -61,7 +61,7 @@ private final class FixtureProtocol: URLProtocol {
             "/toc/1": "<div id='list'><a href='/chapter/1'>第一章</a></div><a class='next' href='/toc/2'>下一页</a>",
             "/toc/2": "<div id='list'><a href='/chapter/1'>第一章</a><a href='/chapter/2'>第二章</a></div>",
             "/chapter/1": "<div id='content'>风从海边来。<br>她打开了信。</div><a class='next' href='/chapter/1_2'>下一页</a>",
-            "/chapter/1_2": "<div id='content'><p>故事还没有结束。</p></div>",
+            "/chapter/1_2": "<div id='content'><p>故事还没有结束。</p></div><a class='next' href='/chapter/2'>下一章</a>",
             "/chapter/2": "<div id='content'>第二天，天晴了。</div>"
         ]
         guard let url = request.url else { return }
@@ -87,6 +87,16 @@ private actor SearchOutcomeRecorder {
 }
 
 final class SourceClientTests: XCTestCase {
+    func testBookInitializationReplacesDocumentBeforeMetadataAndCatalog() async throws {
+        var source = try source()
+        source.ruleBookInfo?.initialization = "@js:const value=JSON.parse(result);({name:value.name+'初始化',toc:value.toc})"
+        source.ruleBookInfo?.name = "$.name"; source.ruleBookInfo?.author = nil; source.ruleBookInfo?.intro = nil
+        source.ruleBookInfo?.tocUrl = "$.toc"
+        source.ruleToc?.chapterList = "$.chapters[*]"; source.ruleToc?.chapterName = "$.title"; source.ruleToc?.chapterUrl = "$.url"; source.ruleToc?.nextTocUrl = nil
+        let book = OnlineNovel(title: "Before", url: URL(string: "https://fixture.example/api/book")!, sourceID: source.id)
+        let parsed = try await makeClient().catalog(book, source: source)
+        XCTAssertEqual(parsed.title, "三国初始化"); XCTAssertEqual(parsed.chapters.count, 1)
+    }
     func testScriptAjaxDoesNotBlockOtherSourceActors() async throws {
         ScriptAjaxBarrier.shared.reset(); defer { ScriptAjaxBarrier.shared.release() }
         var slow = try source(), fast = try source()
@@ -328,6 +338,9 @@ final class SourceClientTests: XCTestCase {
         let content = try await client.chapter(novel.chapters[0], source: source)
         XCTAssertTrue(content.contains("风从海边来。\n\n她打开了信。"))
         XCTAssertTrue(content.contains("故事还没有结束。"))
+        XCTAssertFalse(content.contains("第二天，天晴了。"), "Next chapter must not be appended as another content page")
+        let saved = try JSONDecoder().decode(OnlineNovel.self, from: JSONEncoder().encode(novel))
+        XCTAssertEqual(saved.chapters[0].nextChapterURL, novel.chapters[1].url)
     }
 
     func testHTTPFailureIsVisible() async throws {
@@ -367,6 +380,41 @@ final class SourceClientTests: XCTestCase {
         XCTAssertEqual(try script.evaluate("java.get('/missing',{}).code()", result: "", baseURL: url) as? Int, 404)
         XCTAssertEqual(try script.evaluate("java.connect('/missing').code()", result: "", baseURL: url) as? Int, 404)
         XCTAssertEqual(try script.evaluate("java.get('/js-search','{\"X-Reader\":\"Gavin\"}').code()", result: "", baseURL: url) as? Int, 200)
+    }
+    func testCachedExternalScriptAndLiteralSourceHeaders() throws {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [FixtureProtocol.self]
+        let script = try SourceScript(configuration: config)
+        let namespace = "https://cache-file-" + UUID().uuidString + ".example"
+        let object: [String: Any] = ["bookSourceUrl": namespace, "header": "{'X-Reader':'Gavin'}"]
+        try script.setJSONGlobal("source", json: String(decoding: JSONSerialization.data(withJSONObject: object), as: UTF8.self))
+        defer { SourceScriptCache.shared.delete(namespace, "remote-script:https://fixture.example/js-search") }
+        let result = try script.evaluate("const first=java.importScript('https://fixture.example/js-search'); [first.includes('book'),java.cacheFile('https://fixture.example/js-search')===first,java.get('https://fixture.example/js-search',null).code()]", result: "", baseURL: URL(string: "https://fixture.example")!) as? [Any]
+        XCTAssertEqual(result?[0] as? Bool, true); XCTAssertEqual(result?[1] as? Bool, true); XCTAssertEqual(result?[2] as? Int, 200)
+    }
+    func testInteractiveVerificationRefetchAndResponseBody() async throws {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [FixtureProtocol.self]
+        let script = try SourceScript(configuration: config, verificationHandler: { input in
+            XCTAssertEqual(input.request.url?.host, "fixture.example")
+            return SourceVerificationResult(text: input.imageCode ? "7319" : "<p>Verified page</p>", url: URL(string: "https://fixture.example/api/chapter")!, cookies: [])
+        })
+        let text = try await Task.detached {
+            try script.evaluate("[java.startBrowserAwait('/login','Login',false).body(),JSON.parse(java.startBrowserAwait('/api/chapter','Login').body()).text,java.getVerificationCode('/code')].join('|')", result: "", baseURL: URL(string: "https://fixture.example")!) as? String
+        }.value
+        XCTAssertEqual(text, "<p>Verified page</p>|滚滚长江东逝水。|7319")
+    }
+    func testChapterCancellationStopsPendingInteractiveVerification() async throws {
+        let entered = expectation(description: "Verification handler entered")
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [FixtureProtocol.self]
+        let client = SourceClient(configuration: config, verificationHandler: { _ in
+            entered.fulfill(); try await Task.sleep(for: .seconds(20)); throw CancellationError()
+        })
+        var source = try source(); source.ruleContent?.content = "@js:java.getVerificationCode('/code')"
+        let selected = source
+        let task = Task { try await client.chapter(OnlineChapter(title: "Chapter", url: URL(string: "https://fixture.example/chapter/1")!), source: selected) }
+        await fulfillment(of: [entered], timeout: 5)
+        let start = ProcessInfo.processInfo.systemUptime; task.cancel()
+        do { _ = try await task.value; XCTFail("Cancelled chapter succeeded") } catch { }
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - start, 2)
     }
     func testSourceAndRequestAuthenticationHeadersArePreserved() async throws {
         var source = try source()

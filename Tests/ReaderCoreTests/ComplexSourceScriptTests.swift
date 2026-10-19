@@ -3,6 +3,11 @@ import XCTest
 @testable import ReaderCore
 
 final class ComplexSourceScriptTests: XCTestCase {
+    func testParkedDomainAndHTMLInsteadOfJSONHaveWebsiteDiagnostics() throws {
+        let doc = try RuleDocument.parse(Data("<title>Redirecting</title><meta name='redirect-domain' content='example.com'><script>window.location.replace('https://ads.example')</script>".utf8), base: URL(string: "https://fixture.example")!)
+        XCTAssertTrue(doc.emptyResultDiagnostic?.contains("域名停放") == true)
+        XCTAssertThrowsError(try doc.elements("$.data[*]")) { XCTAssertTrue($0.localizedDescription.contains("不是小说数据")) }
+    }
     func testWebViewBridgePreservesHTMLScriptURLAndCancellation() async throws {
         let engine = try SourceScript(webRenderer: { request, _ in
             XCTAssertTrue(SourceRequest.requiresWebView(request))

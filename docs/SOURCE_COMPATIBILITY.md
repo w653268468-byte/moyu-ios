@@ -2,9 +2,17 @@
 
 当前任务仅处理书源兼容和真实搜索→目录→正文；书架、排版、听书等其他功能暂停迭代。
 
+第 49 次真实集合抽样已生成报告：32 个域名中 1 个通过完整链路，2 个需本人登录，1 个需 WebView，其余有网络、网站响应和兼容问题；不能把审计任务绿色当作 32 个源均可用。本地复核确认 leeyegy 返回域名广告跳转、kuaishu5 返回 ParkLogic 页面，增加网站响应诊断。qsyz 搜索同时返回衍生作品与原作，审计优先选同名书，并可先用作者提供的 checkKeyWord。
+
+针对真实神话之后书源，正文“下一”会继续跳到下一章：目录现在保存下一章边界，正文分页只合并本章页面，不把后续章节不断拼入。新增边界持久化回归。详情 init 的返回结果现在成为后续元数据与目录解析输入，修正仅执行脚本却丢弃转换结果的问题。第 48 次检查发现 CSS 属性中的 @ 在二次转换被拆分，及系统 RSA PKCS1 解密的错误密钥未可靠拒绝，已分别修正分隔和增加原始块填充校验；待新检查确认。
+
 审计集合也包含 52liulian/yuanc 的 books.json 所列 yckceo 和 tickmao/Novel 地址。集合介绍中的“实时可用”等描述不作为验证结果；下载、解析与真实网站链路分别记录。
 
-java.webView 桥接已接入现有 WebKit 渲染器，支持提供 HTML、基准 URL、提取脚本和缓存优先选项，并共享 Cookie 与源登录头。后台脚本等待可取消，主线程不得同步等待；未配备 WebKit 的命令行审计标为 requires_webview，不能计入通过。原生 Cookie 检查同时验证动态请求选项和 java.webView 调用。交互式 startBrowserAwait 与图片验证码输入接口尚未接入，不能视为这些接口已实现。以上新增检查尚待云端执行。
+java.webView 桥接已接入现有 WebKit 渲染器，支持提供 HTML、基准 URL、提取脚本和缓存优先选项，并共享 Cookie 与源登录头。后台脚本等待可取消，主线程不得同步等待；未配备 WebKit 的命令行审计标为 requires_webview，不能计入通过。原生 Cookie 检查同时验证动态请求选项和 java.webView 调用。
+
+交互式 startBrowserAwait 与 getVerificationCode 已接入原生验证窗口：显示网站或验证码，完成后把 Cookie、页面或输入结果回传原任务；支持取消与 180 秒等待上限，同时出现的验证窗口串行展示。默认验证后重新请求原地址，refetchAfterSuccess=false 返回当前页面。补充单元检查及真实按钮输入/取消的 XCUITest；这些新增 Swift/iOS 检查仍待云端执行，未标记为已通过。命令行无交互窗口时记录 requires_login。
+
+共享脚本 importScript/cacheFile 支持 HTTP/HTTPS 下载与按源持久缓存、有效期、响应大小限制；不自动执行脚本文本。源静态头也应用到脚本网络请求。get/post 保留 3xx 响应，connect/ajax 跟随重定向；响应支持 header、headers().get 和 statusCode。下载私有本地路径、任意 Android 类、字体反混淆等仍需按真实案例补齐，不能宣称任意 Java API 都可运行。
 
 HTTP 兼容：get/post/connect 可读取非 2xx 响应的状态与正文；ajax 保留明确 HTTP 失败。书源显式配置的 Authorization/Cookie 和请求选项头按源请求应用，Host 不允许覆盖，头部值经过换行检查；source 登录头保存在本机钥匙串并复用到该源后续请求。采样任务使用与 App 相同的浏览器 User-Agent 和 60 秒下载预算，超过 20 MB 的合集单独记录为导入限制。
 
