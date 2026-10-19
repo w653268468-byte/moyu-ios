@@ -101,8 +101,13 @@ struct SourceHubView: View {
     @AppStorage("reader.search.saveHistory") private var saveHistory = true
     @AppStorage("reader.search.scope") private var scopeRaw = "全部书源"
     @AppStorage("reader.search.customIDs") private var customIDs = "[]"
-    @State private var query = "", selectedSource = "", directURL = ""
-    @State private var showImport = false, showSources = false, showOptions = false, clearHistory = false
+    @State private var query = ""
+    @State private var selectedSource = ""
+    @State private var directURL = ""
+    @State private var showImport = false
+    @State private var showSources = false
+    @State private var showOptions = false
+    @State private var clearHistory = false
     @State private var selection: OnlineNovel?
     @State private var selectedGroup: BookSearchGroup?
     @State private var available: [BookSource] = []
@@ -326,7 +331,8 @@ private struct SearchSourcePicker: View {
     let onApply: (String, String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var mode: String
-    @State private var group = "", filter = ""
+    @State private var group = ""
+    @State private var filter = ""
     @State private var selected: Set<String>
     init(sources: [BookSource], scope: String, customIDs: String, onApply: @escaping (String, String) -> Void) {
         self.sources = sources; self.onApply = onApply

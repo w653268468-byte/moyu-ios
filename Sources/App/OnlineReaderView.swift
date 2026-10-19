@@ -22,7 +22,8 @@ struct OnlineReaderView: View {
     @State private var openAtEnd = false
     @State private var pendingOffset: Int?
     @State private var positionRevision = UUID()
-    @State private var contentsTab = "目录", chapterFilter = ""
+    @State private var contentsTab = "目录"
+    @State private var chapterFilter = ""
     @State private var editingMark: OnlineReadingMark?
     @ObservedObject private var speech = ReaderSpeech.shared
     private var speechKey: String { "online:" + novel.id }

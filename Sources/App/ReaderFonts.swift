@@ -35,6 +35,11 @@ final class ReaderFontStore: ObservableObject {
         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard size > 0, size <= 40 * 1024 * 1024 else { throw SourceError.message("单个字体需在 40 MB 以内。") }
         guard let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor], !descriptors.isEmpty, descriptors.count <= 32 else { throw SourceError.message("无法读取字体，或字体集合超过 32 个字形系列。") }
+        let importedNames = descriptors.map { CTFontCopyPostScriptName(CTFontCreateWithFontDescriptor($0, 20, nil)) as String }
+        if importedNames.allSatisfy({ name in faces.contains(where: { $0.name == name }) }) {
+            message = "同名字体已导入，可直接选择；如需替换，请先删除旧字体文件。"
+            return
+        }
         let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
         let data = try Data(contentsOf: url, options: .mappedIfSafe)
         let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
