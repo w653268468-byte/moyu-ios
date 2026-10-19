@@ -3,9 +3,23 @@ import XCTest
 @testable import ReaderCore
 
 private final class FixtureProtocol: URLProtocol {
+    private var pending: DispatchWorkItem?
     override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "fixture.example" }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
+        if let url = request.url, url.path == "/lease-search" {
+            let slow = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "slow" })?.value == "1"
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type":"text/html; charset=utf-8"])!
+                self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+                self.client?.urlProtocol(self, didLoad: Data("<div class='book'><a href='/book/1'>故事</a></div>".utf8))
+                self.client?.urlProtocolDidFinishLoading(self)
+            }
+            pending = work
+            DispatchQueue.global().asyncAfter(deadline: .now() + (slow ? 1 : 0.005), execute: work)
+            return
+        }
         if request.url?.path == "/timeout" {
             client?.urlProtocol(self, didFailWithError: URLError(.timedOut)); return
         }
@@ -43,10 +57,35 @@ private final class FixtureProtocol: URLProtocol {
         client?.urlProtocol(self, didLoad: Data((body ?? "Not found").utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
-    override func stopLoading() {}
+    override func stopLoading() { pending?.cancel() }
+}
+
+private actor SearchOutcomeRecorder {
+    var values: [SourceSearchOutcome] = []
+    func append(_ value: SourceSearchOutcome) { values.append(value) }
 }
 
 final class SourceClientTests: XCTestCase {
+    func testActiveScriptVariablesSurviveOtherSourcesFinishingFirst() async throws {
+        let client = makeClient(), recorder = SearchOutcomeRecorder()
+        let jobs = try (0..<14).map { index -> SourceSearchRequest in
+            var source = try source()
+            source.bookSourceName = "Pinned\(index)"
+            source.bookSourceUrl = "https://fixture.example/source\(index)"
+            source.searchUrl = "@js:java.put('lease',source.bookSourceName); '/lease-search?slow='+(source.bookSourceName==='Pinned0'?'1':'0')"
+            source.ruleSearch?.name = "a@text@js:result + java.get('lease')"
+            return SourceSearchRequest(source: source, page: 1)
+        }
+        try await SourceSearch.run(requests: jobs, concurrency: 3, search: { source, page in
+            try await client.search("故事", source: source, page: page)
+        }, onResult: { outcome in await recorder.append(outcome); return true })
+        let outcomes = await recorder.values
+        XCTAssertEqual(outcomes.count, jobs.count)
+        for outcome in outcomes {
+            XCTAssertNil(outcome.failure)
+            XCTAssertEqual(outcome.novels.first?.title, "故事" + outcome.sourceName)
+        }
+    }
     func testSearchPaginationReadsDifferentPagesAndStopsOnEmpty() async throws {
         var source = try source(); source.searchUrl = "/paged-search?page={{page}}&q={{key}}"
         let client = makeClient()

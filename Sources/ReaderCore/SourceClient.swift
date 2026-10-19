@@ -8,6 +8,17 @@ public actor SourceClient {
     private let cookieProvider: (@Sendable (URL) async -> [HTTPCookie])?
     private let webRenderer: (@Sendable (URLRequest, [HTTPCookie]) async throws -> (Data, URL))?
     private var scriptEngines: [String: (BookSource, SourceScript)] = [:]
+    private var scriptUsers: [String: Int] = [:]
+
+    private func retainScript(_ id: String) { scriptUsers[id, default: 0] += 1 }
+    private func releaseScript(_ id: String) {
+        if (scriptUsers[id] ?? 0) <= 1 { scriptUsers.removeValue(forKey: id) }
+        else { scriptUsers[id, default: 1] -= 1 }
+        while scriptEngines.count > 4 {
+            guard let idle = scriptEngines.keys.first(where: { scriptUsers[$0] == nil }) else { break }
+            scriptEngines.removeValue(forKey: idle)
+        }
+    }
     public init(configuration: URLSessionConfiguration = .ephemeral, cookieProvider: (@Sendable (URL) async -> [HTTPCookie])? = nil,
                 webRenderer: (@Sendable (URLRequest, [HTTPCookie]) async throws -> (Data, URL))? = nil) {
         let config = configuration
@@ -39,6 +50,8 @@ public actor SourceClient {
     }
 
     private func fetch(_ original: URLRequest, source: BookSource? = nil, limit: Int = 8 * 1024 * 1024) async throws -> (Data, URL) {
+        if let source { retainScript(source.id) }
+        defer { if let source { releaseScript(source.id) } }
         guard let url = original.url else { throw SourceError.message("请求地址为空。") }
         _ = try Self.resolve(url.absoluteString, base: url)
         if let cookieProvider {
@@ -122,7 +135,9 @@ public actor SourceClient {
                 }
             } else { _ = try engine.evaluate(library + "\n;void 0;", result: "", baseURL: base, timeout: 8) }
         }
-        if scriptEngines.count >= 4, let first = scriptEngines.keys.first { scriptEngines.removeValue(forKey: first) }
+        // A slower source may still need variables created before its HTTP request.
+        // Evict only idle engines, never an engine held by an active operation.
+        if scriptEngines.count >= 4, let idle = scriptEngines.keys.first(where: { scriptUsers[$0] == nil }) { scriptEngines.removeValue(forKey: idle) }
         scriptEngines[source.id] = (source, engine)
         return engine
     }
@@ -169,6 +184,7 @@ public actor SourceClient {
     }
 
     public func search(_ query: String, source: BookSource, page: Int = 1) async throws -> [OnlineNovel] {
+        retainScript(source.id); defer { releaseScript(source.id) }
         guard (1...10000).contains(page) else { throw SourceError.message("搜索页码无效。") }
         if let reason = source.incompatibility { throw SourceError.message(reason) }
         guard let template = source.searchUrl, !template.isEmpty, let rule = source.ruleSearch,
@@ -205,6 +221,7 @@ public actor SourceClient {
     }
 
     public func explore(_ category: ExploreCategory, page: Int, source: BookSource) async throws -> [OnlineNovel] {
+        retainScript(source.id); defer { releaseScript(source.id) }
         guard !category.isHeading, (1...10000).contains(page), let base = URL(string: source.bookSourceUrl) else { throw SourceError.message("分类网址或页码无效。") }
         if let reason = source.incompatibility { throw SourceError.message(reason) }
         let specific = source.ruleExplore
@@ -228,6 +245,7 @@ public actor SourceClient {
     }
 
     public func catalog(_ novel: OnlineNovel, source: BookSource) async throws -> OnlineNovel {
+        retainScript(source.id); defer { releaseScript(source.id) }
         if let reason = source.incompatibility { throw SourceError.message(reason) }
         var result = novel
         if let variables = novel.ruleVariables { try scriptEngine(for: source)?.restoreVariables(variables) }
@@ -275,6 +293,7 @@ public actor SourceClient {
     }
 
     public func chapter(_ chapter: OnlineChapter, source: BookSource) async throws -> String {
+        retainScript(source.id); defer { releaseScript(source.id) }
         if let variables = chapter.ruleVariables { try scriptEngine(for: source)?.restoreVariables(variables) }
         guard let rule = source.ruleContent, let content = rule.content else { throw SourceError.message("缺少正文规则。") }
         var nextRequest = try SourceRequest.make(chapter.requestTemplate ?? chapter.url.absoluteString, query: "", base: chapter.url, script: scriptEngine(for: source))
