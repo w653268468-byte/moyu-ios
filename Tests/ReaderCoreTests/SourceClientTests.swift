@@ -371,7 +371,7 @@ final class SourceClientTests: XCTestCase {
     func testSourceAndRequestAuthenticationHeadersArePreserved() async throws {
         var source = try source()
         source.searchUrl = "/auth-search"
-        source.header = #"{"Authorization":"Bearer fixture","Cookie":"sid=fixture"}"#
+        source.header = #"{'Authorization':'Bearer fixture','Cookie':'sid=fixture'}"#
         let first = try await makeClient().search("故事", source: source)
         XCTAssertEqual(first.first?.title, "山海来信")
         source.header = nil

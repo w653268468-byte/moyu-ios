@@ -1,7 +1,7 @@
 """Download public rule collections for opt-in, bounded real-site checks."""
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-import hashlib, json, re, time, urllib.request
+import ast, hashlib, json, re, time, urllib.request
 
 ROOT=Path(__file__).resolve().parents[1]
 OUTPUT=ROOT/'.build/source-audit'
@@ -42,9 +42,22 @@ def main():
             if not isinstance(url,str) or not url.startswith(('http://','https://')) or url in seen:continue
             if not source.get('searchUrl') or not isinstance(source.get('ruleSearch'),dict):continue
             if source.get('bookSourceType',0) not in [0,None]:continue
+            if source.get('enabled') is False:continue
             seen.add(url)
+            personal_login=False
+            header=source.get('header')
+            if isinstance(header,str) and header.lstrip().startswith('{'):
+                try:
+                    try: values=json.loads(header)
+                    except ValueError:values=ast.literal_eval(header)
+                    if isinstance(values,dict):
+                        for name,value in list(values.items()):
+                            if str(name).lower()=='cookie' and re.search(r'phpsessid|session|jieqiuserinfo|usertoken',str(value),re.I):
+                                personal_login=True;del values[name]
+                        source={**source,'header':json.dumps(values,ensure_ascii=False)}
+                except (ValueError,SyntaxError):pass
             rules=json.dumps({k:v for k,v in source.items() if k.startswith('rule') or k in ['searchUrl','jsLib','header']},ensure_ascii=False)
-            sources.append({'collection':collection['url'],'scripted':bool(re.search(r'@js:|<js>|\{\{(?!\s*(?:key|page)\s*\}\})',rules,re.I)),'source':source})
+            sources.append({'collection':collection['url'],'scripted':bool(re.search(r'@js:|<js>|\{\{(?!\s*(?:key|page)\s*\}\})',rules,re.I)),'requiresPersonalLogin':personal_login,'source':source})
     assert sources,'No public collections were downloaded'
     (OUTPUT/'corpus.json').write_text(json.dumps(sources,ensure_ascii=False),encoding='utf-8')
     provenance=[{k:v for k,v in collection.items() if k!='rows'} for collection in collections]

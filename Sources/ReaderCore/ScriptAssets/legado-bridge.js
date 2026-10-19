@@ -109,7 +109,44 @@
     function JavaString(value,charset='UTF-8') { return new String(Array.isArray(value)||ArrayBuffer.isView(value)?gavinCall('decodeBytes',[Array.from(value),charset]):String(value??'')); }
     if(!String.prototype.getBytes)Object.defineProperty(String.prototype,'getBytes',{value:function(charset='UTF-8'){return gavinCall('encodeBytes',[String(this),charset]);}});
     const numeric={parseInt:value=>parseInt(value,10),parseLong:value=>parseInt(value,10),valueOf:value=>Number(value)};
+    function asymmetric(algorithm,signing=false) {
+        const keys={};
+        function normalized(value) {return Array.isArray(value)||ArrayBuffer.isView(value)?Array.from(value):value&&Array.isArray(value.words)?signed(value):String(value);}
+        function get(usePublic) {
+            if(usePublic&&!keys.publicKey&&keys.privateKey)keys.publicKey=gavinCall('rsaPublicKey',[keys.privateKey]);
+            if(!keys.publicKey&&!keys.privateKey)Object.assign(keys,gavinCall('rsaGenerate',[]));
+            const value=keys[usePublic?'publicKey':'privateKey'];
+            if(!value)throw new Error(usePublic?'RSA public key is missing':'RSA private key is missing');
+            return value;
+        }
+        function rawKey(usePublic) {const key=get(usePublic);return typeof key==='string'?signed(C.enc.Base64.parse(key.replace(/-----[A-Z ]+-----/g,'').replace(/\s/g,''))):key;}
+        function crypt(data,encrypt,usePublic) {return gavinCall('rsaCrypt',[String(algorithm),encrypt,usePublic,get(usePublic),signed(encrypt?bytes(data):encrypted(data))]);}
+        const api={
+            setPublicKey(value){keys.publicKey=normalized(value);return api;},
+            setPrivateKey(value){keys.privateKey=normalized(value);return api;},
+            getPublicKey:()=>({getEncoded:()=>rawKey(true)}),
+            getPrivateKey:()=>({getEncoded:()=>rawKey(false)}),
+            getPublicKeyBase64:()=>bytes(rawKey(true)).toString(C.enc.Base64),
+            getPrivateKeyBase64:()=>bytes(rawKey(false)).toString(C.enc.Base64)
+        };
+        if(signing)Object.assign(api,{
+            sign:data=>gavinCall('rsaSign',[String(algorithm),get(false),signed(bytes(data))]),
+            signHex:data=>bytes(api.sign(data)).toString(C.enc.Hex),
+            signBase64:data=>bytes(api.sign(data)).toString(C.enc.Base64),
+            verify:(data,signature)=>gavinCall('rsaVerify',[String(algorithm),get(true),signed(bytes(data)),signed(encrypted(signature))])
+        });
+        else Object.assign(api,{
+            encrypt:(data,usePublic=true)=>crypt(data,true,usePublic!==false),
+            encryptHex:(data,usePublic=true)=>bytes(crypt(data,true,usePublic!==false)).toString(C.enc.Hex),
+            encryptBase64:(data,usePublic=true)=>bytes(crypt(data,true,usePublic!==false)).toString(C.enc.Base64),
+            decrypt:(data,usePublic=true)=>crypt(data,false,usePublic!==false),
+            decryptStr:(data,usePublic=true)=>gavinCall('decodeBytes',[crypt(data,false,usePublic!==false),'UTF-8'])
+        });
+        return api;
+    }
     const helpers={
+        createAsymmetricCrypto:algorithm=>asymmetric(algorithm),
+        createSign:algorithm=>asymmetric(algorithm,true),
         createSymmetricCrypto:cipher,
         aesDecodeToString:(data,key,mode,iv)=>cipher(mode,key,iv).decryptStr(data),
         aesBase64DecodeToString:(data,key,mode,iv)=>cipher(mode,key,iv).decryptStr(data),

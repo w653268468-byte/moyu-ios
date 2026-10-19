@@ -89,7 +89,7 @@ public enum SourceRequest {
 
     // Legado commonly uses JSON-like request options with single-quoted strings.
     // Normalize only string literals; no JavaScript is evaluated here.
-    private static func optionsData(_ raw: String) throws -> Data {
+    static func optionsData(_ raw: String) throws -> Data {
         if (try? JSONSerialization.jsonObject(with: Data(raw.utf8))) != nil { return Data(raw.utf8) }
         let chars = Array(raw)
         var output = ""

@@ -6,7 +6,7 @@ enum SourceHeaders {
         guard raw.utf8.count <= 64 * 1024 else { throw SourceError.message("请求头超过 64 KB。") }
         let values: [String: String]
         if raw.isEmpty { return [:] }
-        if raw.hasPrefix("{") { values = try JSONDecoder().decode([String: String].self, from: Data(raw.utf8)) }
+        if raw.hasPrefix("{") { values = try JSONDecoder().decode([String: String].self, from: SourceRequest.optionsData(raw)) }
         else { values = ["User-Agent": raw] }
         guard values.count <= 64 else { throw SourceError.message("请求头数量过多。") }
         for (name, value) in values {

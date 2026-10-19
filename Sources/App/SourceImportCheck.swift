@@ -65,6 +65,14 @@ private actor SearchCheckGate {
         defer { try? FileManager.default.removeItem(at: root) }
         let reportURL = URL.documentsDirectory.appendingPathComponent("source-import-check.json")
         do {
+            let interpreter = try SourceScript()
+            let nativeNamespace = "https://native-" + UUID().uuidString.lowercased() + ".example"
+            try interpreter.setJSONGlobal("source", json: String(decoding: JSONSerialization.data(withJSONObject: ["bookSourceUrl": nativeNamespace]), as: UTF8.self))
+            defer { SourceScriptCache.shared.delete(nativeNamespace, "source:@loginHeader") }
+            guard try interpreter.evaluate("const cipher=java.createSymmetricCrypto('AES/CBC/PKCS5Padding','0123456789abcdef','abcdef0123456789');cipher.decryptStr(cipher.encryptBase64('正文验证'))", result: "", baseURL: URL(string: nativeNamespace)!) as? String == "正文验证",
+                  try interpreter.evaluate("java.getString('a@text@js:result+\"规则\"')", result: "<a>嵌套</a>", baseURL: URL(string: nativeNamespace)!) as? String == "嵌套规则",
+                  try interpreter.evaluate("source.putLoginHeader('{\"X-Reader\":\"Gavin\"}');source.getLoginHeaderMap().get('X-Reader')", result: "", baseURL: URL(string: nativeNamespace)!) as? String == "Gavin",
+                  try interpreter.evaluate("const rsa=java.createAsymmetricCrypto('RSA');rsa.decryptStr(rsa.encryptBase64('正文RSA'),false)", result: "", baseURL: URL(string: nativeNamespace)!, timeout: 15) as? String == "正文RSA" else { throw SourceError.message("原生书源加密、嵌套规则或登录头检查失败") }
             let store = OnlineStore(directory: root)
             let result = try await store.client.importText("http://127.0.0.1:18765/broken-sources\nhttp://127.0.0.1:18765/source-start")
             guard result.sources.count == 1, result.failures.count == 1,
@@ -92,7 +100,8 @@ private actor SearchCheckGate {
             guard restored.novels.first?.readingMarks?.first == mark else { throw SourceError.message("在线书签或备注未持久化") }
             let report: [String: Any] = ["status": "passed", "redirect": true, "partialFailure": true,
                 "pastedJSON": true, "savedAndReloaded": true, "preservedUnknownFields": true,
-                "duplicateUpdated": true, "searchCatalogContent": true, "onlineBookmarkAndNote": true]
+                "duplicateUpdated": true, "searchCatalogContent": true, "onlineBookmarkAndNote": true,
+                "cryptoJSAndAES": true, "nestedRules": true, "sourceLoginKeychain": true, "rsaRoundTrip": true]
             try JSONSerialization.data(withJSONObject: report, options: .prettyPrinted).write(to: reportURL, options: .atomic)
         } catch {
             let report = try? JSONSerialization.data(withJSONObject: ["status": "failed", "error": error.localizedDescription])

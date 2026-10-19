@@ -4,6 +4,17 @@ import XCTest
 
 final class ComplexSourceScriptTests: XCTestCase {
     private let base = URL(string: "https://fixture.example/books/1")!
+    func testInclusiveLegacyRangesExclusionAndPerParentIndexes() throws {
+        let doc = try RuleDocument.parse(Data("<section><a>0</a><a>1</a><a>2</a><a>3</a><a>4</a></section><div data-kind='a@b'>匹配</div>".utf8), base: base)
+        XCTAssertEqual(try doc.value("tag.a[0:1]@text"), "0\n1")
+        XCTAssertEqual(try doc.value("tag.a[-1:0:2]@text"), "4\n2\n0")
+        XCTAssertEqual(try doc.value("tag.a[!1:3]@text"), "0\n4")
+        XCTAssertEqual(try doc.value("tag.a.0:3:-1@text"), "0\n3\n4")
+        XCTAssertEqual(try doc.value("tag.a[4,0:1,4]@text"), "4\n0\n1")
+        XCTAssertEqual(try doc.value("div[data-kind='a@b']@text"), "匹配")
+        let groups = try RuleDocument.parse(Data("<div class='row'><a>甲</a><a>乙</a></div><div class='row'><a>丙</a><a>丁</a></div>".utf8), base: base)
+        XCTAssertEqual(try groups.value("class.row@tag.a.0@text"), "甲\n丙")
+    }
     func testNestedExtractionRestoresOuterResultAndBase() throws {
         let engine = try SourceScript()
         let html = "<a href='/chapter'>故事</a><p>正文</p>"

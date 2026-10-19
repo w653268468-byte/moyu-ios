@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 @testable import ReaderCore
 
-private struct SourceAuditCase: Sendable { var source: BookSource; var collection: String; var scripted: Bool }
+private struct SourceAuditCase: Sendable { var source: BookSource; var collection: String; var scripted: Bool; var requiresPersonalLogin: Bool }
 private struct SourceAuditResult: Codable, Sendable {
     var name: String; var source: String; var collection: String; var scripted: Bool
     var status = "failed"; var stage = "search"; var keyword = "三国演义"
@@ -40,7 +40,7 @@ final class SourceCorpusAuditTests: XCTestCase {
         for object in objects {
             guard let source = object["source"] as? [String: Any], let collection = object["collection"] as? String,
                   let parsed = try? SourceImport.parse(JSONSerialization.data(withJSONObject: source)).sources.first else { continue }
-            candidates.append(SourceAuditCase(source: parsed, collection: collection, scripted: object["scripted"] as? Bool ?? false))
+            candidates.append(SourceAuditCase(source: parsed, collection: collection, scripted: object["scripted"] as? Bool ?? false, requiresPersonalLogin: object["requiresPersonalLogin"] as? Bool ?? false))
         }
         let limit = min(60, max(1, Int(environment["GAVIN_AUDIT_LIMIT"] ?? "32") ?? 32))
         var selected: [SourceAuditCase] = [], hosts = Set<String>()
@@ -72,6 +72,11 @@ final class SourceCorpusAuditTests: XCTestCase {
     }
     private static func audit(_ item: SourceAuditCase) async -> SourceAuditResult {
         let progress = SourceAuditProgress(item)
+        if item.requiresPersonalLogin {
+            var result = await progress.result(error: "公开规则含共享会话，审计未使用；需本人网页登录后验证")
+            result.status = "requires_login"; result.stage = "login"; result.category = "authentication_or_rate_limit"
+            return result
+        }
         do {
             return try await withThrowingTaskGroup(of: SourceAuditResult.self) { group in
                 group.addTask {

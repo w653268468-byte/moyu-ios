@@ -15,37 +15,21 @@ public enum HTMLRule {
         guard isSupported(rule) else { throw SourceError.message("暂不支持此规则：\(rule)") }
         if XPathRule.isXPath(rule) { return try XPathRule.elements(rule, in: element) }
         var current = [element]
-        for raw in rule.replacingOccurrences(of: "@css:", with: "").components(separatedBy: "@") {
+        for raw in RuleComposition.split(rule.replacingOccurrences(of: "@css:", with: "", options: .caseInsensitive), operator: "@") {
             var selector = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if selector.isEmpty { continue }
-            var index: Int?
-            var excluded: Int?
-            if let range = selector.range(of: #"!(-?\d+)$"#, options: .regularExpression) {
-                excluded = Int(selector[range].dropFirst()); selector = String(selector[..<range.lowerBound])
-            }
-            if let range = selector.range(of: #"\.(-?\d+)$"#, options: .regularExpression) {
-                index = Int(selector[range].dropFirst())
-                selector = String(selector[..<range.lowerBound])
-            } else if let range = selector.range(of: #"\[(-?\d+)\]$"#, options: .regularExpression) {
-                index = Int(selector[range].dropFirst().dropLast())
-                selector = String(selector[..<range.lowerBound])
-            }
+            let indexes = try indexSuffix(&selector)
             var selected: [Element] = []
             for parent in current {
-                if selector == "children" { selected += parent.children().array() }
+                let found: [Element]
+                if selector == "children" || (selector.isEmpty && indexes != nil) { found = parent.children().array() }
                 else if selector.hasPrefix("text.") {
                     let needle = String(selector.dropFirst(5))
-                    selected += try parent.select("*").array().filter { $0.ownText().contains(needle) }
-                } else { selected += try parent.select(translate(selector)).array() }
+                    found = try parent.select("*").array().filter { $0.ownText().contains(needle) }
+                } else { found = try parent.select(translate(selector)).array() }
+                selected += try indexes?.apply(found) ?? found
             }
-            // Legacy .0 / .-1 index the matched collection, not the node's sibling position.
-            if let excluded {
-                let resolved = excluded < 0 ? selected.count + excluded : excluded
-                current = selected.enumerated().filter { $0.offset != resolved }.map(\.element)
-            } else if let index {
-                let resolved = index < 0 ? selected.count + index : index
-                current = selected.indices.contains(resolved) ? [selected[resolved]] : []
-            } else { current = selected }
+            current = selected
         }
         return current
     }
@@ -55,8 +39,8 @@ public enum HTMLRule {
         guard isSupported(rule) else { throw SourceError.message("暂不支持此规则：\(rule)") }
         for alternative in rule.components(separatedBy: "||") {
             let replacements = alternative.components(separatedBy: "##")
-            let extraction = metadataCSS(replacements[0]).replacingOccurrences(of: "@css:", with: "")
-            var parts = extraction.components(separatedBy: "@")
+            let extraction = metadataCSS(replacements[0]).replacingOccurrences(of: "@css:", with: "", options: .caseInsensitive)
+            var parts = RuleComposition.split(extraction, operator: "@")
             let attribute: String
             if parts.count > 1 { attribute = parts.removeLast() }
             else if ["text", "textNodes", "ownText", "html", "href", "src"].contains(parts[0]) {
@@ -88,6 +72,51 @@ public enum HTMLRule {
             if !result.isEmpty { return result }
         }
         return ""
+    }
+
+    private struct Indexes {
+        var entries: [String]; var excluding: Bool; var ranges: Bool
+        func apply(_ nodes: [Element]) throws -> [Element] {
+            let count = nodes.count
+            guard count > 0 else { return [] }
+            var ordered: [Int] = [], seen = Set<Int>()
+            func append(_ index: Int) { if nodes.indices.contains(index), seen.insert(index).inserted { ordered.append(index) } }
+            func number(_ raw: String, fallback: Int) throws -> Int {
+                if raw.isEmpty { return fallback }
+                guard let value = Int(raw) else { throw SourceError.message("HTML 索引无效。") }
+                return value < 0 ? value + count : value
+            }
+            for entry in entries {
+                let values = entry.components(separatedBy: ":")
+                if ranges && values.count > 1 {
+                    guard values.count <= 3 else { throw SourceError.message("HTML 区间索引格式无效。") }
+                    var start = try number(values[0], fallback: 0), end = try number(values[1], fallback: count-1)
+                    if (start < 0 && end < 0) || (start >= count && end >= count) { continue }
+                    start = min(count-1, max(0, start)); end = min(count-1, max(0, end))
+                    let rawStep = values.count == 3 ? Int(values[2]) ?? 1 : 1
+                    let step = rawStep > 0 ? rawStep : rawStep > -count ? rawStep + count : 1
+                    if start == end || step >= count { append(start); continue }
+                    for index in stride(from: start, through: end, by: start <= end ? step : -step) { append(index) }
+                } else { for value in values { append(try number(value, fallback: 0)) } }
+            }
+            return excluding ? nodes.enumerated().filter { !seen.contains($0.offset) }.map(\.element) : ordered.map { nodes[$0] }
+        }
+    }
+    private static func indexSuffix(_ selector: inout String) throws -> Indexes? {
+        if let range = selector.range(of: #"\[\s*!?\s*[-\d,:\s]+\]$"#, options: .regularExpression) {
+            var expression = String(selector[range].dropFirst().dropLast()).filter { !$0.isWhitespace }
+            let excluding = expression.hasPrefix("!")
+            if excluding { expression.removeFirst() }
+            let entries = expression.components(separatedBy: ",")
+            guard entries.count <= 1024, entries.allSatisfy({ !$0.isEmpty }) else { throw SourceError.message("HTML 索引列表无效或过长。") }
+            selector = String(selector[..<range.lowerBound])
+            return Indexes(entries: entries, excluding: excluding, ranges: true)
+        }
+        if let range = selector.range(of: #"[.!]-?\d+(?::-?\d+)*$"#, options: .regularExpression) {
+            let expression = String(selector[range]); selector = String(selector[..<range.lowerBound])
+            return Indexes(entries: String(expression.dropFirst()).components(separatedBy: ":"), excluding: expression.first == "!", ranges: false)
+        }
+        return nil
     }
 
     private static func translate(_ rule: String) -> String {

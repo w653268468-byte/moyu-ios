@@ -157,6 +157,7 @@ public final class SourceScript: @unchecked Sendable {
         }
         let result: Any
         switch method {
+        case "rsaGenerate", "rsaPublicKey", "rsaCrypt", "rsaSign", "rsaVerify": result = try SourceRSA.call(method, args, cancelled: { self.limit.exceeded() })
         case "cacheGet":
             if let value = SourceScriptCache.shared.get(sourceNamespace, string(0)) { result = value } else { result = NSNull() }
         case "cachePut":
