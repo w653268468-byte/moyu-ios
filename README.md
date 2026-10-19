@@ -14,7 +14,7 @@
 - 删除被小说使用的书源也可执行，书架记录及缓存保留；未缓存章节需重新导入对应书源。
 - CSS/旧式选择器、XPath 1.0、JSONPath（字段/索引/通配符、过滤、切片、并集、递归）、UTF-8/GBK 静态 GET/POST、目录和正文分页。导出保留未识别的原始 Legado 字段。
 - HTTP 状态、域名解析、超时、证书错误分别提示。采用移动浏览器 UA 与书源 Referer。
-- JavaScript：QuickJS 解释执行，提供选择器、Jsoup 常用集合、变量、Base64/MD5/SHA256、HTTP GET/POST/ajax、动态网址/请求头和行内表达式；完整 Android 桥仍未完成。
+- JavaScript：QuickJS 解释执行，提供选择器、Jsoup 常用集合、变量、Base64/Hex、MD5/SHA 系列摘要及 HMAC、HTTP GET/POST/ajax、动态网址/请求头和行内表达式；完整 Android 桥仍未完成。
 - 平移或原生仿真卷页；文字分页默认全屏点击下一页（包含空白边距），长按切换菜单；可选左右分区或九宫格自定义上一页/下一页/菜单/无操作。滑动翻页不受点击配置影响；调整排版后重排，记忆章节内分页位置。EPUB 原版式仍使用滚动和书内链接。
 - 本地 TXT、EPUB、PDF、MD、HTML、RTF、DOCX 与未加密 MOBI/AZW3/KF8。新 EPUB 保留原文件、图片、CSS 与目录；MOBI/AZW3 重建为 EPUB；PDF 按页提取文字，无文字层时尝试本机 OCR；其他富文本转为文字重排。
 - 阅读：八种主题、四种系统字形、字号/字重/字距/行距/段距、上下左右边距、缩进、标题、页面亮度、常亮、预览及重置；本地和在线共用。
