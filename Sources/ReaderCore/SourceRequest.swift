@@ -72,7 +72,7 @@ public enum SourceRequest {
         if let encoded = options["bodyBase64"] as? String {
             guard request.httpMethod == "POST", let bytes = Data(base64Encoded: encoded), bytes.count <= 4 * 1024 * 1024 else { throw SourceError.message("二进制请求正文无效或过大。") }
             request.httpBody = bytes
-        } else if let body = options["body"] {
+        } else if let body = options["body"], !(body is NSNull), !(request.httpMethod == "GET" && (body as? String) == "") {
             guard request.httpMethod == "POST" else { throw SourceError.message("含 body 的请求必须使用 POST。") }
             if let text = body as? String {
                 request.httpBody = Data(substitute(text, encoded: true).utf8)
