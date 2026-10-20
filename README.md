@@ -30,6 +30,10 @@
 
 导入书源不等于网站可用；“规则可识别”也不代表真实链路已通过。截图中的网易云/17K 等脚本书源目前仍有兼容缺口。
 
+## 当前验证版本
+
+[构建 65：安装包和匹配源码](https://github.com/w653268468-byte/moyu-ios/releases/tag/v2.0.0-preview.65)（提交 `096b0875a65ff637176673794d2470adc0e4f6ee`）。核心、运行时、联网、原生及 6 项交互检查已通过，IPA/源码校验和与构建身份已核对。可在“导入书源”直接导入内置的 3 条实测样例，或通过文件选择导入 [8 条通用实测规则](Examples/verified-sources-expanded.json)。规则通过日期、具体章名和限制见 [真实书源验证记录](docs/SOURCE_VALIDATION.md)。
+
 ## 安装和构建
 
 在仓库 Releases 或通过全部检查的 Actions 构建产物中下载 `Gavin-unsigned.ipa`，Windows 使用已配置的 Sideloadly 签名安装。免费 Apple 账号通常需每 7 天续签。同一账号/包名覆盖安装可保留数据；**先导出备份，不要先删除手机 App**。
@@ -47,7 +51,7 @@ xcodebuild -project Moyu.xcodeproj -scheme Moyu -sdk iphonesimulator -destinatio
 
 单文件不超过 100 MB；纯文本解码不超过 20 MB。EPUB 解压资源上限 200 MB、文字上限 40 MB、单个资源上限 40 MB。PDF 不保留原版式；扫描页 OCR 的准确率取决于清晰度，不能保证逐字正确。MD 保留文字标记。备份内容上限 200 MB。
 
-依赖 SwiftSoup 2.7.7、ZIPFoundation 0.9.19、内置 QuickJS-Swift 固定提交及跨线程堆栈修复（MIT），及内置 libmobi 0.12 固定提交（LGPL-3.0-or-later），见 [第三方声明](THIRD_PARTY_NOTICES.md)。无内置第三方书源、账号、广告或阅读统计；书源请求直接访问所选网站。
+依赖 SwiftSoup 2.7.7、ZIPFoundation 0.9.19、内置 QuickJS-Swift 固定提交及跨线程堆栈修复（MIT），及内置 libmobi 0.12 固定提交（LGPL-3.0-or-later），见 [第三方声明](THIRD_PARTY_NOTICES.md)。提供 3 条可选导入的实测规则；不附带账号、广告或阅读统计，书源请求直接访问所选网站。
 
 ## 实际联网检查
 
