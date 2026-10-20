@@ -55,6 +55,7 @@ private final class FixtureProtocol: URLProtocol {
             "/api/chapter": #"{"text":"滚滚长江东逝水。"}"#,
             "/toc/preface": "<div id='list'><a href='/chapter/2?preface=1'>感谢支持</a><a href='/chapter/2?preface=2'>作品相关</a><a href='/chapter/2?preface=3'>人物资料</a><a href='/chapter/2'>第一章 山边小村</a></div>",
             "/toc/notices": "<div id='list'><a href='/chapter/2?preface=1'>感谢支持</a><a href='/chapter/2?preface=2'>韩立年龄法宝、道行、路线总结</a></div>",
+            "/toc/references": "<div id='list'>" + (0..<12).map { "<a href='/chapter/2?reference=\($0)'>韩立储物袋物品一览</a>" }.joined() + "<a href='/chapter/2'>第一章 山边小村</a></div>",
             "/api/script-search": #"{"data":{"books":[{"title":"公版故事","sourceUuid":"one"}]}}"#,
             "/source/one": "<div class='m-book-recent'><a>最新章</a></div>",
             "/helpers.js": "function sharedTitle(value) { return value + '共享脚本'; }",
@@ -99,6 +100,13 @@ private actor SearchOutcomeRecorder {
 }
 
 final class SourceClientTests: XCTestCase {
+    func testSharedSourceValidatorFindsNumberedStoryPastReferenceSection() async throws {
+        var item = try source()
+        item.ruleBookInfo?.tocUrl = "@js:'https://fixture.example/toc/references'"
+        let report = try await SourceValidator.validate(item, client: makeClient())
+        XCTAssertEqual(report.chapterIndex, 12)
+        XCTAssertEqual(report.chapterTitle, "第一章 山边小村")
+    }
     func testSharedSourceValidatorDoesNotPassOnLongNoticesAlone() async throws {
         var item = try source()
         item.ruleBookInfo?.tocUrl = "@js:'https://fixture.example/toc/notices'"
