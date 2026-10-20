@@ -15,7 +15,7 @@ App 的“导入书源”提供“导入实测示例书源”，从安装包读�
 
 其余 28 个没有标记可用：包含域名停放、HTTP 403/404/502、DNS/连接失败、短占位响应、空搜索结果及仍需排查的脚本失败。报告也记录了实际调用 WebView 的动态书源；仅使用 WebView 不等于读取成功。原始报告和下载哈希保存在本次审计工件。
 
-App 内校验与公开审计共用 SourceValidator：使用作者测试关键词、优先同名书、读取目录并优先检查前十项中的编号章节（最多三个），正文不足 200 字不通过。该门槛只用于排除明显短提示，并不能证明所有章节内容正确或网站永久可用。
+App 内校验与公开审计共用 SourceValidator：使用作者测试关键词、优先同名书、读取目录并检查目录前 100 项中的编号正文章节（最多三个），正文不足 200 字不通过。该门槛只用于排除明显短提示，并不能证明所有章节内容正确或网站永久可用。
 
 
 第 7 次审计曾有 82 字的短响应，因此后续将门槛提高为正文 200 字，最多检查前三章，记录实际章名/位置；短序言可继续检查下一章，三个短响应都不能算通过。不把短提示页作为可用正文导出。
@@ -30,7 +30,7 @@ App 内校验与公开审计共用 SourceValidator：使用作者测试关键词
 
 可导入规则在 [Examples/verified-sources.json](../Examples/verified-sources.json)，保留原作者信息及规则。规则来源为 [52liulian/yuanc 所列公开合集](https://github.com/52liulian/yuanc/blob/main/data/legado/books.json)中的 yckceo 与 tickmao/Novel；导出前逐一比对本地合集与云端报告的 SHA-256，二者一致。此文件只表示上述样本在相应时间、网络、ReaderCore 提交下通过；不保证站点今后不变，也不等于新安装包已通过全部 iOS 检查。
 
-复现过程：先运行 scripts/fetch_source_corpus.py，设置 GAVIN_SOURCE_AUDIT=1 执行 SourceCorpusAuditTests。按来源集合、脚本/静态类型和域名抽样，以作者 checkKeyWord 或通用书名搜索，优先同名书，取得目录后检查内容，正文至少 200 字；优先选择前十项中的编号章节，最多读取三个候选项。每个源有 45 秒总预算，最多 3 源并发。原始结果与下载来源哈希在对应工作流的 Gavin-real-source-audit 工件。
+复现过程：先运行 scripts/fetch_source_corpus.py，设置 GAVIN_SOURCE_AUDIT=1 执行 SourceCorpusAuditTests。按来源集合、脚本/静态类型和域名抽样，以作者 checkKeyWord 或通用书名搜索，优先同名书，取得目录后检查内容，正文至少 200 字；选择目录前 100 项中的编号正文章节，最多读取三个候选项。每个源有 45 秒总预算，最多 3 源并发。原始结果与下载来源哈希在对应工作流的 Gavin-real-source-audit 工件。
 
 已确认的失败原因与修复：
 
