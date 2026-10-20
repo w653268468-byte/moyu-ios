@@ -3,6 +3,15 @@ import XCTest
 @testable import ReaderCore
 
 final class RuleCompositionTests: XCTestCase {
+    func testOptionalNullAndEmptyGETBodiesDoNotTurnIntoInvalidRequests() throws {
+        let base = URL(string: "https://fixture.example")!
+        for options in [#"{"method":"GET","body":null}"#, #"{"body":""}"#, #"{"method":"POST","body":null}"#] {
+            let request = try SourceRequest.make("/search," + options, query: "", base: base)
+            XCTAssertNil(request.httpBody)
+            XCTAssertEqual(request.url?.path, "/search")
+        }
+        XCTAssertThrowsError(try SourceRequest.make(#"/search,{"method":"GET","body":"q=story"}"#, query: "", base: base))
+    }
     func testURLPreludeCanClearCookiesBeforeLiteralPOSTAndPreserveSearchVariables() throws {
         let script = try SourceScript()
         let template = "<js>java.put('prelude','ran');cookie.removeCookie('https://fixture.example');</js>/search/,{\"method\":\"POST\",\"body\":\"searchkey={{key}}&page={{page}}\"}"
