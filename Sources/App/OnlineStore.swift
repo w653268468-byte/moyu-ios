@@ -3,38 +3,41 @@ import CryptoKit
 
 @MainActor
 final class OnlineStore: ObservableObject {
-    @Published private(set) var sources: [BookSource] = []
+    @Published private(set) var sources: [BookSource] = [] { didSet { refreshDiagnostics() } }
+    @Published private(set) var sourceDiagnostics: [String: SourceDiagnostics] = [:]
+    @Published private(set) var checkingRules = false
+    private var diagnosticsTask: Task<Void, Never>?
     @Published private(set) var novels: [OnlineNovel] = []
     @Published var errorMessage: String?
     @Published private(set) var locked = false
     let client = SourceClient(cookieProvider: { url in await BrowserSessions.cookies(for: url) }, webRenderer: { request, cookies in try await SourceWebRenderer.render(request, cookies: cookies) }, verificationHandler: { input in try await SourceVerificationUI.run(input) })
     private let directory: URL
+    private let writer: DeferredSnapshotWriter
     private var indexURL: URL { directory.appendingPathComponent("index.json") }
     private var backupURL: URL { directory.appendingPathComponent("index.backup.json") }
 
-    private struct Index: Codable { var sources: [BookSource]; var novels: [OnlineNovel] }
+    private struct Index: Codable, Sendable { var sources: [BookSource]; var novels: [OnlineNovel] }
 
     init(directory: URL = URL.documentsDirectory.appendingPathComponent("MoyuOnline", isDirectory: true)) {
         self.directory = directory
+        writer = DeferredSnapshotWriter(destination: directory.appendingPathComponent("index.json"), backup: directory.appendingPathComponent("index.backup.json"))
         reload()
     }
 
     func reload() {
+        writer.discardPendingAndWait()
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             if FileManager.default.fileExists(atPath: indexURL.path) {
-                let data: Data
+                let index: Index
                 do {
-                    let original = try Data(contentsOf: indexURL)
-                    _ = try JSONDecoder().decode(Index.self, from: original)
-                    data = original
+                    index = try JSONDecoder().decode(Index.self, from: Data(contentsOf: indexURL))
                 } catch {
-                    data = try Data(contentsOf: backupURL)
-                    _ = try JSONDecoder().decode(Index.self, from: data)
+                    let data = try Data(contentsOf: backupURL)
+                    index = try JSONDecoder().decode(Index.self, from: data)
                     try data.write(to: indexURL, options: .atomic)
                     errorMessage = "在线书架已从备份恢复。"
                 }
-                let index = try JSONDecoder().decode(Index.self, from: data)
                 sources = index.sources
                 novels = index.novels
             } else {
@@ -47,19 +50,35 @@ final class OnlineStore: ObservableObject {
 
     private func save() throws {
         guard !locked else { throw SourceError.message("存储暂不可用，请先重新读取书架。") }
-        let data = try JSONEncoder().encode(Index(sources: sources, novels: novels))
-        if FileManager.default.fileExists(atPath: indexURL.path) {
-            try Data(contentsOf: indexURL).write(to: backupURL, options: .atomic)
+        let snapshot = Index(sources: sources, novels: novels)
+        try writer.writeNow { try JSONEncoder().encode(snapshot) }
+    }
+    func flushProgress() throws { try writer.flush() }
+    func sourceReason(_ source: BookSource) -> String? { sourceDiagnostics[source.id]?.full }
+    func searchReason(_ source: BookSource) -> String? { sourceDiagnostics[source.id]?.search }
+    private func refreshDiagnostics() {
+        diagnosticsTask?.cancel()
+        sourceDiagnostics = [:]; checkingRules = !sources.isEmpty
+        let snapshot = sources
+        diagnosticsTask = Task { [weak self] in
+            do {
+                let result = try await SourceDiagnostics.analyze(snapshot)
+                try Task.checkCancellation()
+                self?.sourceDiagnostics = result; self?.checkingRules = false
+            } catch { if !Task.isCancelled { self?.checkingRules = false } }
         }
-        try data.write(to: indexURL, options: .atomic)
     }
 
     func addSources(_ incoming: [BookSource]) throws {
         let old = sources
+        var merged = sources
+        var positions: [String: Int] = [:]
+        for (index, source) in merged.enumerated() { positions[source.id] = index }
         for source in incoming {
-            if let index = sources.firstIndex(where: { $0.id == source.id }) { sources[index] = source }
-            else { sources.append(source) }
+            if let index = positions[source.id] { merged[index] = source }
+            else { positions[source.id] = merged.count; merged.append(source) }
         }
+        sources = merged
         do { try save() } catch { sources = old; throw error }
     }
 
@@ -75,7 +94,9 @@ final class OnlineStore: ObservableObject {
 
     func setEnabled(_ ids: Set<String>, enabled: Bool) {
         let old = sources
-        for index in sources.indices where ids.contains(sources[index].id) { sources[index].enabled = enabled }
+        var updated = sources
+        for index in updated.indices where ids.contains(updated[index].id) { updated[index].enabled = enabled }
+        sources = updated
         do { try save() } catch { sources = old; errorMessage = error.localizedDescription }
     }
 
@@ -99,13 +120,21 @@ final class OnlineStore: ObservableObject {
     }
 
     func position(_ novel: OnlineNovel, index: Int, textOffset: Int? = nil, scrollFraction: Double? = nil) {
-        var updated = novels.first { $0.id == novel.id } ?? novel
+        guard !locked else { return }
+        let existing = novels.firstIndex { $0.id == novel.id && $0.sourceID == novel.sourceID }
+        var updated = existing.map { novels[$0] } ?? novel
+        let old = updated
         if textOffset != nil { updated.scrollFraction = scrollFraction }
         else if updated.chapterIndex != index { updated.scrollFraction = nil }
         updated.textOffset = textOffset ?? (updated.chapterIndex == index ? updated.textOffset : 0)
         updated.chapterIndex = index
+        guard existing == nil || old.chapterIndex != updated.chapterIndex || old.textOffset != updated.textOffset || old.scrollFraction != updated.scrollFraction else { return }
         updated.lastReadAt = Date()
-        do { try keep(updated) } catch { errorMessage = error.localizedDescription }
+        if let existing { novels[existing] = updated } else { novels.insert(updated, at: 0) }
+        let snapshot = Index(sources: sources, novels: novels)
+        writer.schedule(encode: { try JSONEncoder().encode(snapshot) }, failure: { [weak self] error in
+            Task { @MainActor in self?.errorMessage = "阅读进度保存失败：\(error.localizedDescription)" }
+        })
     }
 
     func saveMark(_ mark: OnlineReadingMark, in novel: OnlineNovel) throws {

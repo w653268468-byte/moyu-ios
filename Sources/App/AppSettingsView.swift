@@ -120,6 +120,11 @@ struct AppSettingsView: View {
     @State private var confirmRestore = false
     @State private var confirmCache = false
     @State private var message: String?
+    private func progressSnapshot() throws -> Data {
+        try library.flushProgress(); try online.flushProgress()
+        return try BackupService.create()
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -134,7 +139,7 @@ struct AppSettingsView: View {
                 Section("备份与恢复") {
                     NavigationLink("WebDAV 跨设备同步") { WebDAVSettingsView() }
                     Button("导出完整备份", systemImage: "square.and.arrow.up") {
-                        do { export = JSONExport(data: try BackupService.create()); exporting = true }
+                        do { export = JSONExport(data: try progressSnapshot()); exporting = true }
                         catch { message = error.localizedDescription }
                     }
                     Button("从备份恢复", systemImage: "arrow.counterclockwise") { importing = true }
@@ -175,6 +180,7 @@ struct AppSettingsView: View {
         do {
             let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
             guard size <= BackupService.maximumBytes * 2 else { throw SourceError.message("备份文件过大。") }
+            try library.flushProgress(); try online.flushProgress()
             try BackupService.restore(Data(contentsOf: url))
             library.reload(); online.reload(); message = "备份已恢复。"
         } catch { message = error.localizedDescription }

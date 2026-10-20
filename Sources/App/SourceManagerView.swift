@@ -36,7 +36,7 @@ struct SourceManagerView: View {
             switch filter {
             case "已启用": state = source.enabled != false
             case "已禁用": state = source.enabled == false
-            case "规则不兼容": state = source.incompatibility != nil
+            case "规则不兼容": state = online.sourceReason(source) != nil
             case "校验失败": state = failed.contains(source.id)
             default: state = true
             }
@@ -83,7 +83,7 @@ struct SourceManagerView: View {
                             }
                             if let group = source.bookSourceGroup, !group.isEmpty { Text(group).font(.caption).foregroundStyle(.secondary) }
                             Text(source.bookSourceUrl).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                            if let reason = source.incompatibility { Label(reason, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange).lineLimit(3) }
+                            if let reason = online.sourceReason(source) { Label(reason, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange).lineLimit(3) }
                             else { Text("规则可识别 · 尚不代表网站可用").font(.caption).foregroundStyle(.secondary) }
                             if let check = checks[source.id] { Text(check).font(.caption).textSelection(.enabled) }
                             if !selecting {
@@ -161,7 +161,7 @@ struct SourceManagerView: View {
                 if Task.isCancelled { break }
                 checkProgress = "\(number + 1)/\(sources.count) · \(source.bookSourceName)"
                 do {
-                    if let reason = source.incompatibility { throw SourceError.message("规则不兼容：\(reason)") }
+                    if let reason = online.sourceReason(source) { throw SourceError.message("规则不兼容：\(reason)") }
                     let report = try await SourceValidator.validate(source, client: online.client)
                     checks[source.id] = "搜索、目录、正文通过 · \(report.chapters) 章 · \(report.chapterTitle) \(report.characters) 字"
                     failed.remove(source.id)

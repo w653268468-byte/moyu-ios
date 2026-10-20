@@ -11,6 +11,7 @@ enum AppBuildIdentity {
 
 @main
 struct MoyuApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var library = LibraryStore()
     @StateObject private var online = OnlineStore()
     @State private var selectedTab: Int = {
@@ -43,8 +44,14 @@ struct MoyuApp: App {
                 }
                 .environmentObject(library)
                 .environmentObject(online)
+                .onChange(of: scenePhase) { _, phase in
+                    if phase != .active {
+                        do { try library.flushProgress(); try online.flushProgress() }
+                        catch { online.errorMessage = "保存进度失败：" + error.localizedDescription }
+                    }
+                }
                 .onAppear {
-                    ReaderFontStore.shared.reload()
+                    _ = ReaderFontStore.shared
                     #if DEBUG
                     try? Data("onAppear".utf8).write(to: URL.documentsDirectory.appendingPathComponent("ui-startup.txt"), options: .atomic)
                     if ProcessInfo.processInfo.arguments.contains("--ui-scroll-check") {

@@ -20,7 +20,12 @@ private struct PageDrawing: UIViewRepresentable {
 }
 
 final class CoreTextPage: UIView {
-    var text = NSAttributedString(string: "")
+    private var framesetter = CTFramesetterCreateWithAttributedString(NSAttributedString(string: "") as CFAttributedString)
+    var text = NSAttributedString(string: "") {
+        didSet {
+            if oldValue !== text { framesetter = CTFramesetterCreateWithAttributedString(text as CFAttributedString) }
+        }
+    }
     var range = NSRange(location: 0, length: 0)
     override func draw(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext(), text.length > 0 else { return }
@@ -28,7 +33,6 @@ final class CoreTextPage: UIView {
         context.textMatrix = .identity
         context.translateBy(x: 0, y: bounds.height)
         context.scaleBy(x: 1, y: -1)
-        let framesetter = CTFramesetterCreateWithAttributedString(text as CFAttributedString)
         let path = CGPath(rect: bounds, transform: nil)
         let frame = CTFramesetterCreateFrame(framesetter, CFRange(location: range.location, length: range.length), path, nil)
         CTFrameDraw(frame, context)

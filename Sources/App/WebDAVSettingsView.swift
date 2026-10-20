@@ -66,6 +66,11 @@ struct WebDAVSettingsView: View {
         var decision: SyncDecision
     }
     private enum SyncAction: String, Identifiable { case upload, download; var id: String { rawValue } }
+    private func progressSnapshot() throws -> Data {
+        try library.flushProgress(); try online.flushProgress()
+        return try BackupService.create()
+    }
+
     var body: some View {
         Form {
             Section("服务器") {
@@ -128,7 +133,7 @@ struct WebDAVSettingsView: View {
         task = Task {
             defer { busy = false }
             do {
-                let local = try BackupService.create(), digest = try SyncFingerprint.digest(local)
+                let local = try progressSnapshot(), digest = try SyncFingerprint.digest(local)
                 let client = try WebDAVClient(directory: account.directory, username: account.username, password: account.password)
                 let remote = try await client.read()
                 let remoteDigest = try remote.map { try SyncFingerprint.digest($0.data) }
@@ -145,7 +150,7 @@ struct WebDAVSettingsView: View {
         task = Task {
             defer { busy = false }
             do {
-                guard try SyncFingerprint.digest(BackupService.create()) == snapshot.localDigest else { pending = nil; throw SourceError.message("检查后本机内容已变化，请重新检查同步，避免覆盖新进度。") }
+                guard try SyncFingerprint.digest(progressSnapshot()) == snapshot.localDigest else { pending = nil; throw SourceError.message("检查后本机内容已变化，请重新检查同步，避免覆盖新进度。") }
                 let client = try WebDAVClient(directory: account.directory, username: account.username, password: account.password)
                 if action == .upload {
                     try await client.write(snapshot.local, replacing: snapshot.remote)
@@ -157,10 +162,11 @@ struct WebDAVSettingsView: View {
                     let latest = try await client.read()
                     guard latest?.data == remote.data else { pending = nil; throw SourceError.message("云端内容又有更新，请重新检查同步。") }
                     try Task.checkCancellation()
-                    guard try SyncFingerprint.digest(BackupService.create()) == snapshot.localDigest else { pending = nil; throw SourceError.message("本机内容已变化，请重新检查同步。") }
+                    guard try SyncFingerprint.digest(progressSnapshot()) == snapshot.localDigest else { pending = nil; throw SourceError.message("本机内容已变化，请重新检查同步。") }
                     let recovery = URL.documentsDirectory.appendingPathComponent("Gavin-Sync-Recovery", isDirectory: true)
                     try FileManager.default.createDirectory(at: recovery, withIntermediateDirectories: true)
                     try snapshot.local.write(to: recovery.appendingPathComponent("\(UUID().uuidString).json"), options: .atomic)
+                    try library.flushProgress(); try online.flushProgress()
                     try BackupService.restore(remote.data)
                     library.reload(); online.reload()
                     UserDefaults.standard.set(snapshot.remoteDigest, forKey: "webdav.baseline." + account.identity)

@@ -17,7 +17,7 @@ struct SourceSwitchView: View {
     @State private var failure: String?
     @State private var task: Task<Void, Never>?
     @State private var operationID = UUID()
-    private var sources: [BookSource] { online.sources.filter { $0.enabled != false && $0.incompatibility == nil } }
+    private var sources: [BookSource] { online.sources.filter { $0.enabled != false && online.sourceReason($0) == nil } }
     var body: some View {
         NavigationStack {
             Form {

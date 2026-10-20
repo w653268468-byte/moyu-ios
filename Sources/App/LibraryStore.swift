@@ -12,15 +12,18 @@ final class LibraryStore: ObservableObject {
     private var parseTask: Task<ImportedBook, Error>?
     @Published private(set) var storageLocked = false
     private let directory: URL
+    private let writer: DeferredSnapshotWriter
     private var manifest: URL { directory.appendingPathComponent("library.json") }
     private var backup: URL { directory.appendingPathComponent("library.backup.json") }
 
     init() {
         directory = URL.documentsDirectory.appendingPathComponent("Moyu", isDirectory: true)
+        writer = DeferredSnapshotWriter(destination: directory.appendingPathComponent("library.json"), backup: directory.appendingPathComponent("library.backup.json"))
         reload()
     }
 
     func reload() {
+        writer.discardPendingAndWait()
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             if FileManager.default.fileExists(atPath: manifest.path) {
@@ -46,11 +49,21 @@ final class LibraryStore: ObservableObject {
     }
 
     private func persist() throws {
-        let data = try JSONEncoder().encode(books)
-        if FileManager.default.fileExists(atPath: manifest.path) {
-            try Data(contentsOf: manifest).write(to: backup, options: .atomic)
-        }
-        try data.write(to: manifest, options: .atomic)
+        let snapshot = books
+        try writer.writeNow { try JSONEncoder().encode(snapshot) }
+    }
+    func flushProgress() throws { try writer.flush() }
+    private func progress(_ id: UUID, mutation: (inout Book) -> Void) {
+        guard !storageLocked, let index = books.firstIndex(where: { $0.id == id }) else { return }
+        var updated = books[index]
+        mutation(&updated)
+        let old = books[index]
+        guard old.page != updated.page || old.textOffset != updated.textOffset || old.scrollFraction != updated.scrollFraction || old.epubChapter != updated.epubChapter || old.epubProgress != updated.epubProgress else { return }
+        updated.lastReadAt = Date(); books[index] = updated
+        let snapshot = books
+        writer.schedule(encode: { try JSONEncoder().encode(snapshot) }, failure: { [weak self] error in
+            Task { @MainActor in self?.errorMessage = "保存进度失败：" + error.localizedDescription }
+        })
     }
 
     private func documentURL(_ id: UUID) -> URL {
@@ -127,7 +140,7 @@ final class LibraryStore: ObservableObject {
     func cancelImport() { parseTask?.cancel(); importTask?.cancel() }
 
     func updatePosition(bookID: UUID, page: Int, textOffset: Int? = nil, scrollFraction: Double? = nil) {
-        update(bookID) {
+        progress(bookID) {
             $0.page = min(max(0, page), max(0, $0.pageCount - 1))
             $0.lastReadAt = Date()
             $0.textOffset = textOffset
@@ -135,7 +148,7 @@ final class LibraryStore: ObservableObject {
         }
     }
     func updateEPUBPosition(bookID: UUID, chapter: Int, progress: Double, page: Int) {
-        update(bookID) {
+        progress(bookID) {
             $0.epubChapter = min(max(0, chapter), max(0, $0.chapterCount - 1))
             $0.epubProgress = progress.isFinite ? min(1, max(0, progress)) : 0
             $0.page = min(max(0, page), max(0, $0.pageCount - 1)); $0.lastReadAt = Date()

@@ -12,6 +12,7 @@ struct SourceImportView: View {
     @State private var importStatus = ""
     @State private var importTask: Task<Void, Never>?
     @State private var preview: SourceImport?
+    @State private var diagnostics: [String: SourceDiagnostics] = [:]
     @State private var failure: String?
 
     var body: some View {
@@ -56,8 +57,8 @@ struct SourceImportView: View {
                             Toggle(isOn: Binding(get: { selected.contains(source.id) }, set: { if $0 { selected.insert(source.id) } else { selected.remove(source.id) } })) {
                               VStack(alignment: .leading, spacing: 5) {
                                 Text(source.bookSourceName)
-                                Text(source.incompatibility ?? "规则可识别，导入后可测试搜索")
-                                    .font(.caption).foregroundStyle(source.incompatibility == nil ? Color.secondary : Color.orange)
+                                Text(diagnostics[source.id]?.full ?? "规则可识别，导入后可测试搜索")
+                                    .font(.caption).foregroundStyle(diagnostics[source.id]?.full == nil ? Color.secondary : Color.orange)
                               }
                             }
                         }
@@ -116,8 +117,9 @@ struct SourceImportView: View {
         importTask = Task {
             do {
                 let parsed = try await online.client.importText(text)
+                let checked = try await SourceDiagnostics.analyze(parsed.sources)
                 try Task.checkCancellation()
-                preview = parsed; selected = Set(parsed.sources.map(\.id))
+                diagnostics = checked; preview = parsed; selected = Set(parsed.sources.map(\.id))
             } catch { if Task.isCancelled { return }; failure = error.localizedDescription }
             importStatus = ""
             busy = false
@@ -129,8 +131,9 @@ struct SourceImportView: View {
         importTask = Task {
             do {
                 let parsed = try await Task.detached { try SourceImport.parse(data) }.value
+                let checked = try await SourceDiagnostics.analyze(parsed.sources)
                 try Task.checkCancellation()
-                preview = parsed
+                diagnostics = checked; preview = parsed
                 selected = Set(parsed.sources.map(\.id))
             } catch { if Task.isCancelled { return }; failure = error.localizedDescription }
             busy = false
@@ -153,6 +156,12 @@ struct NovelDetailView: View {
     @State private var downloading = false
     @State private var downloadStatus = ""
     @State private var confirmDownload = false
+    @State private var switching = false
+    private var activeNovel: OnlineNovel { loaded ?? novel }
+    private var verificationURL: URL {
+        if let source = online.sources.first(where: { $0.id == activeNovel.sourceID }), let url = BrowserSessions.loginURL(source) { return url }
+        return activeNovel.url
+    }
 
     var body: some View {
         NavigationStack {
@@ -184,7 +193,13 @@ struct NovelDetailView: View {
                 if !downloadStatus.isEmpty { Text(downloadStatus).font(.caption).textSelection(.enabled) }
                 if downloading { Button("停止缓存", role: .cancel) { downloadTask?.cancel() } }
                 if let failure {
-                    Section { Text(failure).foregroundStyle(.red); Button("重新获取目录") { load() } }
+                    Section("目录获取失败") {
+                        Text(failure).foregroundStyle(.red).textSelection(.enabled)
+                        Button("网页登录 / 验证", systemImage: "globe") { official = true }
+                        Text("若网页要求登录或验证，请完成后关闭网页再重试；接口失效时需要更换书源。").font(.caption).foregroundStyle(.secondary)
+                        Button("重新获取目录", systemImage: "arrow.clockwise") { load() }
+                        Button("更换书源", systemImage: "arrow.triangle.swap") { switching = true }
+                    }
                 }
                 if let loaded {
                     Section("章节目录") {
@@ -202,12 +217,14 @@ struct NovelDetailView: View {
                     Button("开始缓存") { if let loaded { download(loaded) } }
                 } message: { Text("会逐章下载并占用流量和存储空间；可随时停止，已缓存章节会保留。请保持此页面打开。") }
                 .fullScreenCover(item: $reading) { OnlineReaderView(novel: $0) }
-                .sheet(isPresented: $official) { OfficialWebView(url: novel.url) }
+                .sheet(isPresented: $official, onDismiss: { load() }) { OfficialWebView(url: verificationURL) }
+                .sheet(isPresented: $switching) { SourceSwitchView(novel: activeNovel, chapterIndex: activeNovel.chapterIndex) { replacement in loaded = replacement; failure = nil; saved = true } }
         }
     }
 
     private func load() {
         guard !loading else { return }
+        let novel = activeNovel
         let source = online.sources.first(where: { $0.id == novel.sourceID })
         guard let source else { failure = "对应书源已删除或旧版专用接口已移除。已缓存章节仍可从书架阅读；请导入新书源后重新搜索此书。"; return }
         loading = true; failure = nil

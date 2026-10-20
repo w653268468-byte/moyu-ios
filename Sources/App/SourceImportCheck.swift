@@ -99,12 +99,15 @@ private actor SearchCheckGate {
             var mark = OnlineReadingMark(chapter: chapter, index: 0, offset: 3, text: text)
             mark.note = "保存后重开仍保留的备注"
             try reloaded.saveMark(mark, in: book)
+            for offset in 0..<100 { reloaded.position(book, index: 0, textOffset: offset) }
+            try reloaded.flushProgress()
             let restored = OnlineStore(directory: root)
+            guard restored.novels.first?.textOffset == 99 else { throw SourceError.message("合并写入后阅读进度未保留") }
             guard restored.novels.first?.readingMarks?.first == mark else { throw SourceError.message("在线书签或备注未持久化") }
             let report: [String: Any] = ["status": "passed", "redirect": true, "partialFailure": true,
                 "pastedJSON": true, "savedAndReloaded": true, "preservedUnknownFields": true,
                 "duplicateUpdated": true, "searchCatalogContent": true, "onlineBookmarkAndNote": true,
-                "cryptoJSAndAES": true, "nestedRules": true, "sourceLoginKeychain": true, "rsaRoundTrip": true]
+                "cryptoJSAndAES": true, "nestedRules": true, "sourceLoginKeychain": true, "rsaRoundTrip": true, "coalescedProgressReloaded": true]
             try JSONSerialization.data(withJSONObject: report, options: .prettyPrinted).write(to: reportURL, options: .atomic)
         } catch {
             let report = try? JSONSerialization.data(withJSONObject: ["status": "failed", "error": error.localizedDescription])

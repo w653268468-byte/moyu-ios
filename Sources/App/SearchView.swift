@@ -116,7 +116,7 @@ struct SourceHubView: View {
     @State private var failure: String?
     @State private var preparedFixture = false
     @FocusState private var queryFocused: Bool
-    private var searchable: [BookSource] { available.filter { $0.searchIncompatibility == nil } }
+    private var searchable: [BookSource] { available.filter { online.searchReason($0) == nil } }
     private var scoped: [BookSource] {
         if scopeRaw == "全部书源" { return searchable }
         if scopeRaw.hasPrefix("分组：") { return searchable.filter { BookSearchPresentation.sourceGroups($0).contains(String(scopeRaw.dropFirst(3))) } }
@@ -330,6 +330,7 @@ private struct SearchVariantsView: View {
 }
 
 private struct SearchSourcePicker: View {
+    @EnvironmentObject private var online: OnlineStore
     let sources: [BookSource]
     let onApply: (String, String) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -356,18 +357,18 @@ private struct SearchSourcePicker: View {
                 Section {
                     Picker("搜索范围", selection: $mode) { Text("全部").tag("全部"); Text("分组").tag("分组"); Text("指定书源").tag("指定") }.pickerStyle(.segmented)
                     if mode == "分组" { Picker("分组", selection: $group) { Text("请选择").tag(""); ForEach(groups, id: \.self) { Text($0).tag($0) } } }
-                    if mode == "指定" { HStack { Button("全选当前列表") { selected.formUnion(visible.filter { $0.searchIncompatibility == nil }.map(\.id)) }; Spacer(); Button("清空") { selected = [] } }.buttonStyle(.borderless) }
+                    if mode == "指定" { HStack { Button("全选当前列表") { selected.formUnion(visible.filter { online.searchReason($0) == nil }.map(\.id)) }; Spacer(); Button("清空") { selected = [] } }.buttonStyle(.borderless) }
                 }
                 Section("\(visible.count) 个书源") {
                     ForEach(visible) { source in
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(source.bookSourceName)
-                                if let reason = source.searchIncompatibility { Text(reason).font(.caption).foregroundStyle(.orange) }
+                                if let reason = online.searchReason(source) { Text(reason).font(.caption).foregroundStyle(.orange) }
                                 else if let group = source.bookSourceGroup { Text(group).font(.caption).foregroundStyle(.secondary) }
                             }
                             Spacer()
-                            if mode == "指定" { Toggle("选择", isOn: Binding(get: { selected.contains(source.id) }, set: { if $0 { selected.insert(source.id) } else { selected.remove(source.id) } })).labelsHidden().disabled(source.searchIncompatibility != nil) }
+                            if mode == "指定" { Toggle("选择", isOn: Binding(get: { selected.contains(source.id) }, set: { if $0 { selected.insert(source.id) } else { selected.remove(source.id) } })).labelsHidden().disabled(online.searchReason(source) != nil) }
                         }
                     }
                 }
