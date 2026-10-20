@@ -53,7 +53,7 @@ final class LibraryStore: ObservableObject {
         try writer.writeNow { try JSONEncoder().encode(snapshot) }
     }
     func flushProgress() throws { try writer.flush() }
-    private func progress(_ id: UUID, mutation: (inout Book) -> Void) {
+    private func saveProgress(_ id: UUID, mutation: (inout Book) -> Void) {
         guard !storageLocked, let index = books.firstIndex(where: { $0.id == id }) else { return }
         var updated = books[index]
         mutation(&updated)
@@ -140,7 +140,7 @@ final class LibraryStore: ObservableObject {
     func cancelImport() { parseTask?.cancel(); importTask?.cancel() }
 
     func updatePosition(bookID: UUID, page: Int, textOffset: Int? = nil, scrollFraction: Double? = nil) {
-        progress(bookID) {
+        saveProgress(bookID) {
             $0.page = min(max(0, page), max(0, $0.pageCount - 1))
             $0.lastReadAt = Date()
             $0.textOffset = textOffset
@@ -148,7 +148,7 @@ final class LibraryStore: ObservableObject {
         }
     }
     func updateEPUBPosition(bookID: UUID, chapter: Int, progress: Double, page: Int) {
-        progress(bookID) {
+        saveProgress(bookID) {
             $0.epubChapter = min(max(0, chapter), max(0, $0.chapterCount - 1))
             $0.epubProgress = progress.isFinite ? min(1, max(0, progress)) : 0
             $0.page = min(max(0, page), max(0, $0.pageCount - 1)); $0.lastReadAt = Date()
