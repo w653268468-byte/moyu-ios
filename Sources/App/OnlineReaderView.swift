@@ -82,31 +82,10 @@ struct OnlineReaderView: View {
                 .preferredColorScheme(style.paper.isDark ? .dark : .light)
                 .modifier(ReadingAppearance())
                 .navigationTitle(novel.title).navigationBarTitleDisplayMode(.inline)
-                .toolbar(style.fullScreen ? .hidden : .visible, for: .navigationBar)
+                .toolbar(.hidden, for: .navigationBar)
                 .statusBarHidden(style.fullScreen)
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button { dismiss() } label: { Image(systemName: "chevron.down") }.accessibilityLabel("返回书架")
-                    }
-                    ToolbarItemGroup(placement: .topBarTrailing) {
-                        Menu {
-                            Button("全屏阅读", systemImage: "arrow.up.left.and.arrow.down.right") { style.fullScreen = true }
-                            Button(speech.active && speech.owner == speechKey ? (speech.paused ? "继续听书" : "暂停听书") : "从当前位置连续听书", systemImage: "speaker.wave.2", action: startSpeech).disabled(loading || text.isEmpty)
-                            if speech.active { Button("停止朗读", systemImage: "stop.circle") { speech.stop() } }
-                        } label: { Image(systemName: "speaker.wave.2") }
-                        Menu {
-                            Button("手动选择书源和章节") { showSourceSwitch = true }
-                            Button("自动寻找可用书源") { startSwitch() }.disabled(switching)
-                        } label: { Image(systemName: "arrow.triangle.2.circlepath") }
-                        Button { official = true } label: { Image(systemName: "safari") }.accessibilityLabel("打开官方网页")
-                        Button { showContents = true } label: { Image(systemName: "list.bullet") }.accessibilityLabel("章节目录")
-                        Button { showSettings = true } label: { Image(systemName: "textformat.size") }.accessibilityLabel("阅读设置")
-                        Button {
-                            guard novel.chapters.indices.contains(index) else { return }
-                            do { try online.saveMark(OnlineReadingMark(chapter: novel.chapters[index], index: index, offset: resumeOffset, text: text), in: novel) }
-                            catch { failure = error.localizedDescription }
-                        } label: { Image(systemName: "bookmark.badge.plus") }.accessibilityLabel("添加在线书签").disabled(loading || text.isEmpty)
-                    }
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if !style.fullScreen { readerControls }
                 }
                 .task(id: "\(novel.sourceID)-\(index)-\(retry)-\(positionRevision)") {
                     guard novel.chapters.indices.contains(index) else { loading = false; return }
@@ -183,6 +162,28 @@ struct OnlineReaderView: View {
                 }
         }
     }
+    private var readerControls: some View {
+        HStack(spacing: 0) {
+            Button { dismiss() } label: { Image(systemName: "chevron.down").frame(width: 44, height: 44) }.accessibilityLabel("返回书架")
+            Text(novel.title).font(.headline).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+            Button { showContents = true } label: { Image(systemName: "list.bullet").frame(width: 44, height: 44) }.accessibilityLabel("章节目录")
+            Button { showSettings = true } label: { Image(systemName: "textformat.size").frame(width: 44, height: 44) }.accessibilityLabel("阅读设置")
+            Menu {
+                Button("全屏阅读", systemImage: "arrow.up.left.and.arrow.down.right") { style.fullScreen = true }
+                Button(speech.active && speech.owner == speechKey ? (speech.paused ? "继续听书" : "暂停听书") : "从当前位置连续听书", systemImage: "speaker.wave.2", action: startSpeech).disabled(loading || text.isEmpty)
+                if speech.active { Button("停止朗读", systemImage: "stop.circle") { speech.stop() } }
+                Button("手动选择书源和章节") { showSourceSwitch = true }
+                Button("自动寻找可用书源") { startSwitch() }.disabled(switching)
+                Button("打开官方网页", systemImage: "safari") { official = true }
+                Button("添加在线书签", systemImage: "bookmark.badge.plus") {
+                    guard novel.chapters.indices.contains(index) else { return }
+                    do { try online.saveMark(OnlineReadingMark(chapter: novel.chapters[index], index: index, offset: resumeOffset, text: text), in: novel) }
+                    catch { failure = error.localizedDescription }
+                }.disabled(loading || text.isEmpty)
+            } label: { Image(systemName: "ellipsis.circle").frame(width: 44, height: 44) }.accessibilityLabel("阅读菜单")
+        }.padding(.horizontal, 8).foregroundStyle(style.paper.ink).background(style.paper.background)
+    }
+
     private func openMark(_ mark: OnlineReadingMark) {
         guard let target = mark.destination(in: novel.chapters) else { failure = "当前书源找不到书签对应的章节，请换回原书源或手动选择章节。"; return }
         if speech.owner == speechKey { speech.stop() }

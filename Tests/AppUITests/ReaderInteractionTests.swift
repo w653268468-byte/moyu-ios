@@ -57,15 +57,17 @@ final class ReaderInteractionTests: XCTestCase {
             app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).press(forDuration: 0.7)
             XCTAssertTrue(app.buttons["返回书架"].waitForExistence(timeout: 5))
             for _ in 0..<2 {
-                app.buttons["阅读菜单"].tap()
                 let settings = app.buttons["阅读设置"]
-                XCTAssertTrue(settings.waitForExistence(timeout: 5)); settings.tap()
+                XCTAssertTrue(settings.waitForExistence(timeout: 5))
+                expectation(for: NSPredicate(format: "hittable == true"), evaluatedWith: settings); waitForExpectations(timeout: 5)
+                settings.tap()
                 XCTAssertTrue(app.navigationBars["阅读设置"].waitForExistence(timeout: 5))
                 app.buttons["完成"].tap()
-                app.buttons["阅读菜单"].tap()
                 let contents = app.buttons["目录与书签"]
-                XCTAssertTrue(contents.waitForExistence(timeout: 5)); contents.tap()
-                XCTAssertTrue(app.buttons["第一章 春日"].waitForExistence(timeout: 5))
+                XCTAssertTrue(contents.waitForExistence(timeout: 5))
+                expectation(for: NSPredicate(format: "hittable == true"), evaluatedWith: contents); waitForExpectations(timeout: 5)
+                contents.tap()
+                XCTAssertTrue(app.staticTexts["第一章 春日"].waitForExistence(timeout: 5))
                 app.buttons["完成"].tap()
             }
             app.terminate()

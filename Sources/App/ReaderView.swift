@@ -92,25 +92,10 @@ struct ReaderView: View {
         .preferredColorScheme(style.paper.isDark ? .dark : .light)
         .modifier(ReadingAppearance())
         .navigationTitle(book.title).navigationBarTitleDisplayMode(.inline)
-        .toolbar(style.fullScreen ? .hidden : .visible, for: .navigationBar)
+        .toolbar(.hidden, for: .navigationBar)
         .statusBarHidden(style.fullScreen)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button { dismiss() } label: { Image(systemName: "chevron.down") }.accessibilityLabel("返回书架")
-            }
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button { library.toggleBookmark(bookID: book.id, page: current) } label: {
-                    Image(systemName: marked ? "bookmark.fill" : "bookmark")
-                }.accessibilityLabel(marked ? "移除书签" : "添加书签")
-                Menu {
-                    Button("全屏阅读", systemImage: "arrow.up.left.and.arrow.down.right") { style.fullScreen = true }
-                    Button(speech.active && speech.owner == speechKey ? (speech.paused ? "继续听书" : "暂停听书") : "从当前位置连续听书", systemImage: "speaker.wave.2", action: startSpeech)
-                    if speech.active { Button("停止朗读", systemImage: "stop.circle") { speech.stop() } }
-                    Button("目录与书签", systemImage: "list.bullet") { panel = .contents }
-                    Button("搜索正文", systemImage: "magnifyingglass") { panel = .search }
-                    Button("阅读设置", systemImage: "textformat.size") { panel = .settings }
-                } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("阅读菜单")
-            }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if !style.fullScreen { readerControls }
         }
         .onAppear {
             page = min(max(0, liveBook.page), document.pages.count - 1)
@@ -139,6 +124,22 @@ struct ReaderView: View {
                 }.toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { panel = nil } } }
             }
         }
+    }
+
+    private var readerControls: some View {
+        HStack(spacing: 0) {
+            Button { dismiss() } label: { Image(systemName: "chevron.down").frame(width: 44, height: 44) }.accessibilityLabel("返回书架")
+            Text(book.title).font(.headline).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+            Button { panel = .contents } label: { Image(systemName: "list.bullet").frame(width: 44, height: 44) }.accessibilityLabel("目录与书签")
+            Button { panel = .settings } label: { Image(systemName: "textformat.size").frame(width: 44, height: 44) }.accessibilityLabel("阅读设置")
+            Menu {
+                Button(marked ? "移除书签" : "添加书签", systemImage: marked ? "bookmark.fill" : "bookmark") { library.toggleBookmark(bookID: book.id, page: current) }
+                Button("全屏阅读", systemImage: "arrow.up.left.and.arrow.down.right") { style.fullScreen = true }
+                Button(speech.active && speech.owner == speechKey ? (speech.paused ? "继续听书" : "暂停听书") : "从当前位置连续听书", systemImage: "speaker.wave.2", action: startSpeech)
+                if speech.active { Button("停止朗读", systemImage: "stop.circle") { speech.stop() } }
+                Button("搜索正文", systemImage: "magnifyingglass") { panel = .search }
+            } label: { Image(systemName: "ellipsis.circle").frame(width: 44, height: 44) }.accessibilityLabel("阅读菜单")
+        }.padding(.horizontal, 8).foregroundStyle(style.paper.ink).background(style.paper.background)
     }
 
     private var chapterSegments: [ReadingPage] { document.pages.filter { $0.chapter == current.chapter } }
