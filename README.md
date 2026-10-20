@@ -32,7 +32,7 @@
 
 ## 当前验证版本
 
-[构建 65：安装包和匹配源码](https://github.com/w653268468-byte/moyu-ios/releases/tag/v2.0.0-preview.65)（提交 `096b0875a65ff637176673794d2470adc0e4f6ee`）。核心、运行时、联网、原生及 6 项交互检查已通过，IPA/源码校验和与构建身份已核对。可在“导入书源”直接导入内置的 3 条实测样例，或通过文件选择导入 [8 条通用实测规则](Examples/verified-sources-expanded.json)。规则通过日期、具体章名和限制见 [真实书源验证记录](docs/SOURCE_VALIDATION.md)。
+[构建 68：安装包和匹配源码](https://github.com/w653268468-byte/moyu-ios/releases/tag/v2.0.0-preview.68)（提交 `fd8cae36f446b59f91b3c874d7f071ec1ccd5502`）。核心、运行时、联网、8 项原生检查及 6 项交互检查通过，IPA/源码校验和与 217 个源码文件已核对。进度后台合并写入，书源规则检查移出界面刷新；阅读目录和设置改用独立按钮，平移和仿真模式反复打开测试通过。目录错误增加网页验证、重试和换源入口；真机流畅度仍需实际使用确认。内置 3 条规则支持离线预览导入；[8 条历史实测规则](Examples/verified-sources-expanded.json) 的验证时间、最近复测结果与限制见 [真实书源验证记录](docs/SOURCE_VALIDATION.md)。
 
 ## 安装和构建
 

@@ -30,10 +30,10 @@
 | 番茄独立接口删除 | 已完成 | 无专用入口/请求；旧缓存可读 |
 | Gavin 命名/原仓库发布 | 已完成 | org.moyu.reader 保持旧数据；源码/IPA 同一提交 |
 
-最新已验证集成：构建 65，提交 `096b0875a65ff637176673794d2470adc0e4f6ee`，[Actions](https://github.com/w653268468-byte/moyu-ios/actions/runs/39346110320)、[安装包与配套源码](https://github.com/w653268468-byte/moyu-ios/releases/tag/v2.0.0-preview.65)。核心回归、16 项脚本运行时测试、3 项联网测试、8 份原生检查报告及 6 项 XCUITest 通过。新增原生证据包括打包 AES/RSA、嵌套规则、Keychain 登录头保存/读回、网页登录、验证码回传与取消、内置样例预览确认，以及导入后重开保留。听书报告仅验证模拟音频状态，未验证实际声音。
+最新已验证集成：构建 68，提交 `fd8cae36f446b59f91b3c874d7f071ec1ccd5502`，[Actions](https://github.com/w653268468-byte/moyu-ios/actions/runs/39397693687)、[安装包与配套源码](https://github.com/w653268468-byte/moyu-ios/releases/tag/v2.0.0-preview.68)。核心回归、16 项脚本运行时测试、3 项联网测试、8 份原生检查及 6 项 XCUITest 通过。新增检查验证合并保存后进度保留、平移和仿真模式反复打开设置与目录。真机流畅度和实际声音仍待真机验收。
 
-IPA 为 arm64、org.moyu.reader、构建 65；IPA/源码 SHA-256 已核对，源码 213 个文件与构建提交逐一匹配。三个 JS 资源和内置样例也已从 IPA 取出核对。模拟器测试身份只用于模拟器，不进入待用户签名的 iPhone IPA。
+IPA 为 arm64、org.moyu.reader、构建 68；IPA/源码 SHA-256 已核对，源码 217 个文件与构建提交逐一匹配。三个 JS 资源和内置样例也已从 IPA 取出核对。模拟器测试身份只用于模拟器，不进入待用户签名的 iPhone IPA。
 
-完整 JVM/Android 类和所有脚本书源仍不保证兼容；本轮公开验证覆盖 55 个站点地址、56 条配置，9 个完整链路通过（5 个脚本源），8 条通用样例见 [扩展实测书源](../Examples/verified-sources-expanded.json)。失败、空搜索及登录限制不算通过。真实网站结果见 SOURCE_VALIDATION.md。
+完整 JVM/Android 类和所有脚本书源仍不保证兼容；最新同核心审计为 32 个站点、3 个完整链路通过；此前两批历史验证覆盖 55 个站点地址、56 条配置，9 个曾通过完整链路（5 个脚本源），8 条通用样例见 [扩展实测书源](../Examples/verified-sources-expanded.json)。失败、空搜索及登录限制不算通过。真实网站结果见 SOURCE_VALIDATION.md。
 
 目标仍是用户要求的 Android 阅读主要功能与流程九成以上还原；当前没有足够验收依据声称达到九成。完整 Java/Android 桥（任意 JVM/Android 类及其余平台接口）、全部真实网站兼容、书架高级管理、正文选择高亮与阅读统计仍有缺口。连续听书尚缺实际声音和真机后台验收。WebDAV 尚未接实服；EPUB 原书视图采用网页滚动，未覆盖完整固定版式标准或在原书模式提供仿真卷页。尚未实现和未验收的项不得标完成。
