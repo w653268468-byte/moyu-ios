@@ -205,14 +205,14 @@ final class OnlineStore: ObservableObject {
         chapterCacheURL(directory: directory, chapter: chapter, sourceID: sourceID)
     }
 
-    func chapter(_ chapter: OnlineChapter, sourceID: String) async throws -> String {
+    func chapter(_ chapter: OnlineChapter, sourceID: String, requestClient: SourceClient? = nil) async throws -> String {
         let cache = cacheURL(chapter, sourceID: sourceID)
         if let text = try? String(contentsOf: cache, encoding: .utf8), !text.isEmpty { return text }
         let text: String
         guard let source = sources.first(where: { $0.id == sourceID }) else {
             throw SourceError.message("对应书源已删除或专用接口已移除。这一章尚未缓存，请重新导入书源。")
         }
-        text = try await client.chapter(chapter, source: source)
+        text = try await (requestClient ?? client).chapter(chapter, source: source)
         try Task.checkCancellation()
         // A failed cache write must be visible; never silently claim offline availability.
         try text.write(to: cache, atomically: true, encoding: .utf8)
@@ -265,6 +265,7 @@ final class OnlineStore: ObservableObject {
         persistDownloads()
         downloadTasks[key] = Task { [weak self] in
             guard let self else { return }
+            let downloadClient = await client.isolatedWorker()
             let root = directory
             let cached = await Task.detached(priority: .utility) {
                 Set(book.chapters.indices.filter { index in
@@ -280,7 +281,7 @@ final class OnlineStore: ObservableObject {
                 guard !Task.isCancelled, downloadRuns[key] == token else { return }
                 do {
                     downloads[key]?.message = "正在下载：" + chapter.title
-                    _ = try await self.chapter(chapter, sourceID: book.sourceID)
+                    _ = try await self.chapter(chapter, sourceID: book.sourceID, requestClient: downloadClient)
                     try Task.checkCancellation()
                     guard downloadRuns[key] == token else { return }
                     count += 1

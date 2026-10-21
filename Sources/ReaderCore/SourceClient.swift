@@ -45,6 +45,11 @@ public actor SourceClient {
     }
     deinit { session.invalidateAndCancel() }
 
+    /// Share request configuration and authentication providers, but never mutable JS book/chapter globals.
+    public func isolatedWorker() -> SourceClient {
+        SourceClient(configuration: session.configuration, cookieProvider: cookieProvider, webRenderer: webRenderer, verificationHandler: verificationHandler)
+    }
+
     public func replaceCookies(_ cookies: [HTTPCookie], for url: URL) {
         for old in cookieStorage?.cookies ?? [] where SourceCookies.belongs(old, to: url) { cookieStorage?.deleteCookie(old) }
         for cookie in cookies where SourceCookies.belongs(cookie, to: url) { cookieStorage?.setCookie(cookie) }
