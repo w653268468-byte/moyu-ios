@@ -104,7 +104,8 @@ private actor SearchCheckGate {
             let restored = OnlineStore(directory: root)
             guard restored.novels.first?.textOffset == 99 else { throw SourceError.message("合并写入后阅读进度未保留") }
             guard restored.novels.first?.readingMarks?.first == mark else { throw SourceError.message("在线书签或备注未持久化") }
-            let report: [String: Any] = ["status": "passed", "redirect": true, "partialFailure": true,
+            try await OfflineDownloadCheck.run(directory: root.appendingPathComponent("offline-test"))
+            let report: [String: Any] = ["status": "passed", "offlineDownloadResumeAndDisconnectedRead": true, "redirect": true, "partialFailure": true,
                 "pastedJSON": true, "savedAndReloaded": true, "preservedUnknownFields": true,
                 "duplicateUpdated": true, "searchCatalogContent": true, "onlineBookmarkAndNote": true,
                 "cryptoJSAndAES": true, "nestedRules": true, "sourceLoginKeychain": true, "rsaRoundTrip": true, "coalescedProgressReloaded": true]

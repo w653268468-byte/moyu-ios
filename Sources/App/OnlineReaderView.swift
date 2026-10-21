@@ -24,6 +24,7 @@ struct OnlineReaderView: View {
     @State private var positionRevision = UUID()
     @State private var contentsTab = "目录"
     @State private var chapterFilter = ""
+    @AppStorage("reader.contentsDescending") private var contentsDescending = false
     @State private var editingMark: OnlineReadingMark?
     @ObservedObject private var speech = ReaderSpeech.shared
     private var speechKey: String { "online:" + novel.id }
@@ -135,14 +136,16 @@ struct OnlineReaderView: View {
                             List {
                               Picker("目录与书签", selection: $contentsTab) { Text("目录").tag("目录"); Text("书签 · \(marks.count)").tag("书签") }.pickerStyle(.segmented)
                               if contentsTab == "目录" {
-                               ForEach(Array(novel.chapters.enumerated()).filter { chapterFilter.isEmpty || $0.element.title.localizedCaseInsensitiveContains(chapterFilter) }, id: \.element.id) { number, chapter in
+                               ChapterOrderPicker(descending: $contentsDescending)
+                               ForEach(ChapterOrder.indices(count: novel.chapters.count, descending: contentsDescending).filter { chapterFilter.isEmpty || novel.chapters[$0].title.localizedCaseInsensitiveContains(chapterFilter) }, id: \.self) { number in
+                                let chapter = novel.chapters[number]
                                 Button { pendingOffset = 0; positionRevision = UUID(); index = number; showContents = false } label: {
                                     HStack {
                                         Text(chapter.title).foregroundStyle(.primary)
                                         Spacer()
                                         if number == index { Image(systemName: "checkmark") }
                                     }
-                                }.id(number)
+                                }.id(number).accessibilityIdentifier("catalog.chapter.\(number)")
                                }
                               } else {
                                 if marks.isEmpty { Text("阅读页点书签按钮保存当前位置，支持添加备注。").foregroundStyle(.secondary) }

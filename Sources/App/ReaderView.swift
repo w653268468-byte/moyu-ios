@@ -42,6 +42,7 @@ struct ReaderView: View {
     @State private var navigationID = UUID()
     @State private var panel: ReaderPanel?
     @State private var search = ""
+    @AppStorage("reader.contentsDescending") private var contentsDescending = false
     @ObservedObject private var speech = ReaderSpeech.shared
     private var speechKey: String { "local:" + book.id.uuidString }
     private var style = ReadingStyle()
@@ -191,8 +192,10 @@ struct ReaderView: View {
 
     private var contents: some View {
         List {
+            ChapterOrderPicker(descending: $contentsDescending)
             Section("目录 · \(document.chapters.count) 章") {
-                ForEach(document.chapters) { chapter in
+                ForEach(ChapterOrder.indices(count: document.chapters.count, descending: contentsDescending), id: \.self) { position in
+                    let chapter = document.chapters[position]
                     Button { jump(chapter.firstPage); panel = nil } label: {
                         HStack {
                             Text(chapter.title).foregroundStyle(.primary)

@@ -10,22 +10,39 @@ final class OnlineStore: ObservableObject {
     @Published private(set) var novels: [OnlineNovel] = []
     @Published var errorMessage: String?
     @Published private(set) var locked = false
-    let client = SourceClient(cookieProvider: { url in await BrowserSessions.cookies(for: url) }, webRenderer: { request, cookies in try await SourceWebRenderer.render(request, cookies: cookies) }, verificationHandler: { input in try await SourceVerificationUI.run(input) })
+    let client: SourceClient
     private let directory: URL
     private let writer: DeferredSnapshotWriter
+    private let downloadWriter: DeferredSnapshotWriter
+    @Published private(set) var downloads: [String: OfflineDownloadState] = [:]
+    private var downloadTasks: [String: Task<Void, Never>] = [:]
+    private var downloadRuns: [String: UUID] = [:]
+    private var cacheRevision = UUID()
+    private var downloadsURL: URL { directory.appendingPathComponent("downloads.json") }
+    func downloadKey(_ book: OnlineNovel) -> String { book.sourceID + "|" + book.id }
+    func downloadState(_ book: OnlineNovel) -> OfflineDownloadState? { downloads[downloadKey(book)] }
+
     private var indexURL: URL { directory.appendingPathComponent("index.json") }
     private var backupURL: URL { directory.appendingPathComponent("index.backup.json") }
 
     private struct Index: Codable, Sendable { var sources: [BookSource]; var novels: [OnlineNovel] }
 
-    init(directory: URL = URL.documentsDirectory.appendingPathComponent("MoyuOnline", isDirectory: true)) {
+    init(directory: URL = URL.documentsDirectory.appendingPathComponent("MoyuOnline", isDirectory: true), client: SourceClient? = nil) {
+        self.client = client ?? SourceClient(cookieProvider: { url in await BrowserSessions.cookies(for: url) }, webRenderer: { request, cookies in try await SourceWebRenderer.render(request, cookies: cookies) }, verificationHandler: { input in try await SourceVerificationUI.run(input) })
         self.directory = directory
         writer = DeferredSnapshotWriter(destination: directory.appendingPathComponent("index.json"), backup: directory.appendingPathComponent("index.backup.json"))
+        downloadWriter = DeferredSnapshotWriter(destination: directory.appendingPathComponent("downloads.json"), backup: directory.appendingPathComponent("downloads.backup.json"))
         reload()
     }
 
     func reload() {
+        cacheRevision = UUID()
+        pauseAllDownloads()
         writer.discardPendingAndWait()
+        downloadWriter.discardPendingAndWait()
+        downloads = (try? JSONDecoder().decode([String: OfflineDownloadState].self, from: Data(contentsOf: downloadsURL))) ?? [:]
+        for key in downloads.keys where downloads[key]?.phase == .downloading { downloads[key]?.phase = .paused }
+
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             if FileManager.default.fileExists(atPath: indexURL.path) {
@@ -53,7 +70,7 @@ final class OnlineStore: ObservableObject {
         let snapshot = Index(sources: sources, novels: novels)
         try writer.writeNow { try JSONEncoder().encode(snapshot) }
     }
-    func flushProgress() throws { try writer.flush() }
+    func flushProgress() throws { try writer.flush(); try downloadWriter.flush() }
     func sourceReason(_ source: BookSource) -> String? { sourceDiagnostics[source.id]?.full }
     func searchReason(_ source: BookSource) -> String? { sourceDiagnostics[source.id]?.search }
     private func refreshDiagnostics() {
@@ -113,10 +130,24 @@ final class OnlineStore: ObservableObject {
         do { try save() } catch { novels = old; throw error }
     }
 
+    func keepCatalog(_ book: OnlineNovel) throws {
+        var saved = book
+        if let current = novels.first(where: { $0.id == book.id && $0.sourceID == book.sourceID }) {
+            saved.chapterIndex = min(current.chapterIndex, max(0, book.chapters.count - 1))
+            saved.textOffset = current.textOffset; saved.scrollFraction = current.scrollFraction
+            saved.readingMarks = current.readingMarks; saved.lastReadAt = current.lastReadAt
+        }
+        try keep(saved)
+    }
+
     func remove(_ novel: OnlineNovel) {
         let old = novels
         novels.removeAll { $0.id == novel.id && $0.sourceID == novel.sourceID }
-        do { try save() } catch { novels = old; errorMessage = error.localizedDescription }
+        do {
+            try save()
+            pauseDownload(novel)
+            downloads.removeValue(forKey: downloadKey(novel)); persistDownloads()
+        } catch { novels = old; errorMessage = error.localizedDescription }
     }
 
     func position(_ novel: OnlineNovel, index: Int, textOffset: Int? = nil, scrollFraction: Double? = nil) {
@@ -184,7 +215,101 @@ final class OnlineStore: ObservableObject {
         return text
     }
 
+    private func persistDownloads() {
+        let snapshot = downloads
+        downloadWriter.schedule(encode: { try JSONEncoder().encode(snapshot) }, failure: { [weak self] error in
+            Task { @MainActor in self?.errorMessage = "下载记录保存失败：" + error.localizedDescription }
+        })
+    }
+    func pauseDownload(_ book: OnlineNovel) {
+        let key = downloadKey(book)
+        downloadRuns.removeValue(forKey: key); downloadTasks.removeValue(forKey: key)?.cancel()
+        if downloads[key]?.phase == .downloading { downloads[key]?.phase = .paused; downloads[key]?.message = "已暂停，已下载章节保留"; persistDownloads() }
+    }
+    func pauseAllDownloads() {
+        for task in downloadTasks.values { task.cancel() }
+        downloadTasks = [:]; downloadRuns = [:]
+        for key in Array(downloads.keys) where downloads[key]?.phase == .downloading { downloads[key]?.phase = .paused; downloads[key]?.message = "已暂停，可继续下载" }
+        if !downloads.isEmpty { persistDownloads() }
+    }
+    func refreshDownload(_ book: OnlineNovel) async {
+        let revision = cacheRevision
+        let key = downloadKey(book)
+        guard downloadTasks[key] == nil else { return }
+        let paths = book.chapters.map { cacheURL($0, sourceID: book.sourceID) }
+        let count = await Task.detached(priority: .utility) {
+            paths.reduce(0) { count, path in
+                count + (((try? path.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 0 ? 1 : 0)
+            }
+        }.value
+        guard downloadTasks[key] == nil, !Task.isCancelled, cacheRevision == revision else { return }
+        let full = !paths.isEmpty && count == paths.count
+        let previous = downloads[key]
+        let failed = !full && previous?.phase == .failed
+        downloads[key] = OfflineDownloadState(phase: full ? .completed : failed ? .failed : .paused, completed: count, total: paths.count, failed: failed ? (previous?.failed ?? []) : [], message: full ? "全书已下载，可离线阅读" : failed ? (previous?.message ?? "部分章节失败，可重试") : "已下载 \(count)/\(paths.count) 章")
+        persistDownloads()
+    }
+    func startDownload(_ book: OnlineNovel) {
+        let key = downloadKey(book)
+        guard !locked, downloadTasks[key] == nil else { return }
+        guard !book.chapters.isEmpty else { errorMessage = "请先在小说详情获取章节目录，再下载。"; return }
+        guard downloadTasks.count < 2 else { errorMessage = "最多同时下载两本书，请先暂停一个任务。"; return }
+        do { try keepCatalog(book) } catch { errorMessage = error.localizedDescription; return }
+        let token = UUID(); downloadRuns[key] = token
+        downloads[key] = OfflineDownloadState(phase: .downloading, total: book.chapters.count, message: "正在检查已下载章节…")
+        persistDownloads()
+        downloadTasks[key] = Task { [weak self] in
+            guard let self else { return }
+            let paths = book.chapters.map { self.cacheURL($0, sourceID: book.sourceID) }
+            let cached = await Task.detached(priority: .utility) {
+                Set(paths.indices.filter { ((try? paths[$0].resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 0 })
+            }.value
+            guard !Task.isCancelled, downloadRuns[key] == token else { return }
+            var count = cached.count, failures: [String] = []
+            downloads[key]?.completed = count
+            for index in book.chapters.indices where !cached.contains(index) {
+                let chapter = book.chapters[index]
+                guard !Task.isCancelled, downloadRuns[key] == token else { return }
+                do {
+                    downloads[key]?.message = "正在下载：" + chapter.title
+                    _ = try await self.chapter(chapter, sourceID: book.sourceID)
+                    try Task.checkCancellation()
+                    guard downloadRuns[key] == token else { return }
+                    count += 1
+                } catch {
+                    guard !Task.isCancelled, downloadRuns[key] == token else { return }
+                    failures.append(chapter.title)
+                    downloads[key]?.message = chapter.title + "：" + error.localizedDescription
+                }
+                downloads[key]?.completed = count; downloads[key]?.failed = failures
+                persistDownloads()
+                do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+            }
+            guard downloadRuns[key] == token else { return }
+            downloads[key]?.phase = failures.isEmpty ? .completed : .failed
+            downloads[key]?.message = failures.isEmpty ? "全书已下载，可离线阅读" : "\(failures.count) 章失败，可重试；已下载章节保留"
+            persistDownloads(); downloadRuns.removeValue(forKey: key); downloadTasks.removeValue(forKey: key)
+        }
+    }
+
+    #if DEBUG
+    func prepareOfflineShelfFixture() throws {
+        let origin = URL(string: "https://offline-shelf.example")!
+        var book = OnlineNovel(title: "离线书架测试", author: "Gavin", url: origin.appendingPathComponent("book"), sourceID: origin.absoluteString)
+        book.chapters = (1...3).map { OnlineChapter(title: "第\($0)章 测试", url: origin.appendingPathComponent(String($0))) }
+        try keep(book)
+        for (index, chapter) in book.chapters.enumerated() {
+            try ("第\(index + 1)章 测试\n" + String(repeating: "没有网络也能阅读已经下载的章节。", count: 50)).write(to: cacheURL(chapter, sourceID: book.sourceID), atomically: true, encoding: .utf8)
+        }
+        downloads[downloadKey(book)] = OfflineDownloadState(phase: .completed, completed: 3, total: 3, message: "全书已下载，可离线阅读")
+        persistDownloads(); try flushProgress()
+    }
+    #endif
+
     func clearCache() {
+        cacheRevision = UUID()
+        pauseAllDownloads()
+        downloads = [:]; persistDownloads()
         do {
             for url in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
             where url.pathExtension == "txt" { try FileManager.default.removeItem(at: url) }

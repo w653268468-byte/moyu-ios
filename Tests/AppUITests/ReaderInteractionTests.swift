@@ -89,6 +89,38 @@ final class ReaderInteractionTests: XCTestCase {
         app.terminate()
     }
 
+    @MainActor func testOnlineShelfOfflineReaderAndCatalogOrder() {
+        let app = application(); app.launchArguments = ["--ui-tab", "0", "--ui-online-shelf"]; app.launch()
+        let book = app.buttons.containing(.staticText, identifier: "离线书架测试").firstMatch
+        XCTAssertTrue(book.waitForExistence(timeout: 15))
+        app.buttons["离线下载"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["离线下载"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["已下载 3/3 章"].waitForExistence(timeout: 5))
+        app.buttons["完成"].tap(); book.tap()
+        let indicator = app.staticTexts["reader.pageIndicator"]
+        XCTAssertTrue(indicator.waitForExistence(timeout: 10))
+        if !app.buttons["章节目录"].isHittable { app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).press(forDuration: 0.7) }
+        app.buttons["章节目录"].tap()
+        let order = app.segmentedControls["catalog.order"]
+        XCTAssertTrue(order.waitForExistence(timeout: 5))
+        order.buttons["正序"].tap()
+        let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "catalog.chapter."))
+        XCTAssertEqual(rows.element(boundBy: 0).identifier, "catalog.chapter.0")
+        order.buttons["倒序"].tap()
+        XCTAssertEqual(rows.element(boundBy: 0).identifier, "catalog.chapter.2")
+        rows.element(boundBy: 0).tap()
+        XCTAssertTrue(indicator.waitForExistence(timeout: 5))
+        app.buttons["章节目录"].tap()
+        XCTAssertTrue(order.buttons["倒序"].isSelected)
+        order.buttons["正序"].tap()
+        XCTAssertEqual(rows.element(boundBy: 0).identifier, "catalog.chapter.0")
+        app.buttons["完成"].tap(); app.buttons["返回书架"].tap()
+        app.terminate(); app.launchArguments = ["--ui-tab", "0"]; app.launch()
+        XCTAssertTrue(app.staticTexts["离线书架测试"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["全书已下载 · 可离线阅读"].firstMatch.exists)
+        app.terminate()
+    }
+
     @MainActor private func findImportedSource(in app: XCUIApplication) {
         // Earlier tests import bundled samples into this same installed app.
         // A virtualized List need not expose a newly appended row until scrolled.

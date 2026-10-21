@@ -17,9 +17,13 @@ struct ShelfView: View {
     @State private var selected: Book?
     @State private var deleting: Book?
     @State private var showAbout = false
-    @State private var sortRecent = true
+    @AppStorage("reader.shelfSortRecent") private var sortRecent = true
+    @AppStorage("reader.shelfScope") private var shelfScope = "全部"
+    @State private var showDownloads = false
+    @State private var showFindBooks = false
     @State private var onlineReading: OnlineNovel?
     @State private var deletingOnline: OnlineNovel?
+    @State private var inspectingOnline: OnlineNovel?
 
     private var filtered: [Book] {
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -44,6 +48,12 @@ struct ShelfView: View {
                     }
                     .padding(.top, 12)
 
+                    Picker("书架类型", selection: $shelfScope) {
+                        Text("全部").tag("全部")
+                        Text("在线书架").tag("在线")
+                        Text("本地书架").tag("本地")
+                    }.pickerStyle(.segmented).accessibilityIdentifier("shelf.scope")
+
                     if library.isImporting {
                         HStack {
                             ProgressView()
@@ -61,7 +71,7 @@ struct ShelfView: View {
                             .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
                     }
 
-                    if query.isEmpty, let recent = library.books.filter({ $0.lastReadAt != nil })
+                    if shelfScope != "在线", query.isEmpty, let recent = library.books.filter({ $0.lastReadAt != nil })
                         .max(by: { ($0.lastReadAt ?? .distantPast) < ($1.lastReadAt ?? .distantPast) }) {
                         Button { selected = recent } label: {
                             HStack(spacing: 16) {
@@ -79,30 +89,55 @@ struct ShelfView: View {
                         }.buttonStyle(.plain)
                     }
 
-                    if !online.novels.isEmpty {
+                    if shelfScope != "本地" {
                         VStack(alignment: .leading, spacing: 14) {
-                            Text("在线藏书").font(.title3.bold())
-                            ForEach(online.novels.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) }
-                                .sorted { ($0.lastReadAt ?? .distantPast) > ($1.lastReadAt ?? .distantPast) }) { novel in
-                                Button { onlineReading = novel } label: {
-                                    HStack(spacing: 15) {
-                                        Image(systemName: "book.closed.fill").font(.title).foregroundStyle(coverColors[0])
-                                        VStack(alignment: .leading, spacing: 5) {
-                                            Text(novel.title).font(.headline).foregroundStyle(.primary).lineLimit(1)
-                                            Text("第 \(novel.chapterIndex + 1) / \(novel.chapters.count) 章 · \(novel.author)")
-                                                .font(.caption).foregroundStyle(.secondary)
-                                        }
-                                        Spacer()
-                                        Image(systemName: "chevron.right").font(.caption)
-                                    }.padding(16).background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
-                                }.buttonStyle(.plain)
-                                    .contextMenu {
-                                        Button("移出书架", systemImage: "trash", role: .destructive) { deletingOnline = novel }
+                            HStack {
+                                Text("在线书架").font(.title3.bold())
+                                Text("\(online.novels.count)").font(.subheadline).foregroundStyle(.secondary)
+                                Spacer()
+                                Button("离线下载", systemImage: "arrow.down.circle") { showDownloads = true }
+                                Menu {
+                                    Button("最近阅读") { sortRecent = true }
+                                    Button("书名排序") { sortRecent = false }
+                                } label: { Image(systemName: "arrow.up.arrow.down").frame(width: 44, height: 44) }.accessibilityLabel("在线书架排序")
+                            }
+                            if online.novels.isEmpty {
+                                ContentUnavailableView {
+                                    Label("在线书架还没有书籍", systemImage: "globe")
+                                } description: { Text("搜索小说后，在详情页加入书架或下载，即可在这里继续阅读。") }
+                                actions: { Button("去找书") { showFindBooks = true }.buttonStyle(.borderedProminent) }
+                            } else {
+                                LazyVStack(spacing: 12) {
+                                    ForEach(online.novels.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.author.localizedCaseInsensitiveContains(query) }.sorted {
+                                        sortRecent ? ($0.lastReadAt ?? .distantPast) > ($1.lastReadAt ?? .distantPast) : $0.title.localizedStandardCompare($1.title) == .orderedAscending
+                                    }) { novel in
+                                        HStack(spacing: 10) {
+                                            Button { onlineReading = novel } label: {
+                                                HStack(spacing: 15) {
+                                                    Image(systemName: "book.closed.fill").font(.title).foregroundStyle(coverColors[0])
+                                                    VStack(alignment: .leading, spacing: 5) {
+                                                        Text(novel.title).font(.headline).foregroundStyle(.primary).lineLimit(1)
+                                                        Text("第 \(novel.chapterIndex + 1) / \(novel.chapters.count) 章 · \(novel.author)").font(.caption).foregroundStyle(.secondary)
+                                                        if let state = online.downloadState(novel) {
+                                                            Text(state.phase == .completed ? "全书已下载 · 可离线阅读" : "已下载 \(state.completed)/\(state.total) 章").font(.caption).foregroundStyle(.secondary)
+                                                        }
+                                                    }
+                                                    Spacer(minLength: 0)
+                                                }.contentShape(Rectangle())
+                                            }.buttonStyle(.plain)
+                                            Menu {
+                                                Button("小说详情 / 更新目录", systemImage: "list.bullet") { inspectingOnline = novel }
+                                                Button("离线下载 / 下载管理", systemImage: "arrow.down.circle") { showDownloads = true }
+                                                Button("移出书架", systemImage: "trash", role: .destructive) { deletingOnline = novel }
+                                            } label: { Image(systemName: "ellipsis.circle").frame(width: 44, height: 44) }.accessibilityLabel("在线书籍管理：" + novel.title)
+                                        }.padding(16).background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
                                     }
+                                }
                             }
                         }
                     }
 
+                    if shelfScope != "在线" {
                     HStack {
                         Text("本地书架").font(.title3.bold())
                         Text("\(library.books.count)").font(.subheadline).foregroundStyle(.secondary)
@@ -135,6 +170,7 @@ struct ShelfView: View {
                             }
                         }
                     }
+                    }
                     Label("你的书架 · 无广告 · 无需注册", systemImage: "leaf")
                         .font(.caption).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity).padding(.top, 12)
@@ -164,6 +200,11 @@ struct ShelfView: View {
                 NavigationStack { ReaderLoader(book: book) }.environmentObject(library)
             }
             .sheet(isPresented: $showAbout) { AboutView() }
+            .sheet(isPresented: $showDownloads) { DownloadsView() }
+            .sheet(item: $inspectingOnline) { NovelDetailView(novel: $0) }
+            .sheet(isPresented: $showFindBooks) {
+                SourceHubView().safeAreaInset(edge: .top) { HStack { Spacer(); Button("关闭找书") { showFindBooks = false }.padding() }.background(.bar) }
+            }
             .fullScreenCover(item: $onlineReading) { OnlineReaderView(novel: $0).environmentObject(online) }
             .confirmationDialog("将这本在线小说移出书架？", isPresented: Binding(
                 get: { deletingOnline != nil }, set: { if !$0 { deletingOnline = nil } }

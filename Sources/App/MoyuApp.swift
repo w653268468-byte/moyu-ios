@@ -45,6 +45,7 @@ struct MoyuApp: App {
                 .environmentObject(library)
                 .environmentObject(online)
                 .onChange(of: scenePhase) { _, phase in
+                    if phase == .background { online.pauseAllDownloads() }
                     if phase != .active {
                         do { try library.flushProgress(); try online.flushProgress() }
                         catch { online.errorMessage = "保存进度失败：" + error.localizedDescription }
@@ -72,6 +73,10 @@ struct MoyuApp: App {
                     if ProcessInfo.processInfo.arguments.contains("--ui-font-check") { Task { await FontImportCheck.run() } }
                     if ProcessInfo.processInfo.arguments.contains("--ui-speech-check") { Task { await ReaderSpeech.checkContinuousPlayback() } }
                     if ProcessInfo.processInfo.arguments.contains("--ui-search-model-check") { Task { await SearchModelCheck.run() } }
+                    if ProcessInfo.processInfo.arguments.contains("--ui-online-shelf") {
+                        UserDefaults.standard.set("在线", forKey: "reader.shelfScope")
+                        try? online.prepareOfflineShelfFixture()
+                    }
                     if ProcessInfo.processInfo.arguments.contains("--ui-import-preview") || ProcessInfo.processInfo.arguments.contains("--ui-import-samples") { showSourceImportPreview = true }
                     if ProcessInfo.processInfo.arguments.contains("--ui-preferences") { showReaderPreferences = true }
                     if ProcessInfo.processInfo.arguments.contains("--ui-all-next") { UserDefaults.standard.set(ReadingTapMap.allNext.stored, forKey: "reader.tapMap") }
