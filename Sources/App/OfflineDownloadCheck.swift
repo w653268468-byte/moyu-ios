@@ -29,7 +29,7 @@ private actor OfflineCheckServer {
         let server = OfflineCheckServer()
         let client = SourceClient(webRenderer: { request, _ in try await server.render(request) })
         let store = OnlineStore(directory: directory, client: client)
-        let source = try JSONDecoder().decode(BookSource.self, from: Data(#"{"bookSourceName":"离线测试","bookSourceUrl":"https://offline-check.example","ruleContent":{"content":"#content@text"}}"#.utf8))
+        let source = try JSONDecoder().decode(BookSource.self, from: Data(##"{"bookSourceName":"离线测试","bookSourceUrl":"https://offline-check.example","ruleContent":{"content":"#content@text"}}"##.utf8))
         try store.addSources([source])
         var book = OnlineNovel(title: "下载测试", url: URL(string: "https://offline-check.example/book")!, sourceID: source.id)
         book.chapters = (1...3).map { value in

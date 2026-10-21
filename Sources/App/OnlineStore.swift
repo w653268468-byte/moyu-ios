@@ -1,6 +1,12 @@
 import SwiftUI
 import CryptoKit
 
+private func chapterCacheURL(directory: URL, chapter: OnlineChapter, sourceID: String) -> URL {
+        let hash = SHA256.hash(data: Data((sourceID + "|" + chapter.id).utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        return directory.appendingPathComponent("\(hash).txt")
+}
+
 @MainActor
 final class OnlineStore: ObservableObject {
     @Published private(set) var sources: [BookSource] = [] { didSet { refreshDiagnostics() } }
@@ -196,9 +202,7 @@ final class OnlineStore: ObservableObject {
     }
 
     private func cacheURL(_ chapter: OnlineChapter, sourceID: String) -> URL {
-        let hash = SHA256.hash(data: Data((sourceID + "|" + chapter.id).utf8))
-            .map { String(format: "%02x", $0) }.joined()
-        return directory.appendingPathComponent("\(hash).txt")
+        chapterCacheURL(directory: directory, chapter: chapter, sourceID: sourceID)
     }
 
     func chapter(_ chapter: OnlineChapter, sourceID: String) async throws -> String {
@@ -236,10 +240,11 @@ final class OnlineStore: ObservableObject {
         let revision = cacheRevision
         let key = downloadKey(book)
         guard downloadTasks[key] == nil else { return }
-        let paths = book.chapters.map { cacheURL($0, sourceID: book.sourceID) }
+        let root = directory
         let count = await Task.detached(priority: .utility) {
-            paths.reduce(0) { count, path in
-                count + (((try? path.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 0 ? 1 : 0)
+            book.chapters.reduce(0) { count, chapter in
+                let path = chapterCacheURL(directory: root, chapter: chapter, sourceID: book.sourceID)
+                return count + (((try? path.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 0 ? 1 : 0)
             }
         }.value
         guard downloadTasks[key] == nil, !Task.isCancelled, cacheRevision == revision else { return }
@@ -260,9 +265,12 @@ final class OnlineStore: ObservableObject {
         persistDownloads()
         downloadTasks[key] = Task { [weak self] in
             guard let self else { return }
-            let paths = book.chapters.map { self.cacheURL($0, sourceID: book.sourceID) }
+            let root = directory
             let cached = await Task.detached(priority: .utility) {
-                Set(paths.indices.filter { ((try? paths[$0].resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 0 })
+                Set(book.chapters.indices.filter { index in
+                    let path = chapterCacheURL(directory: root, chapter: book.chapters[index], sourceID: book.sourceID)
+                    return ((try? path.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 0
+                })
             }.value
             guard !Task.isCancelled, downloadRuns[key] == token else { return }
             var count = cached.count, failures: [String] = []
