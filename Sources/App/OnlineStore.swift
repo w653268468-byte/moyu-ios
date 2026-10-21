@@ -248,10 +248,10 @@ final class OnlineStore: ObservableObject {
             }
         }.value
         guard downloadTasks[key] == nil, !Task.isCancelled, cacheRevision == revision else { return }
-        let full = !paths.isEmpty && count == paths.count
+        let full = !book.chapters.isEmpty && count == book.chapters.count
         let previous = downloads[key]
         let failed = !full && previous?.phase == .failed
-        downloads[key] = OfflineDownloadState(phase: full ? .completed : failed ? .failed : .paused, completed: count, total: paths.count, failed: failed ? (previous?.failed ?? []) : [], message: full ? "全书已下载，可离线阅读" : failed ? (previous?.message ?? "部分章节失败，可重试") : "已下载 \(count)/\(paths.count) 章")
+        downloads[key] = OfflineDownloadState(phase: full ? .completed : failed ? .failed : .paused, completed: count, total: book.chapters.count, failed: failed ? (previous?.failed ?? []) : [], message: full ? "全书已下载，可离线阅读" : failed ? (previous?.message ?? "部分章节失败，可重试") : "已下载 \(count)/\(book.chapters.count) 章")
         persistDownloads()
     }
     func startDownload(_ book: OnlineNovel) {
