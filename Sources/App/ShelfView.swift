@@ -25,8 +25,16 @@ struct ShelfView: View {
     @State private var onlineReading: OnlineNovel?
     @State private var deletingOnline: OnlineNovel?
     @State private var inspectingOnline: OnlineNovel?
+    @StateObject private var organization = ShelfOrganizationStore()
+    @AppStorage("reader.shelfGroupFilter") private var groupFilter = "all"
+    @AppStorage("reader.shelfLayout") private var shelfLayout = "adaptive"
+    @State private var manageGroups = false
+    @State private var assignment: ShelfAssignment?
+    @State private var batchManaging = false
     private var onlineFiltered: [OnlineNovel] {
-        online.novels.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.author.localizedCaseInsensitiveContains(query) }.sorted {
+        online.novels.filter { organization.matches(ShelfOrganizationStore.key($0), group: groupFilter) && (query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.author.localizedCaseInsensitiveContains(query)) }.sorted {
+            let left = organization.value.pinned.contains(ShelfOrganizationStore.key($0)), right = organization.value.pinned.contains(ShelfOrganizationStore.key($1))
+            if left != right { return left }
             if sortUpdated { return ($0.catalogUpdatedAt ?? .distantPast) > ($1.catalogUpdatedAt ?? .distantPast) }
             return sortRecent ? ($0.lastReadAt ?? .distantPast) > ($1.lastReadAt ?? .distantPast) : $0.title.localizedStandardCompare($1.title) == .orderedAscending
         }
@@ -34,8 +42,10 @@ struct ShelfView: View {
 
     private var filtered: [Book] {
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return library.books.filter { term.isEmpty || $0.title.localizedCaseInsensitiveContains(term) }
+        return library.books.filter { organization.matches(ShelfOrganizationStore.key($0), group: groupFilter) && (term.isEmpty || $0.title.localizedCaseInsensitiveContains(term)) }
             .sorted {
+                let left = organization.value.pinned.contains(ShelfOrganizationStore.key($0)), right = organization.value.pinned.contains(ShelfOrganizationStore.key($1))
+                if left != right { return left }
                 if sortRecent { return ($0.lastReadAt ?? $0.addedAt) > ($1.lastReadAt ?? $1.addedAt) }
                 return $0.title.localizedStandardCompare($1.title) == .orderedAscending
             }
@@ -52,6 +62,7 @@ struct ShelfView: View {
                         Text("在线书架").tag("在线")
                         Text("本地书架").tag("本地")
                     }.pickerStyle(.segmented).accessibilityIdentifier("shelf.scope")
+                    groupBar
                     if shelfScope != "本地" { ShelfRefreshStatus() }
 
                     if library.isImporting {
@@ -112,36 +123,8 @@ struct ShelfView: View {
                                     Button("去找书") { showFindBooks = true }.buttonStyle(.bordered)
                                 }.padding(16).background(.background, in: RoundedRectangle(cornerRadius: 18))
                             } else {
-                                LazyVStack(spacing: 12) {
-                                    ForEach(onlineFiltered) { novel in
-                                        HStack(spacing: 10) {
-                                            Button { onlineReading = novel } label: {
-                                                HStack(spacing: 15) {
-                                                    NovelCover(title: novel.title, url: novel.coverURL).frame(width: 56, height: 80)
-                                                    VStack(alignment: .leading, spacing: 5) {
-                                                        Text(novel.title).font(.headline).foregroundStyle(.primary).lineLimit(1)
-                                                        Text("第 \(novel.chapterIndex + 1) / \(novel.chapters.count) 章 · \(novel.author)").font(.caption).foregroundStyle(.secondary)
-                                                        if let latest = novel.lastChapter ?? novel.chapters.last?.title {
-                                                            Text("最新：" + latest).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                                        }
-                                                        if let unread = novel.unreadChapterIDs, !unread.isEmpty {
-                                                            Text("新增 \(unread.count) 章").font(.caption2.weight(.semibold)).foregroundStyle(.orange)
-                                                                .padding(.horizontal, 7).padding(.vertical, 3).background(.orange.opacity(0.10), in: Capsule())
-                                                        }
-                                                        if let state = online.downloadState(novel) {
-                                                            Text(state.phase == .completed ? "全书已下载 · 可离线阅读" : "已下载 \(state.completed)/\(state.total) 章").font(.caption).foregroundStyle(.secondary)
-                                                        }
-                                                    }
-                                                    Spacer(minLength: 0)
-                                                }.contentShape(Rectangle())
-                                            }.buttonStyle(.plain)
-                                            Menu {
-                                                Button("小说详情 / 更新目录", systemImage: "list.bullet") { inspectingOnline = novel }
-                                                Button("离线下载 / 下载管理", systemImage: "arrow.down.circle") { showDownloads = true }
-                                                Button("移出书架", systemImage: "trash", role: .destructive) { deletingOnline = novel }
-                                            } label: { Image(systemName: "ellipsis.circle").frame(width: 44, height: 44) }.accessibilityLabel("在线书籍管理：" + novel.title)
-                                        }.padding(16).background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
-                                    }
+                                LazyVGrid(columns: shelfLayout == "grid" ? [GridItem(.adaptive(minimum: 140), spacing: 16)] : [GridItem(.flexible())], spacing: 12) {
+                                    ForEach(onlineFiltered) { novel in onlineCard(novel) }
                                 }
                             }
                         }
@@ -168,12 +151,15 @@ struct ShelfView: View {
                             if query.isEmpty { Button("导入小说") { importing = true }.buttonStyle(.borderedProminent) }
                         }
                     } else {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 22)], spacing: 26) {
+                        LazyVGrid(columns: shelfLayout == "list" ? [GridItem(.flexible())] : [GridItem(.adaptive(minimum: 140), spacing: 16)], spacing: 20) {
                             ForEach(filtered) { book in
-                                Button { selected = book } label: { BookCard(book: book) }
+                                Button { selected = book } label: {
+                                    if shelfLayout == "list" { localRow(book) } else { BookCard(book: book) }
+                                }
                                     .buttonStyle(.plain)
                                     .contextMenu {
                                         Button("打开阅读", systemImage: "book") { selected = book }
+                                        Button("分组与置顶", systemImage: "folder") { assignment = ShelfAssignment(id: ShelfOrganizationStore.key(book), title: book.title) }
                                         Button("删除小说", systemImage: "trash", role: .destructive) { deleting = book }
                                     }
                                     .accessibilityHint("打开阅读，长按可以删除")
@@ -193,8 +179,14 @@ struct ShelfView: View {
             .searchable(text: $query, prompt: "搜索书架")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { showAbout = true } label: { Image(systemName: "info.circle") }
-                        .accessibilityLabel("关于Gavin")
+                    Menu {
+                        Button("管理分组", systemImage: "folder") { manageGroups = true }
+                        Button("批量管理", systemImage: "checklist") { batchManaging = true }
+                        Button("列表书架", systemImage: shelfLayout == "list" ? "checkmark" : "list.bullet") { shelfLayout = "list" }
+                        Button("网格书架", systemImage: shelfLayout == "grid" ? "checkmark" : "square.grid.2x2") { shelfLayout = "grid" }
+                        Button("自动布局") { shelfLayout = "adaptive" }
+                        Button("关于Gavin", systemImage: "info.circle") { showAbout = true }
+                    } label: { Image(systemName: "square.grid.2x2") }.accessibilityLabel("书架显示与管理")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { importing = true } label: {
@@ -212,6 +204,11 @@ struct ShelfView: View {
                 NavigationStack { ReaderLoader(book: book) }.environmentObject(library)
             }
             .sheet(isPresented: $showAbout) { AboutView() }
+            .sheet(isPresented: $manageGroups) { ShelfGroupManager(store: organization) }
+            .sheet(isPresented: $batchManaging) { ShelfBatchManager(organization: organization) }
+            .sheet(item: $assignment) { ShelfAssignmentView(store: organization, assignment: $0) }
+            .onAppear { organization.reload(); validateGroupFilter() }
+            .onChange(of: organization.value.groups) { _, _ in validateGroupFilter() }
             .sheet(isPresented: $showDownloads) { DownloadsView() }
             .sheet(item: $inspectingOnline) { NovelDetailView(novel: $0) }
             .sheet(isPresented: $showFindBooks) {
@@ -235,6 +232,86 @@ struct ShelfView: View {
                 }
             } message: { Text("原始 TXT 文件不会受影响。") }
         }
+    }
+
+    @ViewBuilder private func onlineCard(_ novel: OnlineNovel) -> some View {
+        if shelfLayout == "grid" {
+            VStack(alignment: .leading, spacing: 8) {
+                Button { onlineReading = novel } label: {
+                    VStack(alignment: .leading, spacing: 10) {
+                        NovelCover(title: novel.title, url: novel.coverURL, compact: false).frame(height: 160)
+                        onlineBookDetails(novel)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }.buttonStyle(.plain)
+                HStack { Spacer(); onlineBookMenu(novel) }
+            }.padding(12).background(.background, in: RoundedRectangle(cornerRadius: 18))
+        } else {
+            HStack(spacing: 8) {
+                Button { onlineReading = novel } label: {
+                    HStack(spacing: 14) {
+                        NovelCover(title: novel.title, url: novel.coverURL).frame(width: 56, height: 80)
+                        onlineBookDetails(novel)
+                        Spacer(minLength: 0)
+                    }.contentShape(Rectangle())
+                }.buttonStyle(.plain)
+                onlineBookMenu(novel)
+            }.padding(16).background(.background, in: RoundedRectangle(cornerRadius: 18))
+        }
+    }
+    private func onlineBookDetails(_ novel: OnlineNovel) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(novel.title).font(.headline).foregroundStyle(.primary).lineLimit(2)
+            if organization.value.pinned.contains(ShelfOrganizationStore.key(novel)) { Label("置顶", systemImage: "pin.fill").font(.caption2).foregroundStyle(.tint) }
+            Text("第 \(novel.chapterIndex + 1) / \(novel.chapters.count) 章" + (novel.author.isEmpty ? "" : " · " + novel.author)).font(.caption).foregroundStyle(.secondary)
+            if let latest = novel.lastChapter ?? novel.chapters.last?.title { Text("最新：" + latest).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+            if let unread = novel.unreadChapterIDs, !unread.isEmpty {
+                Text("新增 \(unread.count) 章").font(.caption2.weight(.semibold)).foregroundStyle(.orange)
+                    .padding(.horizontal, 7).padding(.vertical, 3).background(.orange.opacity(0.10), in: Capsule())
+            }
+            if let state = online.downloadState(novel) {
+                Text(state.phase == .completed ? "全书已下载 · 可离线阅读" : "已下载 \(state.completed)/\(state.total) 章").font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+    private func onlineBookMenu(_ novel: OnlineNovel) -> some View {
+        Menu {
+            Button("分组与置顶", systemImage: "folder") { assignment = ShelfAssignment(id: ShelfOrganizationStore.key(novel), title: novel.title) }
+            Button("小说详情 / 更新目录", systemImage: "list.bullet") { inspectingOnline = novel }
+            Button("离线下载 / 下载管理", systemImage: "arrow.down.circle") { showDownloads = true }
+            Button("移出书架", systemImage: "trash", role: .destructive) { deletingOnline = novel }
+        } label: { Image(systemName: "ellipsis.circle").frame(width: 44, height: 44) }.accessibilityLabel("在线书籍管理：" + novel.title)
+    }
+    private func validateGroupFilter() {
+        if groupFilter != "all" && groupFilter != "ungrouped" && !organization.value.groups.contains(where: { $0.id == groupFilter }) { groupFilter = "all" }
+    }
+    private var groupBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                groupChip("全部分组", id: "all")
+                groupChip("未分组", id: "ungrouped")
+                ForEach(organization.value.groups) { group in groupChip(group.name, id: group.id) }
+                Button { manageGroups = true } label: { Image(systemName: "plus").padding(9) }.accessibilityLabel("添加书架分组")
+            }
+        }
+    }
+    private func groupChip(_ title: String, id: String) -> some View {
+        Button { groupFilter = id } label: {
+            Text(title).font(.caption.weight(.medium)).padding(.horizontal, 12).padding(.vertical, 8)
+                .foregroundStyle(groupFilter == id ? Color.white : Color.primary)
+                .background(groupFilter == id ? Color.accentColor : Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
+        }.buttonStyle(.plain).accessibilityIdentifier("shelf.group." + id)
+    }
+    private func localRow(_ book: Book) -> some View {
+        HStack(spacing: 14) {
+            NovelCover(title: book.title).frame(width: 52, height: 76)
+            VStack(alignment: .leading, spacing: 7) {
+                Text(book.title).font(.headline).foregroundStyle(.primary).lineLimit(2)
+                if organization.value.pinned.contains(ShelfOrganizationStore.key(book)) { Label("置顶", systemImage: "pin.fill").font(.caption2).foregroundStyle(.tint) }
+                Text("\(book.chapterCount) 章 · \(book.wordCount.formatted()) 字").font(.caption).foregroundStyle(.secondary)
+                ProgressView(value: book.progress).tint(coverColors[0])
+            }
+            Spacer(minLength: 0)
+        }.padding(14).background(.background, in: RoundedRectangle(cornerRadius: 18))
     }
 }
 

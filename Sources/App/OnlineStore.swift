@@ -213,12 +213,17 @@ final class OnlineStore: ObservableObject {
     }
 
     func remove(_ novel: OnlineNovel) {
+        removeBooks([downloadKey(novel)])
+    }
+    func removeBooks(_ keys: Set<String>) {
+        guard !keys.isEmpty else { return }
         let old = novels
-        novels.removeAll { $0.id == novel.id && $0.sourceID == novel.sourceID }
+        let removed = novels.filter { keys.contains(downloadKey($0)) }
+        novels.removeAll { keys.contains(downloadKey($0)) }
         do {
             try save()
-            pauseDownload(novel)
-            downloads.removeValue(forKey: downloadKey(novel)); persistDownloads()
+            for novel in removed { pauseDownload(novel); downloads.removeValue(forKey: downloadKey(novel)) }
+            persistDownloads()
         } catch { novels = old; errorMessage = error.localizedDescription }
     }
 

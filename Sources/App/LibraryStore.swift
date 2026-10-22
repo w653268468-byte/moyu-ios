@@ -178,15 +178,21 @@ final class LibraryStore: ObservableObject {
     }
 
     func delete(_ book: Book) {
-        guard !storageLocked else { return }
+        deleteBooks([book.id])
+    }
+    func deleteBooks(_ ids: Set<UUID>) {
+        guard !storageLocked, !ids.isEmpty else { return }
         let old = books
-        books.removeAll { $0.id == book.id }
+        let removed = books.filter { ids.contains($0.id) }
+        books.removeAll { ids.contains($0.id) }
         do {
             try persist()
             // Keep the prior index coherent with deletion; orphan files are harmless if removal fails.
             try? JSONEncoder().encode(books).write(to: backup, options: .atomic)
-            try? FileManager.default.removeItem(at: documentURL(book.id))
-            try? FileManager.default.removeItem(at: epubURL(for: book))
+            for book in removed {
+                try? FileManager.default.removeItem(at: documentURL(book.id))
+                try? FileManager.default.removeItem(at: epubURL(for: book))
+            }
         } catch {
             books = old
             errorMessage = "删除失败：\(error.localizedDescription)"

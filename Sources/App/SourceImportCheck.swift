@@ -106,7 +106,8 @@ private actor SearchCheckGate {
             guard restored.novels.first?.readingMarks?.first == mark else { throw SourceError.message("在线书签或备注未持久化") }
             try await OfflineDownloadCheck.run(directory: root.appendingPathComponent("offline-test"))
             try await ShelfRefreshCheck.run(directory: root.appendingPathComponent("shelf-refresh-test"))
-            let report: [String: Any] = ["status": "passed", "shelfRefreshPartialFailureAndStaleResult": true, "offlineDownloadResumeAndDisconnectedRead": true, "redirect": true, "partialFailure": true,
+            try ShelfOrganizationCheck.run(directory: root.appendingPathComponent("shelf-group-test"))
+            let report: [String: Any] = ["status": "passed", "shelfOrganizationPersistenceAndBatchRemoval": true, "shelfRefreshPartialFailureAndStaleResult": true, "offlineDownloadResumeAndDisconnectedRead": true, "redirect": true, "partialFailure": true,
                 "pastedJSON": true, "savedAndReloaded": true, "preservedUnknownFields": true,
                 "duplicateUpdated": true, "searchCatalogContent": true, "onlineBookmarkAndNote": true,
                 "cryptoJSAndAES": true, "nestedRules": true, "sourceLoginKeychain": true, "rsaRoundTrip": true, "coalescedProgressReloaded": true]

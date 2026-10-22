@@ -38,7 +38,7 @@ struct NovelCover: View {
     }
     var body: some View {
         ZStack {
-            color.gradient
+            Rectangle().fill(color.gradient)
             Rectangle().fill(.black.opacity(0.10)).frame(width: compact ? 4 : 7).frame(maxWidth: .infinity, alignment: .leading).padding(.leading, compact ? 3 : 6)
             VStack(alignment: .leading, spacing: 8) {
                 Image(systemName: "book.pages").font(compact ? .caption2 : .title2).opacity(0.7)

@@ -190,6 +190,32 @@ final class ReaderInteractionTests: XCTestCase {
         app.terminate()
     }
 
+    @MainActor func testShelfGroupsPinAndBothLayoutsPersist() {
+        let app = application(); app.launchArguments = ["--ui-tab", "0", "--ui-online-shelf"]; app.launch()
+        XCTAssertTrue(app.buttons["书架显示与管理"].waitForExistence(timeout: 15)); app.buttons["书架显示与管理"].tap()
+        app.buttons["管理分组"].tap()
+        let name = app.textFields["shelf.group.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("UI Reading")
+        app.buttons["shelf.group.create"].tap(); app.buttons["完成"].tap()
+        app.buttons["在线书籍管理：离线书架测试"].tap(); app.buttons["分组与置顶"].tap()
+        XCTAssertTrue(app.switches["shelf.pin"].waitForExistence(timeout: 5)); app.switches["shelf.pin"].tap()
+        app.switches["UI Reading"].tap(); app.buttons["完成"].tap()
+        app.buttons["UI Reading"].tap()
+        XCTAssertTrue(app.staticTexts["离线书架测试"].firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["置顶"].firstMatch.exists)
+        app.buttons["书架显示与管理"].tap(); app.buttons["网格书架"].tap()
+        XCTAssertTrue(app.staticTexts["离线书架测试"].firstMatch.exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "shelf-group-grid"; screenshot.lifetime = .keepAlways; add(screenshot)
+        app.buttons["书架显示与管理"].tap(); app.buttons["列表书架"].tap()
+        app.terminate(); app.launchArguments = ["--ui-tab", "0"]; app.launch()
+        XCTAssertTrue(app.staticTexts["离线书架测试"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["置顶"].firstMatch.exists)
+        app.buttons["未分组"].tap()
+        XCTAssertFalse(app.staticTexts["离线书架测试"].firstMatch.exists)
+        app.buttons["全部分组"].tap()
+        app.terminate()
+    }
+
     @MainActor private func findImportedSource(in app: XCUIApplication) {
         // Earlier tests import bundled samples into this same installed app.
         // A virtualized List need not expose a newly appended row until scrolled.
