@@ -44,7 +44,21 @@ public actor ChapterReadCache {
                 throw error
             }
         } onCancel: {
-            Task { await self.release(file, id: request.id, waiter: waiter) }
+            Task { await self.cancelWaiter(file, id: request.id, waiter: waiter) }
+        }
+    }
+
+    private func cancelWaiter(_ file: URL, id: UUID, waiter: UUID) {
+        guard var request = pending[file], request.id == id else { return }
+        request.waiters.remove(waiter); pending[file] = request
+        guard request.waiters.isEmpty else { return }
+        // SwiftUI cancels the old lookahead before starting the new chapter's
+        // foreground task. Allow that reader to claim the existing request.
+        Task {
+            try? await Task.sleep(for: .milliseconds(200))
+            if let orphan = pending[file], orphan.id == id, orphan.waiters.isEmpty {
+                pending.removeValue(forKey: file); orphan.task.cancel()
+            }
         }
     }
 

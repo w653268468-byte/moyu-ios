@@ -3,15 +3,15 @@ import XCTest
 @testable import ReaderCore
 
 private actor ChapterGate {
-    private var continuation: CheckedContinuation<String, Never>?
+    private var continuations: [CheckedContinuation<String, Never>] = []
     private var result: String?
     private(set) var calls = 0
     func load() async -> String {
         calls += 1
         if let result { return result }
-        return await withCheckedContinuation { continuation = $0 }
+        return await withCheckedContinuation { continuations.append($0) }
     }
-    func finish(_ text: String) { result = text; continuation?.resume(returning: text); continuation = nil }
+    func finish(_ text: String) { result = text; for continuation in continuations { continuation.resume(returning: text) }; continuations.removeAll() }
 }
 
 final class ChapterReadCacheTests: XCTestCase {
@@ -54,6 +54,19 @@ final class ChapterReadCacheTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
         let fresh = try await cache.read(at: file) { "新正文" }
         XCTAssertEqual(fresh, "新正文")
+    }
+    func testForegroundCanClaimRequestAfterLookaheadWasCancelled() async throws {
+        let file = try directory().appendingPathComponent("chapter.txt"), cache = ChapterReadCache(), gate = ChapterGate()
+        let prefetch = Task { try await cache.read(at: file) { await gate.load() } }
+        try await wait { await cache.waiterCount(at: file) == 1 }
+        prefetch.cancel()
+        try await wait { await cache.waiterCount(at: file) == 0 }
+        let foreground = Task { try await cache.read(at: file) { await gate.load() } }
+        try await wait { await cache.waiterCount(at: file) == 1 }
+        await gate.finish("接手已经开始的请求")
+        let result = try await foreground.value; XCTAssertEqual(result, "接手已经开始的请求")
+        _ = try? await prefetch.value
+        let calls = await gate.calls; XCTAssertEqual(calls, 1)
     }
     func testFailedRequestCanRetryAndFailedWriteIsVisible() async throws {
         let root = try directory(), file = root.appendingPathComponent("chapter.txt"), cache = ChapterReadCache()
