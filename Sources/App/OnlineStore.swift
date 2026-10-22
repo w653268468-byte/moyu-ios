@@ -16,6 +16,14 @@ final class OnlineStore: ObservableObject {
     @Published private(set) var novels: [OnlineNovel] = []
     @Published var errorMessage: String?
     @Published private(set) var locked = false
+    @Published private(set) var refreshingShelf = false
+    @Published private(set) var refreshStatus = ""
+    @Published private(set) var refreshFailures: [String: String] = [:]
+    private var shelfRefreshTask: Task<Void, Never>?
+    private var shelfRefreshID = UUID()
+    private var shelfRefreshCompleted = 0
+    private var shelfRefreshTotal = 0
+    private var shelfRefreshAdded = 0
     let client: SourceClient
     private let directory: URL
     private let writer: DeferredSnapshotWriter
@@ -42,6 +50,7 @@ final class OnlineStore: ObservableObject {
     }
 
     func reload() {
+        cancelShelfRefresh()
         cacheRevision = UUID()
         pauseAllDownloads()
         writer.discardPendingAndWait()
@@ -145,12 +154,62 @@ final class OnlineStore: ObservableObject {
         }
     }
 
-    func keepCatalog(_ book: OnlineNovel) throws {
+    func keepCatalog(_ book: OnlineNovel, checkedAt: Date? = nil) throws {
         var saved = book
         if let current = novels.first(where: { $0.id == book.id && $0.sourceID == book.sourceID }) {
-            saved = book.preservingReadingPosition(from: current)
+            saved = checkedAt.map { book.refreshedCatalog(from: current, at: $0) } ?? book.preservingReadingPosition(from: current)
         }
+        if let checkedAt { saved.catalogCheckedAt = checkedAt; saved.lastChapter = saved.chapters.last?.title }
         try keep(saved)
+    }
+
+    func cancelShelfRefresh() {
+        shelfRefreshTask?.cancel(); shelfRefreshTask = nil; shelfRefreshID = UUID()
+        if refreshingShelf { refreshStatus = "已停止，已完成的更新保留。" }
+        refreshingShelf = false
+    }
+
+    func refreshShelf() async {
+        if let running = shelfRefreshTask { await running.value; return }
+        guard !locked else { refreshStatus = "在线书架暂时无法写入，请重新读取后重试。"; return }
+        guard !novels.isEmpty else { refreshStatus = "在线书架还没有藏书，加入小说后可下拉更新。"; return }
+        let books = novels, sourceSnapshot = sources, started = Date(), token = UUID()
+        shelfRefreshID = token; refreshingShelf = true; refreshFailures = [:]
+        shelfRefreshCompleted = 0; shelfRefreshAdded = 0; shelfRefreshTotal = books.count
+        refreshStatus = "正在更新 0/\(books.count) 本…"
+        let task = Task { [weak self] in
+            guard let self else { return }
+            defer { if shelfRefreshID == token { refreshingShelf = false; shelfRefreshTask = nil } }
+            do {
+                try await ShelfCatalogUpdater.run(books: books, sources: sourceSnapshot, client: client) { [weak self] result in
+                    await self?.acceptShelfCatalog(result, expectedSources: sourceSnapshot, started: started, token: token)
+                }
+            } catch {
+                if shelfRefreshID == token { refreshStatus = Task.isCancelled ? "已停止，已完成的更新保留。" : error.localizedDescription }
+            }
+        }
+        shelfRefreshTask = task
+        await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
+    }
+
+    private func acceptShelfCatalog(_ outcome: ShelfCatalogOutcome, expectedSources: [BookSource], started: Date, token: UUID) {
+        guard shelfRefreshID == token, !Task.isCancelled else { return }
+        shelfRefreshCompleted += 1
+        defer {
+            refreshStatus = "已更新 \(shelfRefreshCompleted)/\(shelfRefreshTotal) 本 · 新增 \(shelfRefreshAdded) 章" + (refreshFailures.isEmpty ? "" : " · \(refreshFailures.count) 本失败")
+        }
+        guard let current = novels.first(where: { $0.id == outcome.original.id && $0.sourceID == outcome.original.sourceID }),
+              (current.catalogCheckedAt ?? .distantPast) <= started else { return }
+        let key = downloadKey(current)
+        guard sources.first(where: { $0.id == current.sourceID }) == expectedSources.first(where: { $0.id == current.sourceID }) else {
+            refreshFailures[key] = "\(current.title)：书源已修改，请重新刷新。"; return
+        }
+        guard let updated = outcome.catalog else {
+            refreshFailures[key] = "\(current.title)：\(outcome.failure ?? "更新失败")"; return
+        }
+        let added = Set(updated.chapters.map(\.id)).subtracting(current.chapters.map(\.id)).count
+        do { try keepCatalog(updated, checkedAt: Date()); shelfRefreshAdded += current.chapters.isEmpty ? 0 : added }
+        catch { refreshFailures[key] = "\(current.title)：保存失败，已保留原目录。\(error.localizedDescription)" }
     }
 
     func remove(_ novel: OnlineNovel) {
@@ -172,7 +231,11 @@ final class OnlineStore: ObservableObject {
         else if updated.chapterIndex != index { updated.scrollFraction = nil }
         updated.textOffset = textOffset ?? (updated.chapterIndex == index ? updated.textOffset : 0)
         updated.chapterIndex = index
-        guard existing == nil || old.chapterIndex != updated.chapterIndex || old.textOffset != updated.textOffset || old.scrollFraction != updated.scrollFraction else { return }
+        if updated.chapters.indices.contains(index) {
+            let chapterID = updated.chapters[index].id
+            updated.unreadChapterIDs?.removeAll { $0 == chapterID }
+        }
+        guard existing == nil || old.chapterIndex != updated.chapterIndex || old.textOffset != updated.textOffset || old.scrollFraction != updated.scrollFraction || old.unreadChapterIDs != updated.unreadChapterIDs else { return }
         updated.lastReadAt = Date()
         if let existing { novels[existing] = updated } else { novels.insert(updated, at: 0) }
         let snapshot = Index(sources: sources, novels: novels)

@@ -176,6 +176,20 @@ final class ReaderInteractionTests: XCTestCase {
         app.terminate()
     }
 
+    @MainActor func testPullToRefreshShelfShowsNewChapterAndRetainsItAfterRelaunch() {
+        let app = application(); app.launchArguments = ["--ui-tab", "0", "--ui-shelf-refresh"]; app.launch()
+        XCTAssertTrue(app.staticTexts["最新：第3章 测试"].waitForExistence(timeout: 15))
+        let scroll = app.scrollViews.firstMatch
+        scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).press(forDuration: 0.1, thenDragTo: scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
+        XCTAssertTrue(app.staticTexts["最新：第4章 测试"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["新增 1 章"].exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "shelf-refreshed"; screenshot.lifetime = .keepAlways; add(screenshot)
+        app.terminate(); app.launchArguments = ["--ui-tab", "0"]; app.launch()
+        XCTAssertTrue(app.staticTexts["最新：第4章 测试"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["新增 1 章"].exists)
+        app.terminate()
+    }
+
     @MainActor private func findImportedSource(in app: XCUIApplication) {
         // Earlier tests import bundled samples into this same installed app.
         // A virtualized List need not expose a newly appended row until scrolled.

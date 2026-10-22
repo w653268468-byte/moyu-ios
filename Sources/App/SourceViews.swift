@@ -229,9 +229,10 @@ struct NovelDetailView: View {
         loadTask = Task {
             do {
                 let current = online.novels.first(where: { $0.id == novel.id && $0.sourceID == novel.sourceID }) ?? novel
-                let catalog = try await online.client.catalog(current, source: source)
+                var catalog = try await online.client.catalog(current, source: source)
                 try Task.checkCancellation()
-                if saved { try online.keepCatalog(catalog) }
+                catalog.catalogCheckedAt = Date(); catalog.lastChapter = catalog.chapters.last?.title
+                if saved { try online.keepCatalog(catalog, checkedAt: Date()) }
                 loaded = online.novels.first(where: { $0.id == catalog.id && $0.sourceID == catalog.sourceID }) ?? catalog
             } catch { if !Task.isCancelled { failure = "获取目录失败：" + error.localizedDescription } }
             if !Task.isCancelled { loading = false }

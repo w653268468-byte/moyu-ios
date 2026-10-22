@@ -19,11 +19,18 @@ struct ShelfView: View {
     @State private var showAbout = false
     @AppStorage("reader.shelfSortRecent") private var sortRecent = true
     @AppStorage("reader.shelfScope") private var shelfScope = "全部"
+    @AppStorage("reader.shelfSortUpdated") private var sortUpdated = false
     @State private var showDownloads = false
     @State private var showFindBooks = false
     @State private var onlineReading: OnlineNovel?
     @State private var deletingOnline: OnlineNovel?
     @State private var inspectingOnline: OnlineNovel?
+    private var onlineFiltered: [OnlineNovel] {
+        online.novels.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.author.localizedCaseInsensitiveContains(query) }.sorted {
+            if sortUpdated { return ($0.catalogUpdatedAt ?? .distantPast) > ($1.catalogUpdatedAt ?? .distantPast) }
+            return sortRecent ? ($0.lastReadAt ?? .distantPast) > ($1.lastReadAt ?? .distantPast) : $0.title.localizedStandardCompare($1.title) == .orderedAscending
+        }
+    }
 
     private var filtered: [Book] {
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -37,22 +44,15 @@ struct ShelfView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 26) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("GAVIN · 私人的阅读岛屿")
-                            .font(.caption.weight(.semibold)).tracking(2).foregroundStyle(.secondary)
-                        Text("把日子，读慢一点。")
-                            .font(.system(size: 29, weight: .medium, design: .serif))
-                        Text("书在这里，故事随身。")
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    .padding(.top, 12)
+                VStack(alignment: .leading, spacing: 20) {
+                    ShelfHeader(localCount: library.books.count, onlineCount: online.novels.count, updatedCount: online.novels.filter { !($0.unreadChapterIDs ?? []).isEmpty }.count)
 
                     Picker("书架类型", selection: $shelfScope) {
                         Text("全部").tag("全部")
                         Text("在线书架").tag("在线")
                         Text("本地书架").tag("本地")
                     }.pickerStyle(.segmented).accessibilityIdentifier("shelf.scope")
+                    if shelfScope != "本地" { ShelfRefreshStatus() }
 
                     if library.isImporting {
                         HStack {
@@ -97,27 +97,37 @@ struct ShelfView: View {
                                 Spacer()
                                 Button("离线下载", systemImage: "arrow.down.circle") { showDownloads = true }
                                 Menu {
-                                    Button("最近阅读") { sortRecent = true }
-                                    Button("书名排序") { sortRecent = false }
+                                    Button("最近阅读") { sortRecent = true; sortUpdated = false }
+                                    Button("最近更新") { sortUpdated = true }
+                                    Button("书名排序") { sortRecent = false; sortUpdated = false }
                                 } label: { Image(systemName: "arrow.up.arrow.down").frame(width: 44, height: 44) }.accessibilityLabel("在线书架排序")
                             }
                             if online.novels.isEmpty {
-                                ContentUnavailableView {
-                                    Label("在线书架还没有书籍", systemImage: "globe")
-                                } description: { Text("搜索小说后，在详情页加入书架或下载，即可在这里继续阅读。") }
-                                actions: { Button("去找书") { showFindBooks = true }.buttonStyle(.borderedProminent) }
+                                HStack(spacing: 14) {
+                                    Image(systemName: "globe.asia.australia").font(.title).foregroundStyle(.tint)
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text("在线书架还没有书籍").font(.subheadline.weight(.semibold))
+                                        Text("找到喜欢的小说，加入书架追更。").font(.caption).foregroundStyle(.secondary)
+                                    }.frame(maxWidth: .infinity, alignment: .leading)
+                                    Button("去找书") { showFindBooks = true }.buttonStyle(.bordered)
+                                }.padding(16).background(.background, in: RoundedRectangle(cornerRadius: 18))
                             } else {
                                 LazyVStack(spacing: 12) {
-                                    ForEach(online.novels.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.author.localizedCaseInsensitiveContains(query) }.sorted {
-                                        sortRecent ? ($0.lastReadAt ?? .distantPast) > ($1.lastReadAt ?? .distantPast) : $0.title.localizedStandardCompare($1.title) == .orderedAscending
-                                    }) { novel in
+                                    ForEach(onlineFiltered) { novel in
                                         HStack(spacing: 10) {
                                             Button { onlineReading = novel } label: {
                                                 HStack(spacing: 15) {
-                                                    Image(systemName: "book.closed.fill").font(.title).foregroundStyle(coverColors[0])
+                                                    NovelCover(title: novel.title, url: novel.coverURL).frame(width: 56, height: 80)
                                                     VStack(alignment: .leading, spacing: 5) {
                                                         Text(novel.title).font(.headline).foregroundStyle(.primary).lineLimit(1)
                                                         Text("第 \(novel.chapterIndex + 1) / \(novel.chapters.count) 章 · \(novel.author)").font(.caption).foregroundStyle(.secondary)
+                                                        if let latest = novel.lastChapter ?? novel.chapters.last?.title {
+                                                            Text("最新：" + latest).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                                        }
+                                                        if let unread = novel.unreadChapterIDs, !unread.isEmpty {
+                                                            Text("新增 \(unread.count) 章").font(.caption2.weight(.semibold)).foregroundStyle(.orange)
+                                                                .padding(.horizontal, 7).padding(.vertical, 3).background(.orange.opacity(0.10), in: Capsule())
+                                                        }
                                                         if let state = online.downloadState(novel) {
                                                             Text(state.phase == .completed ? "全书已下载 · 可离线阅读" : "已下载 \(state.completed)/\(state.total) 章").font(.caption).foregroundStyle(.secondary)
                                                         }
@@ -177,6 +187,8 @@ struct ShelfView: View {
                 }.padding(.horizontal, 24).padding(.bottom, 30)
             }
             .background(Color(uiColor: .systemGroupedBackground))
+            .refreshable { await online.refreshShelf() }
+            .scrollBounceBehavior(.always, axes: .vertical)
             .navigationTitle("Gavin").navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, prompt: "搜索书架")
             .toolbar {
@@ -230,24 +242,15 @@ private struct BookCard: View {
     let book: Book
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 9).fill(coverColors[abs(book.colorIndex % coverColors.count)].gradient)
-                Rectangle().fill(.black.opacity(0.12)).frame(width: 8).padding(.leading, 7)
-                VStack(alignment: .leading, spacing: 12) {
-                    Image(systemName: "water.waves").font(.title2).opacity(0.65)
-                    Text(book.title).font(.system(size: 23, weight: .medium, design: .serif)).lineLimit(4)
-                    Spacer(minLength: 4)
-                    Text("G A V I N").font(.system(size: 9)).tracking(2).opacity(0.65)
-                }.foregroundStyle(.white).padding(22)
-            }.frame(height: 218)
-                .shadow(color: .black.opacity(0.12), radius: 7, y: 4)
+            NovelCover(title: book.title, compact: false).frame(height: 190)
             Text(book.title).font(.subheadline.weight(.medium)).lineLimit(1)
             Text("\(book.chapterCount) 章 · \(book.wordCount.formatted()) 字")
                 .font(.caption).foregroundStyle(.secondary)
             ProgressView(value: book.progress).tint(coverColors[0])
             Text(book.lastReadAt == nil ? "尚未开始" : "已读 \(Int(book.progress * 100))%")
                 .font(.caption2).foregroundStyle(.secondary)
-        }.accessibilityElement(children: .combine)
+        }.padding(12).background(.background, in: RoundedRectangle(cornerRadius: 18))
+            .accessibilityElement(children: .combine)
     }
 }
 

@@ -82,6 +82,11 @@ struct MoyuApp: App {
                         UserDefaults.standard.set(false, forKey: "reader.fullScreen")
                         try? online.prepareOfflineShelfFixture(refreshable: true)
                     }
+                    if ProcessInfo.processInfo.arguments.contains("--ui-shelf-refresh") {
+                        UserDefaults.standard.set("在线", forKey: "reader.shelfScope")
+                        UserDefaults.standard.set(false, forKey: "reader.fullScreen")
+                        try? online.prepareOfflineShelfFixture(refreshable: true)
+                    }
                     if ProcessInfo.processInfo.arguments.contains("--ui-import-preview") || ProcessInfo.processInfo.arguments.contains("--ui-import-samples") { showSourceImportPreview = true }
                     if ProcessInfo.processInfo.arguments.contains("--ui-preferences") { showReaderPreferences = true }
                     if ProcessInfo.processInfo.arguments.contains("--ui-all-next") { UserDefaults.standard.set(ReadingTapMap.allNext.stored, forKey: "reader.tapMap") }

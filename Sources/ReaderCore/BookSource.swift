@@ -173,6 +173,9 @@ public struct OnlineNovel: Codable, Identifiable, Equatable, Sendable {
     public var chapters: [OnlineChapter] = []
     public var chapterIndex = 0
     public var lastReadAt: Date?
+    public var catalogCheckedAt: Date?
+    public var catalogUpdatedAt: Date?
+    public var unreadChapterIDs: [String]?
     public var textOffset: Int?
     public var scrollFraction: Double?
     public var ruleVariables: [String: String]?
@@ -198,6 +201,21 @@ public struct OnlineNovel: Codable, Identifiable, Equatable, Sendable {
             result.textOffset = 0; result.scrollFraction = 0
         }
         result.readingMarks = current.readingMarks; result.lastReadAt = current.lastReadAt
+        result.catalogCheckedAt = current.catalogCheckedAt
+        result.catalogUpdatedAt = current.catalogUpdatedAt
+        result.unreadChapterIDs = current.unreadChapterIDs
+        return result
+    }
+
+    public func refreshedCatalog(from current: OnlineNovel, at date: Date) -> OnlineNovel {
+        var result = preservingReadingPosition(from: current)
+        let oldIDs = Set(current.chapters.map(\.id)), newIDs = Set(chapters.map(\.id))
+        let added = current.chapters.isEmpty ? Set<String>() : newIDs.subtracting(oldIDs)
+        let unread = Set(current.unreadChapterIDs ?? []).intersection(newIDs).union(added)
+        result.unreadChapterIDs = chapters.map(\.id).filter { unread.contains($0) }
+        result.catalogCheckedAt = date
+        if !added.isEmpty { result.catalogUpdatedAt = date }
+        result.lastChapter = chapters.last?.title ?? lastChapter
         return result
     }
 }

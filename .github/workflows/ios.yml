@@ -195,6 +195,7 @@ jobs:
             -resultBundlePath build/ui/ReaderInteraction.xcresult -parallel-testing-enabled NO \
             ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual \
             GAVIN_SIMULATOR_SWIFT="$RUNTIME_SWIFT"
+          xcrun xcresulttool export attachments --path build/ui/ReaderInteraction.xcresult --output-path build/ui/attachments
       - name: Upload simulator screens
         if: always()
         uses: actions/upload-artifact@v4

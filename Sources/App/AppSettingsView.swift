@@ -128,10 +128,20 @@ struct AppSettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    HStack(spacing: 15) {
+                        Image(systemName: "book.pages.fill").font(.title).foregroundStyle(.white)
+                            .frame(width: 56, height: 56).background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: 15))
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("Gavin").font(.title2.bold())
+                            Text("让阅读，更合你的心意。").font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }.padding(.vertical, 6)
+                }
                 Section("阅读") {
-                    NavigationLink("字体、排版与主题") { ReadingPreferences() }
-                    NavigationLink("自定义字体") { ReaderFontSettings() }
-                    NavigationLink("搜索设置") { SearchConfigurationView() }
+                    NavigationLink { ReadingPreferences() } label: { Label("字体、排版与主题", systemImage: "textformat.size") }
+                    NavigationLink { ReaderFontSettings() } label: { Label("自定义字体", systemImage: "textformat.abc") }
+                    NavigationLink { SearchConfigurationView() } label: { Label("搜索设置", systemImage: "magnifyingglass") }
                     LabeledContent("本地书籍", value: "\(library.books.count) 本")
                     LabeledContent("在线书架", value: "\(online.novels.count) 本")
                     LabeledContent("书源", value: "\(online.sources.count) 个")

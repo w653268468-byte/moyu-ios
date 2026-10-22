@@ -236,7 +236,7 @@ struct OnlineReaderView: View {
                 guard !updated.chapters.isEmpty else { throw SourceError.message("网站返回空目录") }
                 var current = online.novels.first(where: { $0.id == novel.id && $0.sourceID == novel.sourceID }) ?? novel
                 current.chapterIndex = index; current.textOffset = resumeOffset; current.scrollFraction = resumeFraction
-                let refreshed = updated.preservingReadingPosition(from: current)
+                let refreshed = updated.refreshedCatalog(from: current, at: Date())
                 if let activeChapter, let destination = updated.chapters.firstIndex(where: { $0.id == activeChapter.id }) {
                     if destination != index { pendingOffset = resumeOffset }
                 } else {
