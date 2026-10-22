@@ -67,30 +67,37 @@ struct PagedReadingView: View {
         GeometryReader { geometry in
             let showTitle = style.showChapterTitle && !text.hasPrefix(title)
             let width = max(40, min(760, geometry.size.width) - style.horizontalMargin * 2)
-            let height = max(40, geometry.size.height - style.verticalMargin * 2 - 26 - (showTitle ? 28 : 0))
-            VStack(spacing: 0) {
-                if showTitle { Text(title).font(.caption).lineLimit(1).opacity(0.6).frame(height: 28, alignment: .topLeading).frame(maxWidth: .infinity, alignment: .leading) }
-                ZStack {
+            let top = style.verticalMargin + geometry.safeAreaInsets.top
+            let bottom = style.verticalMargin + geometry.safeAreaInsets.bottom
+            let height = max(40, geometry.size.height - top - bottom - 26 - (showTitle ? 28 : 0))
+            let side = (geometry.size.width - width) / 2
+            ZStack {
                     if let failure { Text(failure).font(.callout) }
                     else if style.pageAnimation == "curl", !pages.isEmpty {
                         CurlReadingView(text: attributed, ranges: pages, page: page, paper: UIColor(style.paper.background),
                             onPage: selectPage, previousChapter: previousChapter, nextChapter: nextChapter,
-                            toggleChrome: toggleChrome).id(layoutID)
+                            toggleChrome: toggleChrome,
+                            contentInsets: UIEdgeInsets(top: top + (showTitle ? 28 : 0), left: side, bottom: bottom + 26, right: side),
+                            title: showTitle ? title : nil, ink: UIColor(style.paper.ink)).id(layoutID)
                     } else if pages.indices.contains(page) {
-                        PageDrawing(text: attributed, range: pages[page], ink: UIColor(style.paper.ink))
+                        VStack(spacing: 0) {
+                            if showTitle { Text(title).font(.caption).lineLimit(1).opacity(0.6).frame(height: 28, alignment: .topLeading).frame(maxWidth: .infinity, alignment: .leading) }
+                            PageDrawing(text: attributed, range: pages[page], ink: UIColor(style.paper.ink)).frame(width: width, height: height)
+                            Text("\(page + 1) / \(pages.count)").font(.caption2).monospacedDigit().opacity(0.6).frame(height: 26, alignment: .bottom)
+                                .accessibilityIdentifier("reader.pageIndicator")
+                        }.padding(.top, top).padding(.bottom, bottom).padding(.horizontal, side)
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .background(style.paper.background)
                             .id(page)
                             .transition(.asymmetric(insertion: .move(edge: forward ? .trailing : .leading), removal: .move(edge: forward ? .leading : .trailing)))
                     } else { ProgressView("正在分页…") }
-                }.frame(width: width, height: height).clipped()
+                }.frame(width: geometry.size.width, height: geometry.size.height).background(style.paper.background).clipped()
+                    .accessibilityIdentifier("reader.pageCanvas")
                     .gesture(DragGesture(minimumDistance: 25).onEnded { value in
                         guard style.pageAnimation != "curl" else { return }
                         guard abs(value.translation.width) > abs(value.translation.height) else { return }
                         move(value.translation.width < 0 ? 1 : -1)
                     }, including: style.pageAnimation == "curl" ? .none : .all)
-                Text(pages.isEmpty ? "" : "\(page + 1) / \(pages.count)").font(.caption2).monospacedDigit().opacity(0.6).frame(height: 26, alignment: .bottom)
-                    .accessibilityIdentifier("reader.pageIndicator")
-            }.frame(width: width).padding(.vertical, style.verticalMargin)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .contentShape(Rectangle())
                 .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).exclusively(before: SpatialTapGesture()).onEnded { value in
                     switch value {

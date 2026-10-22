@@ -15,6 +15,7 @@ import MediaPlayer
     private var token = UUID()
     private var loadTask: Task<Void, Never>?, sleepTask: Task<Void, Never>?
     private var loader: ((Int) async throws -> (String, String)?)?
+    private var positionMap: ((Int, Int, Bool) -> Int)?
     private var progress: ((Int, Int) -> Void)?
     private var chunks: [SpeechTextChunk] = []
     private var chunkIndex = 0
@@ -39,7 +40,7 @@ import MediaPlayer
         observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] note in Task { @MainActor in self?.routeChanged(note) } })
     }
     func start(owner: String, title: String, chapter: Int, offset: Int,
-               loader: @escaping (Int) async throws -> (String, String)?, progress: @escaping (Int, Int) -> Void) {
+               loader: @escaping (Int) async throws -> (String, String)?, positionMap: ((Int, Int, Bool) -> Int)? = nil, progress: @escaping (Int, Int) -> Void) {
         if active && self.owner == owner { toggle(); return }
         stop()
         do {
@@ -49,7 +50,8 @@ import MediaPlayer
                 try session.setActive(true)
             }
         } catch { message = "无法开启听书音频：" + error.localizedDescription; return }
-        self.owner = owner; self.title = title; self.loader = loader; self.progress = progress
+        self.owner = owner; self.title = title; self.loader = loader; self.positionMap = positionMap
+        self.progress = { chapter, offset in progress(chapter, positionMap?(chapter, offset, true) ?? offset) }
         active = true; paused = false
         let minutes = min(180, max(0, UserDefaults.standard.integer(forKey: "reader.sleepMinutes")))
         if minutes > 0 { sleepTask = Task { try? await Task.sleep(for: .seconds(minutes * 60)); guard !Task.isCancelled else { return }; self.stop() } }
@@ -65,7 +67,7 @@ import MediaPlayer
             do {
                 guard let (name, text) = try await loader(index) else { if current == token { stop() }; return }
                 try Task.checkCancellation(); guard current == token else { return }
-                let value = SpeechText.chunks(text, startingAt: offset)
+                let value = SpeechText.chunks(text, startingAt: positionMap?(index, offset, false) ?? offset)
                 guard !value.isEmpty else { stop(); message = "这一章没有可朗读的文字。"; return }
                 chapterTitle = name; chapterIndex = index; chunks = value; chunkIndex = 0; loading = false
                 progress?(index, value[0].utf16Offset)
@@ -101,7 +103,7 @@ import MediaPlayer
     func stop() {
         token = UUID(); loadTask?.cancel(); sleepTask?.cancel(); loadTask = nil; sleepTask = nil
         speaking = nil; synthesizer.stopSpeaking(at: .immediate)
-        active = false; paused = false; loading = false; owner = ""; loader = nil; progress = nil; chunks = []
+        active = false; paused = false; loading = false; owner = ""; loader = nil; progress = nil; positionMap = nil; chunks = []
         if !simulated {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -176,7 +178,19 @@ extension ReaderSpeech {
             player.speechSynthesizer(player.synthesizer, didFinish: second)
             try await wait { !player.active }
             guard requested == [0, 1, 2], positions.contains(0), positions.contains(1) else { throw SourceError.message("自动接章或进度保存错误") }
-            try Data(#"{"status":"passed","chapterAdvance":true,"pauseResume":true,"staleCallbackIgnored":true,"endOfBook":true,"audioOutput":"not_tested"}"#.utf8).write(to: file, options: .atomic)
+            let transformer = SpeechTextPresentation(rules: [TextReplacementRule(name: "净化", pattern: "广告", replacement: "")], conversion: "none")
+            let original = "广告广告这里才是正文。"
+            var mappedOffsets: [Int] = []
+            player.start(owner: "transformed", title: "净化听书", chapter: 0, offset: 4, loader: { index in
+                guard index == 0 else { return nil }
+                return try await transformer.prepare(index: index, title: "第一章", text: original, book: "测试", origin: "local")
+            }, positionMap: { transformer.offset(chapter: $0, value: $1, original: $2) }, progress: { _, offset in mappedOffsets.append(offset) })
+            try await wait { player.speaking != nil }
+            guard let transformed = player.speaking, transformed.speechString == "这里才是正文。", mappedOffsets.first == 4 else { throw SourceError.message("净化听书未使用转换后正文或原文起点映射错误") }
+            player.speechSynthesizer(player.synthesizer, didFinish: transformed)
+            try await wait { !player.active }
+            guard mappedOffsets.last == (original as NSString).length else { throw SourceError.message("净化听书保存了错误的原文结束位置") }
+            try Data(#"{"status":"passed","chapterAdvance":true,"pauseResume":true,"staleCallbackIgnored":true,"endOfBook":true,"transformedOffsets":true,"audioOutput":"not_tested"}"#.utf8).write(to: file, options: .atomic)
         } catch {
             player.stop()
             let data = try? JSONSerialization.data(withJSONObject: ["status": "failed", "error": error.localizedDescription])

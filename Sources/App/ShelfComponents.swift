@@ -5,9 +5,9 @@ struct ShelfHeader: View {
     let onlineCount: Int
     let updatedCount: Int
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text("我的书架").font(.system(size: 27, weight: .bold, design: .rounded))
+                Text("我的书架").font(.system(size: 23, weight: .bold, design: .rounded))
                 Spacer()
                 Text("\(localCount + onlineCount) 本藏书").font(.subheadline).foregroundStyle(.secondary)
             }
@@ -17,11 +17,11 @@ struct ShelfHeader: View {
                 metric("本地书籍", value: localCount, symbol: "books.vertical")
                 Divider().frame(height: 27)
                 metric("有新章节", value: updatedCount, symbol: "sparkles")
-            }.padding(.vertical, 12).background(.background, in: RoundedRectangle(cornerRadius: 18))
+            }.padding(.vertical, 10).background(.background, in: RoundedRectangle(cornerRadius: 16))
         }.padding(.top, 10)
     }
     private func metric(_ title: String, value: Int, symbol: String) -> some View {
-        VStack(spacing: 5) {
+        HStack(spacing: 5) {
             Label("\(value)", systemImage: symbol).font(.headline).foregroundStyle(.tint)
             Text(title).font(.caption2).foregroundStyle(.secondary)
         }.frame(maxWidth: .infinity)

@@ -1,7 +1,10 @@
 name: Core development checks
 on:
   push:
-    branches: [codex/js-runtime]
+    branches: ['codex/**']
+concurrency:
+  group: gavin-core-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:

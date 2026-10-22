@@ -47,6 +47,10 @@ final class ReaderInteractionTests: XCTestCase {
             app.launch()
             let indicator = app.staticTexts["reader.pageIndicator"]
             XCTAssertTrue(indicator.waitForExistence(timeout: 15))
+            let canvas = app.descendants(matching: .any)[curl ? "reader.curlCanvas" : "reader.pageCanvas"].firstMatch
+            XCTAssertTrue(canvas.waitForExistence(timeout: 5))
+            XCTAssertGreaterThanOrEqual(canvas.frame.width, app.frame.width - 2, "The page animation must cover the screen width, including paper margins")
+            XCTAssertGreaterThanOrEqual(canvas.frame.height, app.frame.height - 2, "Fullscreen must turn the whole page, including top and bottom paper")
             let points: [(CGFloat, CGFloat)] = [(0.02, 0.2), (0.5, 0.4), (0.98, 0.6), (0.5, 0.94)]
             for (index, point) in points.enumerated() {
                 app.coordinate(withNormalizedOffset: CGVector(dx: point.0, dy: point.1)).tap()
@@ -179,7 +183,8 @@ final class ReaderInteractionTests: XCTestCase {
     @MainActor func testPullToRefreshShelfShowsNewChapterAndRetainsItAfterRelaunch() {
         let app = application(); app.launchArguments = ["--ui-tab", "0", "--ui-shelf-refresh"]; app.launch()
         XCTAssertTrue(app.staticTexts["最新：第3章 测试"].waitForExistence(timeout: 15))
-        let scroll = app.scrollViews.firstMatch
+        let scroll = app.scrollViews["shelf.scroll"]
+        XCTAssertTrue(scroll.waitForExistence(timeout: 5))
         scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).press(forDuration: 0.1, thenDragTo: scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
         XCTAssertTrue(app.staticTexts["最新：第4章 测试"].waitForExistence(timeout: 20))
         XCTAssertTrue(app.staticTexts["新增 1 章"].exists)
@@ -213,6 +218,29 @@ final class ReaderInteractionTests: XCTestCase {
         app.buttons["未分组"].tap()
         XCTAssertFalse(app.staticTexts["离线书架测试"].firstMatch.exists)
         app.buttons["全部分组"].tap()
+        app.terminate()
+    }
+
+    @MainActor func testTextReplacementActuallyChangesReadingAndDisablingRestoresOriginal() {
+        let app = application(); app.launchArguments = ["--ui-tab", "3"]; app.launch()
+        XCTAssertTrue(app.buttons["替换净化"].waitForExistence(timeout: 15)); app.buttons["替换净化"].tap()
+        app.buttons["添加净化规则"].tap()
+        let name = app.textFields["replace.name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 3) + "UI Replace")
+        app.textViews["replace.pattern"].tap(); app.textViews["replace.pattern"].typeText("ORIGINAL")
+        app.textViews["replace.replacement"].tap(); app.textViews["replace.replacement"].typeText("REPLACED")
+        app.buttons["replace.save"].tap()
+        XCTAssertTrue(app.staticTexts["UI Replace"].waitForExistence(timeout: 5))
+        app.terminate(); app.launchArguments = ["--ui-reading", "--ui-all-next", "--ui-transform-sample"]; app.launch()
+        let replaced = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "REPLACED reader text.")).firstMatch
+        XCTAssertTrue(replaced.waitForExistence(timeout: 15))
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).press(forDuration: 0.7)
+        app.buttons["阅读菜单"].tap(); app.buttons["替换净化"].tap()
+        let enabled = app.switches["启用 UI Replace"]
+        XCTAssertTrue(enabled.waitForExistence(timeout: 5)); enabled.tap(); app.buttons["完成"].tap()
+        let original = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "ORIGINAL reader text.")).firstMatch
+        XCTAssertTrue(original.waitForExistence(timeout: 10))
+        let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "replacement-disabled-original-restored"; screenshot.lifetime = .keepAlways; add(screenshot)
         app.terminate()
     }
 

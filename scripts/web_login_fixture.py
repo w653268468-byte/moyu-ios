@@ -28,7 +28,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         print("GET", self.path, flush=True)
         content_type = "text/html; charset=utf-8"
-        if self.path == "/catalog-refresh-origin/book":
+        if self.path == "/replace-rules.json":
+            self.send_response(200)
+            content_type = "application/json; charset=utf-8"
+            body = json.dumps([{"id": 991, "name": "Import rule", "pattern": "AD_TEXT", "replacement": "", "isRegex": False}, {"name": "Invalid rule", "pattern": "(", "isRegex": True}]).encode()
+        elif self.path == "/catalog-refresh-origin/book":
             self.send_response(200)
             body = ("<div id='list'>" + "".join(f"<a href='/catalog-refresh-origin/{n}'>第{n}章 测试</a>" for n in range(1, 5)) + "</div>").encode()
         elif self.path == "/catalog-refresh-origin/4":

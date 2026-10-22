@@ -190,12 +190,29 @@ jobs:
           xcrun simctl io "$DEVICE_ID" screenshot build/ui/reading-epub-original.png
           python3 -c 'import json,pathlib,sys; d=json.loads(pathlib.Path(sys.argv[1]).read_text()); print(d); assert d["status"] == "passed"' "$CONTAINER/Documents/epub-check.json"
           xcrun simctl terminate "$DEVICE_ID" org.moyu.reader
+          set +e
           xcodebuild test -project Moyu.xcodeproj -scheme Moyu -configuration Debug \
             -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath build/simulator \
             -resultBundlePath build/ui/ReaderInteraction.xcresult -parallel-testing-enabled NO \
             ARCHS="$(uname -m)" ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual \
             GAVIN_SIMULATOR_SWIFT="$RUNTIME_SWIFT"
+          TEST_RESULT=$?
+          set -e
+          xcrun xcresulttool get test-results summary --path build/ui/ReaderInteraction.xcresult > build/ui/test-summary.json || true
+          xcrun xcresulttool get test-results tests --path build/ui/ReaderInteraction.xcresult > build/ui/test-details.json || true
           xcrun xcresulttool export attachments --path build/ui/ReaderInteraction.xcresult --output-path build/ui/attachments
+          exit "$TEST_RESULT"
+      - name: Upload compact test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Gavin-test-diagnostics
+          path: |
+            build/ui/test-summary.json
+            build/ui/test-details.json
+            build/ui/*-check.json
+          if-no-files-found: warn
+          retention-days: 14
       - name: Upload simulator screens
         if: always()
         uses: actions/upload-artifact@v4

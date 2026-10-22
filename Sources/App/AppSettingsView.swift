@@ -56,6 +56,16 @@ enum BackupService {
             struct OnlineIndex: Decodable { var sources: [BookSource]; var novels: [OnlineNovel] }
             _ = try JSONDecoder().decode(OnlineIndex.self, from: index)
         }
+        if let data = backup.files["MoyuOnline/replace-rules.json"] {
+            let rules = try JSONDecoder().decode([TextReplacementRule].self, from: data)
+            guard rules.count <= 5000, Set(rules.map(\.id)).count == rules.count else { throw SourceError.message("备份中的替换规则数量或标识无效。") }
+            for rule in rules { try rule.validate() }
+        }
+        if let data = backup.files["MoyuOnline/shelf-organization.json"] {
+            let shelf = try JSONDecoder().decode(ShelfOrganization.self, from: data)
+            guard shelf.groups.count <= 100, Set(shelf.groups.map(\.id)).count == shelf.groups.count,
+                  shelf.groups.allSatisfy({ !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.name.count <= 40 }) else { throw SourceError.message("备份中的书架分组格式无效。") }
+        }
         guard let preferences = try PropertyListSerialization.propertyList(from: backup.preferences, format: nil) as? [String: Any],
               preferences.keys.allSatisfy({ $0.hasPrefix("reader.") }),
               preferences.values.allSatisfy({ $0 is String || $0 is NSNumber }) else { throw SourceError.message("阅读设置格式无效。") }
@@ -107,6 +117,7 @@ enum BackupService {
         for key in UserDefaults.standard.dictionaryRepresentation().keys where key.hasPrefix("reader.") { UserDefaults.standard.removeObject(forKey: key) }
         for (key, value) in preferences { UserDefaults.standard.set(value, forKey: key) }
         ReaderFontStore.shared.reload()
+        ReadingToolsStore.shared.reload()
     }
 }
 
@@ -139,6 +150,7 @@ struct AppSettingsView: View {
                     }.padding(.vertical, 6)
                 }
                 Section("阅读") {
+                    NavigationLink { ReplacementRulesView() } label: { Label("替换净化", systemImage: "text.badge.minus") }
                     NavigationLink { ReadingPreferences() } label: { Label("字体、排版与主题", systemImage: "textformat.size") }
                     NavigationLink { ReaderFontSettings() } label: { Label("自定义字体", systemImage: "textformat.abc") }
                     NavigationLink { SearchConfigurationView() } label: { Label("搜索设置", systemImage: "magnifyingglass") }

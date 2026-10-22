@@ -6,10 +6,11 @@ struct ReaderLoader: View {
     let book: Book
     @State private var document: BookDocument?
     @State private var failure: String?
+    @State private var originalLayout = UserDefaults.standard.object(forKey: "reader.epubOriginalLayout") as? Bool ?? true
 
     var body: some View {
         Group {
-            if book.originalEPUB == true {
+            if book.originalEPUB == true && originalLayout {
                 EPUBReaderLoader(book: book)
             } else if let document {
                 ReaderView(book: book, document: document)
@@ -19,7 +20,7 @@ struct ReaderLoader: View {
                     .toolbar { ToolbarItem(placement: .topBarLeading) { Button("返回") { dismiss() } } }
             } else { ProgressView("正在打开…") }
         }.task {
-            guard book.originalEPUB != true else { return }
+            guard book.originalEPUB != true || !originalLayout else { return }
             do { document = try await library.document(for: book) }
             catch { failure = error.localizedDescription }
         }
@@ -27,7 +28,7 @@ struct ReaderLoader: View {
 }
 
 private enum ReaderPanel: String, Identifiable {
-    case contents, search, settings, progress
+    case contents, search, settings, progress, tools
     var id: String { rawValue }
 }
 
@@ -42,6 +43,9 @@ struct ReaderView: View {
     @State private var navigationID = UUID()
     @State private var panel: ReaderPanel?
     @State private var search = ""
+    @State private var cachedChapter = -1
+    @State private var cachedSegments: [ReadingPage] = []
+    @State private var cachedText = ""
     @AppStorage("reader.contentsDescending") private var contentsDescending = false
     @ObservedObject private var speech = ReaderSpeech.shared
     private var speechKey: String { "local:" + book.id.uuidString }
@@ -58,19 +62,21 @@ struct ReaderView: View {
     var body: some View {
         let readingID = navigationID
         VStack(spacing: 0) {
-            if style.paged {
-                PagedReadingView(text: chapterText, title: document.chapters[current.chapter].title,
-                    resumeOffset: resumeOffset, onOffset: { saveOffset($0) },
+            ReadingTextPresentation(text: chapterText, title: document.chapters[current.chapter].title, book: book.title, origin: book.id.uuidString) { rendered in
+             if style.paged {
+                PagedReadingView(text: rendered.body.text, title: rendered.title,
+                    resumeOffset: rendered.body.displayOffset(resumeOffset), onOffset: { saveOffset(rendered.body.originalOffset($0)) },
                     previousChapter: { chapterJump(current.chapter - 1, atEnd: true) },
                     nextChapter: { chapterJump(current.chapter + 1) },
                     toggleChrome: { style.fullScreen.toggle() }).id("\(current.chapter)-\(navigationID)")
             } else {
-                ScrollReadingView(text: chapterText, resumeOffset: resumeOffset, resumeFraction: resumeFraction,
+                ScrollReadingView(text: rendered.body.text, resumeOffset: rendered.body.displayOffset(resumeOffset), resumeFraction: resumeFraction,
                     onPosition: { offset, fraction in
                         guard readingID == navigationID else { return }
-                        saveOffset(offset, fraction: fraction)
+                        saveOffset(rendered.body.originalOffset(offset), fraction: fraction)
                     }, toggleChrome: { style.fullScreen.toggle() })
                     .id("\(current.chapter)-\(navigationID)")
+            }
             }
             if !style.fullScreen {
                 HStack {
@@ -91,6 +97,7 @@ struct ReaderView: View {
                 }.font(.subheadline).padding(.horizontal, 16)
             }
         }
+        .ignoresSafeArea(.container, edges: style.fullScreen ? .all : [])
         .background(style.paper.background).foregroundStyle(style.paper.ink)
         .preferredColorScheme(style.paper.isDark ? .dark : .light)
         .modifier(ReadingAppearance())
@@ -102,6 +109,7 @@ struct ReaderView: View {
         }
         .onAppear {
             page = min(max(0, liveBook.page), document.pages.count - 1)
+            cacheChapter()
             resumeOffset = liveBook.textOffset ?? offsetForSegment(page)
             resumeFraction = liveBook.scrollFraction
             navigationID = UUID()
@@ -109,6 +117,7 @@ struct ReaderView: View {
         .onChange(of: page) { old, value in
             if document.pages[old].chapter != document.pages[value].chapter && speech.owner == speechKey && speech.chapterIndex != document.pages[value].chapter { speech.stop() }
         }
+        .onChange(of: current.chapter) { _, _ in cacheChapter() }
         .onChange(of: speech.chapterIndex) { _, value in if speech.active && speech.owner == speechKey && document.chapters.indices.contains(value) { chapterJump(value) } }
         .onChange(of: style.paged) { _, _ in
             resumeOffset = liveBook.textOffset ?? offsetForSegment(page)
@@ -129,6 +138,7 @@ struct ReaderView: View {
                     case .contents: contents
                     case .search: searchResults
                     case .progress: EmptyView()
+                    case .tools: ReplacementRulesView()
                     }
                 }.toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { panel = nil } } }
             }
@@ -148,18 +158,25 @@ struct ReaderView: View {
                 Button(speech.active && speech.owner == speechKey ? (speech.paused ? "继续听书" : "暂停听书") : "从当前位置连续听书", systemImage: "speaker.wave.2", action: startSpeech)
                 if speech.active { Button("停止朗读", systemImage: "stop.circle") { speech.stop() } }
                 Button("搜索正文", systemImage: "magnifyingglass") { panel = .search }
+                Button("替换净化", systemImage: "text.badge.minus") { panel = .tools }
                 Button("进度跳转", systemImage: "slider.horizontal.3") { panel = .progress }
             } label: { Image(systemName: "ellipsis.circle").frame(width: 44, height: 44) }.accessibilityLabel("阅读菜单")
         }.padding(.horizontal, 8).foregroundStyle(style.paper.ink).background(style.paper.background)
     }
 
-    private var chapterSegments: [ReadingPage] { document.pages.filter { $0.chapter == current.chapter } }
+    private var chapterSegments: [ReadingPage] { cachedChapter == current.chapter ? cachedSegments : document.pages.filter { $0.chapter == current.chapter } }
+    private func cacheChapter() {
+        cachedSegments = document.pages.filter { $0.chapter == current.chapter }
+        cachedText = cachedSegments.map { TextPagination.readingText($0.text) }.joined(separator: "\n")
+        cachedChapter = current.chapter
+    }
     private func startSpeech() {
         let data = document, id = book.id, store = library
+        let presenter = SpeechTextPresentation(), name = book.title
         speech.start(owner: speechKey, title: book.title, chapter: current.chapter, offset: resumeOffset, loader: { index in
             guard data.chapters.indices.contains(index) else { return nil }
-            return (data.chapters[index].title, data.pages.filter { $0.chapter == index }.map { TextPagination.readingText($0.text) }.joined(separator: "\n"))
-        }, progress: { chapter, offset in
+            return try await presenter.prepare(index: index, title: data.chapters[index].title, text: data.pages.filter { $0.chapter == index }.map { TextPagination.readingText($0.text) }.joined(separator: "\n"), book: name, origin: id.uuidString)
+        }, positionMap: { presenter.offset(chapter: $0, value: $1, original: $2) }, progress: { chapter, offset in
             var start = 0, page = data.chapters[chapter].firstPage
             for segment in data.pages where segment.chapter == chapter {
                 if start > offset { break }; page = segment.id; start += (TextPagination.readingText(segment.text) as NSString).length + 1
@@ -167,7 +184,7 @@ struct ReaderView: View {
             store.updatePosition(bookID: id, page: page, textOffset: offset)
         })
     }
-    private var chapterText: String { chapterSegments.map { TextPagination.readingText($0.text) }.joined(separator: "\n") }
+    private var chapterText: String { cachedChapter == current.chapter ? cachedText : chapterSegments.map { TextPagination.readingText($0.text) }.joined(separator: "\n") }
 
     private func offsetForSegment(_ target: Int) -> Int {
         let chapter = document.pages[target].chapter

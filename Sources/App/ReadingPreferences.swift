@@ -32,6 +32,8 @@ struct ReadingStyle: DynamicProperty {
     @AppStorage("reader.fontSize") var fontSize = 21.0
     @AppStorage("reader.lineSpacing") var lineSpacing = 10.0
     @AppStorage("reader.paper") var paperName = Paper.cream.rawValue
+    @AppStorage("reader.characterConversion") var characterConversion = "none"
+    @AppStorage("reader.epubOriginalLayout") var epubOriginalLayout = true
     @AppStorage("reader.serif") var serif = true
     @AppStorage("reader.fontFamily") var fontFamily = "宋体"
     @AppStorage("reader.bold") var bold = false
@@ -74,6 +76,7 @@ struct ReadingStyle: DynamicProperty {
         horizontalMargin = 26; verticalMargin = 24; indent = true; showChapterTitle = true
         keepAwake = false; brightness = 1; speechRate = 0.5; paged = true; fullScreen = false
         autoChangeSource = false
+        characterConversion = "none"; epubOriginalLayout = true
         pageAnimation = "slide"
         tapMapValue = ReadingTapMap.allNext.stored
         UserDefaults.standard.set("", forKey: "reader.speechVoice")
@@ -138,6 +141,9 @@ struct ReadingPreferences: View {
                 }.padding(.vertical, 5)
             }
             Section("字体与排版") {
+                Picker("简繁转换", selection: Binding(get: { style.characterConversion }, set: { style.characterConversion = $0 })) {
+                    Text("保留原文").tag("none"); Text("显示简体").tag("simplified"); Text("显示繁体").tag("traditional")
+                }
                 Picker("字体", selection: Binding(get: { style.fontFamily }, set: { style.fontFamily = $0 })) {
                     ForEach(["系统", "宋体", "圆体", "等宽"], id: \.self) { Text($0).tag($0) }
                     ForEach(fonts.faces) { face in Text(face.title).tag("custom:" + face.name) }
@@ -152,6 +158,8 @@ struct ReadingPreferences: View {
                 Toggle("显示章节标题", isOn: Binding(get: { style.showChapterTitle }, set: { style.showChapterTitle = $0 }))
             }
             Section("页面") {
+                Toggle("EPUB 保留原版式阅读", isOn: Binding(get: { style.epubOriginalLayout }, set: { style.epubOriginalLayout = $0 }))
+                Text("关闭后，下次打开 EPUB 将使用文字重排，可应用净化、简繁转换和分页设置。").font(.caption).foregroundStyle(.secondary)
                 Toggle("左右翻页", isOn: Binding(get: { style.paged }, set: { style.paged = $0 }))
                 if style.paged {
                     Picker("翻页动画", selection: Binding(get: { style.pageAnimation }, set: { style.pageAnimation = $0 })) {
@@ -206,6 +214,7 @@ struct ReadingPreferences: View {
                 Button("恢复默认阅读设置", role: .destructive) { resetting = true }
             }
         }.navigationTitle("阅读设置").navigationBarTitleDisplayMode(.inline)
+            .onChange(of: style.characterConversion) { _, _ in if ReaderSpeech.shared.active { ReaderSpeech.shared.stop(); ReaderSpeech.shared.message = "简繁设置已更新，重新开始听书即可应用。" } }
             .confirmationDialog("恢复默认排版和主题？", isPresented: $resetting, titleVisibility: .visible) {
                 Button("恢复默认", role: .destructive) { style.reset() }
             }

@@ -54,7 +54,7 @@ struct ShelfView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 16) {
                     ShelfHeader(localCount: library.books.count, onlineCount: online.novels.count, updatedCount: online.novels.filter { !($0.unreadChapterIDs ?? []).isEmpty }.count)
 
                     Picker("书架类型", selection: $shelfScope) {
@@ -170,15 +170,16 @@ struct ShelfView: View {
                     Label("你的书架 · 无广告 · 无需注册", systemImage: "leaf")
                         .font(.caption).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity).padding(.top, 12)
-                }.padding(.horizontal, 24).padding(.bottom, 30)
+                }.padding(.horizontal, 20).padding(.bottom, 30)
             }
+            .accessibilityIdentifier("shelf.scroll")
             .background(Color(uiColor: .systemGroupedBackground))
             .refreshable { await online.refreshShelf() }
             .scrollBounceBehavior(.always, axes: .vertical)
             .navigationTitle("Gavin").navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, prompt: "搜索书架")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+            .safeAreaInset(edge: .top, spacing: 0) {
+                HStack {
                     Menu {
                         Button("管理分组", systemImage: "folder") { manageGroups = true }
                         Button("批量管理", systemImage: "checklist") { batchManaging = true }
@@ -186,13 +187,12 @@ struct ShelfView: View {
                         Button("网格书架", systemImage: shelfLayout == "grid" ? "checkmark" : "square.grid.2x2") { shelfLayout = "grid" }
                         Button("自动布局") { shelfLayout = "adaptive" }
                         Button("关于Gavin", systemImage: "info.circle") { showAbout = true }
-                    } label: { Image(systemName: "square.grid.2x2") }.accessibilityLabel("书架显示与管理")
-                }
-                ToolbarItem(placement: .topBarTrailing) {
+                    } label: { Label("显示与管理", systemImage: "square.grid.2x2").font(.subheadline).frame(minHeight: 44) }.accessibilityLabel("书架显示与管理")
+                    Spacer()
                     Button { importing = true } label: {
-                        if library.isImporting { ProgressView() } else { Image(systemName: "plus.circle.fill") }
+                        if library.isImporting { ProgressView() } else { Label("导入书籍", systemImage: "plus.circle.fill").font(.subheadline).frame(minHeight: 44) }
                     }.disabled(library.isImporting || library.storageLocked).accessibilityLabel("导入本地书籍")
-                }
+                }.padding(.horizontal, 20).background(.bar)
             }
             .fileImporter(isPresented: $importing, allowedContentTypes: [.data], allowsMultipleSelection: true) { result in
                 switch result {
