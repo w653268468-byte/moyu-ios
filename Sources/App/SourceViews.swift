@@ -197,7 +197,6 @@ struct NovelDetailView: View {
                 }
                 if let loaded {
                     Section("章节目录") {
-                        ChapterOrderPicker(descending: $contentsDescending)
                         ForEach(ChapterOrder.indices(count: loaded.chapters.count, descending: contentsDescending), id: \.self) { index in
                             let chapter = loaded.chapters[index]
                             Button(chapter.title) { var book = loaded; book.chapterIndex = index; reading = book }
@@ -205,6 +204,8 @@ struct NovelDetailView: View {
                         }
                     }
                 }
+            }.safeAreaInset(edge: .top, spacing: 0) {
+                if loaded != nil { ChapterOrderPicker(descending: $contentsDescending).padding(12).background(.bar) }
             }.navigationTitle("小说详情").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }

@@ -58,8 +58,16 @@ private actor OfflineCheckServer {
             guard try await reloaded.chapter(chapter, sourceID: book.sourceID).contains("离线下载测试正文") else { throw SourceError.message("断网后无法读取缓存") }
         }
         guard await server.count("/1") == 1, await server.count("/2") == 2, await server.count("/3") == 1 else { throw SourceError.message("离线阅读错误地发起了网络请求") }
-        reloaded.clearCache(); await reloaded.refreshDownload(book)
-        guard reloaded.downloadState(book)?.completed == 0 else { throw SourceError.message("清理缓存后仍显示已下载") }
+        var expanded = book
+        expanded.chapters.append(OnlineChapter(title: "第4章", url: URL(string: "https://offline-check.example/4")!))
+        try reloaded.keepCatalog(expanded)
+        try await wait { reloaded.downloadState(expanded)?.completed == 3 && reloaded.downloadState(expanded)?.total == 4 }
+        guard reloaded.downloadState(expanded)?.phase == .paused, reloaded.novels.first?.textOffset == 17 else { throw SourceError.message("新增章节后错误显示全书已下载或丢失阅读位置") }
+        // A stale scan must not overwrite the new catalog's 3/4 cache state.
+        await reloaded.refreshDownload(book)
+        guard reloaded.downloadState(expanded)?.total == 4 else { throw SourceError.message("旧目录缓存统计覆盖了新目录") }
+        reloaded.clearCache(); await reloaded.refreshDownload(expanded)
+        guard reloaded.downloadState(expanded)?.completed == 0 else { throw SourceError.message("清理缓存后仍显示已下载") }
         try reloaded.flushProgress()
     }
 }

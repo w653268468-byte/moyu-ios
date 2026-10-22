@@ -134,6 +134,15 @@ final class OnlineStore: ObservableObject {
             novels[index] = novel
         } else { novels.insert(novel, at: 0) }
         do { try save() } catch { novels = old; throw error }
+        if let previous = old.first(where: { $0.id == novel.id && $0.sourceID == novel.sourceID }),
+           previous.chapters.map(\.id) != novel.chapters.map(\.id) {
+            // A running job holds its original catalog. Pause it before scanning
+            // the replacement, so it cannot later claim that new chapters exist offline.
+            pauseDownload(novel)
+            downloads[downloadKey(novel)] = OfflineDownloadState(total: novel.chapters.count, message: "目录已更新，正在核对已下载章节…")
+            persistDownloads()
+            Task { await refreshDownload(novel) }
+        }
     }
 
     func keepCatalog(_ book: OnlineNovel) throws {
@@ -246,6 +255,8 @@ final class OnlineStore: ObservableObject {
             }
         }.value
         guard downloadTasks[key] == nil, !Task.isCancelled, cacheRevision == revision else { return }
+        guard let current = novels.first(where: { $0.id == book.id && $0.sourceID == book.sourceID }),
+              current.chapters.map(\.id) == book.chapters.map(\.id) else { return }
         let full = !book.chapters.isEmpty && count == book.chapters.count
         let previous = downloads[key]
         let failed = !full && previous?.phase == .failed
