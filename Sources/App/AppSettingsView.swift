@@ -30,7 +30,7 @@ enum BackupService {
         return try JSONEncoder().encode(ReaderBackup(version: 1, createdAt: Date(), files: files, preferences: settings))
     }
 
-    static func restore(_ data: Data) throws {
+    @MainActor static func restore(_ data: Data) throws {
         guard data.count <= maximumBytes * 2 else { throw SourceError.message("备份文件过大。") }
         let backup = try JSONDecoder().decode(ReaderBackup.self, from: data)
         guard backup.version == 1, backup.files.count <= 25000 else { throw SourceError.message("备份版本或文件数量不受支持。") }

@@ -15,6 +15,7 @@ private struct PageDrawing: UIViewRepresentable {
     func updateUIView(_ view: CoreTextPage, context: Context) {
         view.text = text; view.range = range; view.setNeedsDisplay()
         view.isAccessibilityElement = true
+        view.accessibilityIdentifier = "reader.pageText"
         view.accessibilityLabel = text.attributedSubstring(from: range).string
     }
 }
@@ -66,9 +67,14 @@ struct PagedReadingView: View {
     var body: some View {
         GeometryReader { geometry in
             let showTitle = style.showChapterTitle && !text.hasPrefix(title)
-            let width = max(40, min(760, geometry.size.width) - style.horizontalMargin * 2)
-            let top = style.verticalMargin + geometry.safeAreaInsets.top
-            let bottom = style.verticalMargin + geometry.safeAreaInsets.bottom
+            // Ignoring the container safe area makes the paper full screen. Some hosting
+            // configurations then report zero local insets; keep text clear of the window's
+            // island/home indicator as well, including the side inset after rotation.
+            let windowInsets = style.fullScreen ? (UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first { $0.isKeyWindow }?.safeAreaInsets ?? .zero) : .zero
+            let safeSide = max(geometry.safeAreaInsets.leading, geometry.safeAreaInsets.trailing, windowInsets.left, windowInsets.right)
+            let width = max(40, min(760, geometry.size.width) - (style.horizontalMargin + safeSide) * 2)
+            let top = style.verticalMargin + max(geometry.safeAreaInsets.top, windowInsets.top)
+            let bottom = style.verticalMargin + max(geometry.safeAreaInsets.bottom, windowInsets.bottom)
             let height = max(40, geometry.size.height - top - bottom - 26 - (showTitle ? 28 : 0))
             let side = (geometry.size.width - width) / 2
             ZStack {

@@ -51,6 +51,10 @@ final class ReaderInteractionTests: XCTestCase {
             XCTAssertTrue(canvas.waitForExistence(timeout: 5))
             XCTAssertGreaterThanOrEqual(canvas.frame.width, app.frame.width - 2, "The page animation must cover the screen width, including paper margins")
             XCTAssertGreaterThanOrEqual(canvas.frame.height, app.frame.height - 2, "Fullscreen must turn the whole page, including top and bottom paper")
+            let text = app.descendants(matching: .any)["reader.pageText"].firstMatch
+            XCTAssertTrue(text.waitForExistence(timeout: 5))
+            XCTAssertGreaterThanOrEqual(text.frame.minY, 60, "The paper fills the screen, but text must avoid the island")
+            XCTAssertLessThanOrEqual(text.frame.maxY, app.frame.maxY - 30)
             let points: [(CGFloat, CGFloat)] = [(0.02, 0.2), (0.5, 0.4), (0.98, 0.6), (0.5, 0.94)]
             for (index, point) in points.enumerated() {
                 app.coordinate(withNormalizedOffset: CGVector(dx: point.0, dy: point.1)).tap()

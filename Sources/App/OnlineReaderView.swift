@@ -91,7 +91,7 @@ struct OnlineReaderView: View {
                     Button { index += 1 } label: { Label("下一章", systemImage: "chevron.right").frame(minHeight: 44) }
                         .disabled(index >= novel.chapters.count - 1)
                 }.font(.subheadline).padding(.horizontal, 18) }
-            }.ignoresSafeArea(.container, edges: style.fullScreen ? .all : [])
+            }.ignoresSafeArea(.container, edges: style.fullScreen && style.paged ? .all : [])
                 .background(style.paper.background).foregroundStyle(style.paper.ink)
                 .preferredColorScheme(style.paper.isDark ? .dark : .light)
                 .modifier(ReadingAppearance())

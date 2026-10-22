@@ -116,6 +116,7 @@ final class CurlPageController: UIViewController {
             let page = CoreTextPage()
             page.text = text; page.range = range; page.backgroundColor = paper; page.isOpaque = true
             page.isAccessibilityElement = true; page.accessibilityLabel = text.attributedSubstring(from: range).string
+            page.accessibilityIdentifier = "reader.pageText"
             let canvas = UIView(); canvas.backgroundColor = paper; canvas.isOpaque = true
             canvas.accessibilityIdentifier = "reader.curlCanvas"
             canvas.addSubview(page); drawing = page
