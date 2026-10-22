@@ -189,7 +189,10 @@ final class OnlineStore: ObservableObject {
             }
         }
         shelfRefreshTask = task
-        await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
+        // The store owns this job. SwiftUI can cancel its refreshable waiter when
+        // published status changes rebuild the scroll view; that must not cancel
+        // the catalog update. Explicit stop/reload still cancel shelfRefreshTask.
+        await task.value
     }
 
     private func acceptShelfCatalog(_ outcome: ShelfCatalogOutcome, expectedSources: [BookSource], started: Date, token: UUID) {

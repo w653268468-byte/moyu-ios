@@ -46,6 +46,15 @@ private actor ShelfRefreshServer {
         try store.flushProgress()
         let restored = OnlineStore(directory: directory, client: client)
         guard restored.novels.first(where: { $0.id == good.id })?.unreadChapterIDs?.count == 1 else { throw SourceError.message("新章状态重开后丢失") }
+        // A refreshable view owns only a waiter, not the store's shared job.
+        // Cancelling that waiter must still finish the actual network update.
+        let beforeDetachedRefresh = await server.count("/good")
+        let cancelledWaiter = Task { await store.refreshShelf() }
+        try await wait { await server.count("/good") > beforeDetachedRefresh }
+        cancelledWaiter.cancel()
+        await cancelledWaiter.value
+        guard store.refreshStatus.contains("已更新 2/2 本"), store.refreshFailures.count == 1,
+              !store.refreshingShelf else { throw SourceError.message("刷新页面的等待任务取消后中断了书架更新") }
         store.position(updated, index: 3, textOffset: 0)
         guard store.novels.first(where: { $0.id == good.id })?.unreadChapterIDs?.isEmpty == true else { throw SourceError.message("阅读新增章节后未清除新章标记") }
         let removed = book("removed")
