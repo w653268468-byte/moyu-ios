@@ -304,7 +304,7 @@ struct OnlineReaderView: View {
     private func openMark(_ mark: OnlineReadingMark) {
         guard let target = mark.destination(in: novel.chapters) else { failure = "当前书源找不到书签对应的章节，请换回原书源或手动选择章节。"; return }
         if speech.owner == speechKey { speech.stop() }
-        pendingOffset = mark.textOffset; index = target; positionRevision = UUID(); showContents = false
+        pendingOffset = mark.textOffset; selectChapter(target); positionRevision = UUID(); showContents = false
     }
     private func startSpeech() {
         let book = novel, store = online

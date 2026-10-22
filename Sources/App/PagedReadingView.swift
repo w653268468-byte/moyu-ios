@@ -41,6 +41,11 @@ final class CoreTextPage: UIView {
     }
 }
 
+private struct PaginationInput: Equatable {
+    let text: String
+    let settings: String
+}
+
 struct PagedReadingView: View {
     let text: String
     let title: String
@@ -57,6 +62,7 @@ struct PagedReadingView: View {
     @State private var anchor: Int?
     @State private var forward = true
     @State private var layoutID = UUID()
+    @State private var paginatedText: String?
 
     init(text: String, title: String, resumeOffset: Int, onOffset: @escaping (Int) -> Void,
          previousChapter: @escaping () -> Void, nextChapter: @escaping () -> Void, toggleChrome: @escaping () -> Void) {
@@ -121,14 +127,14 @@ struct PagedReadingView: View {
                         }
                     }
                 })
-                .task(id: "\(width)-\(height)-\(style.fontSize)-\(style.fontFamily)-\(style.bold)-\(style.letterSpacing)-\(style.lineSpacing)-\(style.paragraphSpacing)-\(style.indent)-\(style.paperName)") {
+                .task(id: PaginationInput(text: text, settings: "\(width)-\(height)-\(title)-\(style.fontSize)-\(style.fontFamily)-\(style.bold)-\(style.letterSpacing)-\(style.lineSpacing)-\(style.paragraphSpacing)-\(style.indent)-\(style.paperName)")) {
                     await repaginate(size: CGSize(width: width, height: height))
                 }
         }
     }
 
     @MainActor private func repaginate(size: CGSize) async {
-        let offset = anchor ?? max(0, resumeOffset)
+        let offset = (paginatedText == text ? anchor : nil) ?? max(0, resumeOffset)
         do {
             let paragraph = NSMutableParagraphStyle()
             paragraph.lineSpacing = style.lineSpacing
@@ -143,7 +149,7 @@ struct PagedReadingView: View {
             ])
             let layout = try await Task.detached(priority: .userInitiated) { try TextPagination.ranges(value, size: size) }.value
             try Task.checkCancellation()
-            attributed = value; pages = layout; layoutID = UUID()
+            attributed = value; pages = layout; layoutID = UUID(); paginatedText = text
             page = layout.lastIndex(where: { $0.location <= offset }) ?? 0
             failure = nil
             anchor = layout[page].location
