@@ -139,9 +139,7 @@ final class OnlineStore: ObservableObject {
     func keepCatalog(_ book: OnlineNovel) throws {
         var saved = book
         if let current = novels.first(where: { $0.id == book.id && $0.sourceID == book.sourceID }) {
-            saved.chapterIndex = min(current.chapterIndex, max(0, book.chapters.count - 1))
-            saved.textOffset = current.textOffset; saved.scrollFraction = current.scrollFraction
-            saved.readingMarks = current.readingMarks; saved.lastReadAt = current.lastReadAt
+            saved = book.preservingReadingPosition(from: current)
         }
         try keep(saved)
     }
@@ -302,9 +300,13 @@ final class OnlineStore: ObservableObject {
     }
 
     #if DEBUG
-    func prepareOfflineShelfFixture() throws {
-        let origin = URL(string: "https://offline-shelf.example")!
-        var book = OnlineNovel(title: "离线书架测试", author: "Gavin", url: origin.appendingPathComponent("book"), sourceID: origin.absoluteString)
+    func prepareOfflineShelfFixture(refreshable: Bool = false) throws {
+        let origin = URL(string: refreshable ? "http://127.0.0.1:18765/catalog-refresh-origin" : "https://offline-shelf.example")!
+        if refreshable {
+            let source = ##"{"bookSourceName":"目录更新测试","bookSourceUrl":"http://127.0.0.1:18765/catalog-refresh-origin","ruleToc":{"chapterList":"#list a","chapterName":"text","chapterUrl":"href"},"ruleContent":{"content":"#content@text"}}"##
+            try addSources(SourceImport.parse(Data(source.utf8)).sources)
+        }
+        var book = OnlineNovel(title: refreshable ? "目录更新测试书" : "离线书架测试", author: "Gavin", url: origin.appendingPathComponent("book"), sourceID: origin.absoluteString)
         book.chapters = (1...3).map { OnlineChapter(title: "第\($0)章 测试", url: origin.appendingPathComponent(String($0))) }
         try keep(book)
         for (index, chapter) in book.chapters.enumerated() {

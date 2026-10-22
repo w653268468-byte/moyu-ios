@@ -185,4 +185,19 @@ public struct OnlineNovel: Codable, Identifiable, Equatable, Sendable {
         self.url = url
         self.sourceID = sourceID
     }
+
+    /// Keep the same chapter after additions, removals or a reordered catalog.
+    public func preservingReadingPosition(from current: OnlineNovel) -> OnlineNovel {
+        var result = self
+        let oldChapter = current.chapters.indices.contains(current.chapterIndex) ? current.chapters[current.chapterIndex] : nil
+        if let oldChapter, let destination = chapters.firstIndex(where: { $0.id == oldChapter.id }) {
+            result.chapterIndex = destination
+            result.textOffset = current.textOffset; result.scrollFraction = current.scrollFraction
+        } else {
+            result.chapterIndex = min(max(0, current.chapterIndex), max(0, chapters.count - 1))
+            result.textOffset = 0; result.scrollFraction = 0
+        }
+        result.readingMarks = current.readingMarks; result.lastReadAt = current.lastReadAt
+        return result
+    }
 }

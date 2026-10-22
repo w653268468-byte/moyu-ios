@@ -1,5 +1,16 @@
 import Foundation
 
+public enum ReadingProgress {
+    public static func chapter(at fraction: Double, count: Int) -> Int? {
+        guard count > 0, fraction.isFinite else { return nil }
+        return Int((min(1, max(0, fraction)) * Double(count - 1)).rounded())
+    }
+    public static func fraction(chapter: Int, count: Int) -> Double {
+        guard count > 1 else { return 0 }
+        return Double(min(max(0, chapter), count - 1)) / Double(count - 1)
+    }
+}
+
 public enum ChapterOrder {
     /// Display order only. Values always refer to the original catalog positions.
     public static func indices(count: Int, descending: Bool) -> [Int] {

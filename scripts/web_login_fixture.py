@@ -28,7 +28,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         print("GET", self.path, flush=True)
         content_type = "text/html; charset=utf-8"
-        if self.path == "/font-test.ttf":
+        if self.path == "/catalog-refresh-origin/book":
+            self.send_response(200)
+            body = ("<div id='list'>" + "".join(f"<a href='/catalog-refresh-origin/{n}'>第{n}章 测试</a>" for n in range(1, 5)) + "</div>").encode()
+        elif self.path == "/catalog-refresh-origin/4":
+            self.send_response(200)
+            body = ("<div id='content'>第四章新增正文。" + "新增章节可继续阅读。" * 80 + "</div>").encode()
+        elif self.path == "/font-test.ttf":
             font = Path("/System/Library/Fonts/Supplemental/Arial.ttf")
             self.send_response(200 if font.is_file() else 404)
             content_type = "font/ttf"

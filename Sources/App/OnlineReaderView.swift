@@ -10,6 +10,10 @@ struct OnlineReaderView: View {
     @State private var loading = true
     @State private var showContents = false
     @State private var showSettings = false
+    @State private var showProgress = false
+    @State private var updatingCatalog = false
+    @State private var catalogMessage: String?
+    @State private var catalogTask: Task<Void, Never>?
     @State private var official = false
     @State private var retry = 0
     @State private var showSourceSwitch = false
@@ -73,8 +77,10 @@ struct OnlineReaderView: View {
                     Button { index -= 1 } label: { Label("上一章", systemImage: "chevron.left").frame(minHeight: 44) }
                         .disabled(index <= 0)
                     Spacer()
-                    Text("\(novel.chapters.isEmpty ? 0 : index + 1) / \(novel.chapters.count)")
-                        .font(.caption).monospacedDigit()
+                    Button { showProgress = true } label: {
+                        Text("\(novel.chapters.isEmpty ? 0 : index + 1) / \(novel.chapters.count) · 跳转")
+                            .font(.caption).monospacedDigit().frame(minHeight: 44)
+                    }.accessibilityIdentifier("reader.progress")
                     Spacer()
                     Button { index += 1 } label: { Label("下一章", systemImage: "chevron.right").frame(minHeight: 44) }
                         .disabled(index >= novel.chapters.count - 1)
@@ -112,7 +118,7 @@ struct OnlineReaderView: View {
                         if style.autoChangeSource { startSwitch() }
                     }
                 }
-                .onDisappear { cancelSwitch() }
+                .onDisappear { cancelSwitch(); catalogTask?.cancel() }
                 .onChange(of: index) { _, value in cancelSwitch(); if speech.owner == speechKey && speech.chapterIndex != value { speech.stop() } }
                 .onChange(of: speech.chapterIndex) { _, value in if speech.active && speech.owner == speechKey && novel.chapters.indices.contains(value) { index = value } }
                 .onChange(of: showSourceSwitch) { _, shown in if shown { cancelSwitch() } }
@@ -127,6 +133,9 @@ struct OnlineReaderView: View {
                         }
                     }
                 }
+                .sheet(isPresented: $showProgress) {
+                    ReadingProgressPicker(titles: novel.chapters.map(\.title), current: index) { jumpToChapter($0) }
+                }
                 .sheet(isPresented: $official, onDismiss: { retry += 1 }) {
                     OfficialWebView(url: novel.chapters.indices.contains(index) ? novel.chapters[index].url : novel.url)
                 }
@@ -134,9 +143,7 @@ struct OnlineReaderView: View {
                     NavigationStack {
                         ScrollViewReader { proxy in
                             List {
-                              Picker("目录与书签", selection: $contentsTab) { Text("目录").tag("目录"); Text("书签 · \(marks.count)").tag("书签") }.pickerStyle(.segmented)
                               if contentsTab == "目录" {
-                               ChapterOrderPicker(descending: $contentsDescending)
                                ForEach(ChapterOrder.indices(count: novel.chapters.count, descending: contentsDescending).filter { chapterFilter.isEmpty || novel.chapters[$0].title.localizedCaseInsensitiveContains(chapterFilter) }, id: \.self) { number in
                                 let chapter = novel.chapters[number]
                                 Button { pendingOffset = 0; positionRevision = UUID(); index = number; showContents = false } label: {
@@ -145,7 +152,7 @@ struct OnlineReaderView: View {
                                         Spacer()
                                         if number == index { Image(systemName: "checkmark") }
                                     }
-                                }.id(number).accessibilityIdentifier("catalog.chapter.\(number)")
+                                }.id(number).accessibilityIdentifier("catalog.chapter.\(number)").accessibilityValue(number == index ? "当前章节" : "")
                                }
                               } else {
                                 if marks.isEmpty { Text("阅读页点书签按钮保存当前位置，支持添加备注。").foregroundStyle(.secondary) }
@@ -157,7 +164,21 @@ struct OnlineReaderView: View {
                                     }.swipeActions { Button("删除", role: .destructive) { do { try online.removeMark(mark.id, in: novel) } catch { failure = error.localizedDescription } } }
                                 }
                               }
-                            }.onAppear { if contentsTab == "目录" { proxy.scrollTo(index, anchor: .center) } }
+                            }.safeAreaInset(edge: .top, spacing: 0) {
+                                VStack(spacing: 8) {
+                                    Picker("目录与书签", selection: $contentsTab) { Text("目录").tag("目录"); Text("书签 · \(marks.count)").tag("书签") }.pickerStyle(.segmented)
+                                    if contentsTab == "目录" {
+                                        ChapterOrderPicker(descending: $contentsDescending)
+                                        HStack {
+                                            Button("定位当前章") { chapterFilter = ""; proxy.scrollTo(index, anchor: .center) }.accessibilityIdentifier("catalog.current")
+                                            Spacer()
+                                            Button(updatingCatalog ? "正在更新…" : "更新目录") { updateCatalog() }
+                                                .disabled(updatingCatalog || switching).accessibilityIdentifier("catalog.refresh")
+                                        }
+                                        if let catalogMessage { Text(catalogMessage).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
+                                    }
+                                }.padding(12).background(.bar)
+                            }
                         }.searchable(text: $chapterFilter, prompt: "筛选章节标题").navigationTitle("目录与书签").navigationBarTitleDisplayMode(.inline)
                             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showContents = false } } }
                             .sheet(item: $editingMark) { mark in OnlineMarkEditor(mark: mark) { updated in do { try online.saveMark(updated, in: novel) } catch { failure = error.localizedDescription } } }
@@ -173,6 +194,8 @@ struct OnlineReaderView: View {
             Button { showSettings = true } label: { Image(systemName: "textformat.size").frame(width: 44, height: 44) }.accessibilityLabel("阅读设置")
             Menu {
                 Button("全屏阅读", systemImage: "arrow.up.left.and.arrow.down.right") { style.fullScreen = true }
+                Button("进度跳转", systemImage: "slider.horizontal.3") { showProgress = true }
+                Button(updatingCatalog ? "正在更新目录…" : "更新目录", systemImage: "arrow.clockwise") { updateCatalog() }.disabled(updatingCatalog || switching)
                 Button(speech.active && speech.owner == speechKey ? (speech.paused ? "继续听书" : "暂停听书") : "从当前位置连续听书", systemImage: "speaker.wave.2", action: startSpeech).disabled(loading || text.isEmpty)
                 if speech.active { Button("停止朗读", systemImage: "stop.circle") { speech.stop() } }
                 Button("手动选择书源和章节") { showSourceSwitch = true }
@@ -185,6 +208,50 @@ struct OnlineReaderView: View {
                 }.disabled(loading || text.isEmpty)
             } label: { Image(systemName: "ellipsis.circle").frame(width: 44, height: 44) }.accessibilityLabel("阅读菜单")
         }.padding(.horizontal, 8).foregroundStyle(style.paper.ink).background(style.paper.background)
+    }
+
+    private func jumpToChapter(_ target: Int) {
+        guard novel.chapters.indices.contains(target) else { return }
+        if speech.owner == speechKey { speech.stop() }
+        pendingOffset = 0; openAtEnd = false; resumeFraction = nil
+        index = target; positionRevision = UUID()
+        online.position(novel, index: target, textOffset: 0, scrollFraction: 0)
+    }
+
+    private func updateCatalog() {
+        guard !updatingCatalog, !switching else { return }
+        guard let source = online.sources.first(where: { $0.id == novel.sourceID }) else {
+            catalogMessage = "原书源已移除，无法更新；已下载章节仍可阅读。"; return
+        }
+        let original = novel
+        updatingCatalog = true; catalogMessage = nil
+        catalogTask = Task {
+            defer { updatingCatalog = false }
+            do {
+                let worker = await online.client.isolatedWorker()
+                let updated = try await worker.catalog(original, source: source)
+                try Task.checkCancellation()
+                guard novel.id == original.id, novel.sourceID == original.sourceID else { return }
+                let activeChapter = novel.chapters.indices.contains(index) ? novel.chapters[index] : nil
+                guard !updated.chapters.isEmpty else { throw SourceError.message("网站返回空目录") }
+                var current = online.novels.first(where: { $0.id == novel.id && $0.sourceID == novel.sourceID }) ?? novel
+                current.chapterIndex = index; current.textOffset = resumeOffset; current.scrollFraction = resumeFraction
+                let refreshed = updated.preservingReadingPosition(from: current)
+                if let activeChapter, let destination = updated.chapters.firstIndex(where: { $0.id == activeChapter.id }) {
+                    if destination != index { pendingOffset = resumeOffset }
+                } else {
+                    catalogMessage = "目录已更新，但当前章节已移除；请选择章节继续阅读。"
+                    pendingOffset = 0; positionRevision = UUID()
+                }
+                try online.keep(refreshed)
+                novel = refreshed; index = refreshed.chapterIndex
+                if catalogMessage == nil {
+                    let oldIDs = Set(original.chapters.map(\.id))
+                    let added = updated.chapters.filter { !oldIDs.contains($0.id) }.count
+                    catalogMessage = added > 0 ? "已更新，新增 \(added) 章，共 \(updated.chapters.count) 章。" : "目录已更新，共 \(updated.chapters.count) 章。"
+                }
+            } catch { if !Task.isCancelled { catalogMessage = "更新失败：\(error.localizedDescription)。已保留原目录，可重试或换源。" } }
+        }
     }
 
     private func openMark(_ mark: OnlineReadingMark) {

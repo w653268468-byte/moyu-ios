@@ -27,7 +27,7 @@ struct ReaderLoader: View {
 }
 
 private enum ReaderPanel: String, Identifiable {
-    case contents, search, settings
+    case contents, search, settings, progress
     var id: String { rawValue }
 }
 
@@ -79,8 +79,10 @@ struct ReaderView: View {
                     } label: { Label("上一章", systemImage: "chevron.left").frame(minHeight: 44) }
                         .disabled(current.chapter == 0)
                     Spacer()
-                    Text("\(current.chapter + 1) / \(document.chapters.count) 章")
-                        .font(.caption).monospacedDigit()
+                    Button { panel = .progress } label: {
+                        Text("\(current.chapter + 1) / \(document.chapters.count) 章 · 跳转")
+                            .font(.caption).monospacedDigit().frame(minHeight: 44)
+                    }.accessibilityIdentifier("reader.progress")
                     Spacer()
                     Button {
                         chapterJump(current.chapter + 1)
@@ -115,15 +117,22 @@ struct ReaderView: View {
         }
         .alert("听书提示", isPresented: Binding(get: { speech.message != nil }, set: { if !$0 { speech.message = nil } })) { Button("知道了") { speech.message = nil } } message: { Text(speech.message ?? "") }
         .sheet(item: $panel) { selected in
+          if selected == .progress {
+            ReadingProgressPicker(titles: document.chapters.map(\.title), current: current.chapter) { chapter in
+                jump(document.chapters[chapter].firstPage); panel = nil
+            }
+          } else {
             NavigationStack {
                 Group {
                     switch selected {
                     case .settings: ReadingPreferences()
                     case .contents: contents
                     case .search: searchResults
+                    case .progress: EmptyView()
                     }
                 }.toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { panel = nil } } }
             }
+          }
         }
     }
 
@@ -139,6 +148,7 @@ struct ReaderView: View {
                 Button(speech.active && speech.owner == speechKey ? (speech.paused ? "继续听书" : "暂停听书") : "从当前位置连续听书", systemImage: "speaker.wave.2", action: startSpeech)
                 if speech.active { Button("停止朗读", systemImage: "stop.circle") { speech.stop() } }
                 Button("搜索正文", systemImage: "magnifyingglass") { panel = .search }
+                Button("进度跳转", systemImage: "slider.horizontal.3") { panel = .progress }
             } label: { Image(systemName: "ellipsis.circle").frame(width: 44, height: 44) }.accessibilityLabel("阅读菜单")
         }.padding(.horizontal, 8).foregroundStyle(style.paper.ink).background(style.paper.background)
     }
@@ -191,8 +201,8 @@ struct ReaderView: View {
     }
 
     private var contents: some View {
-        List {
-            ChapterOrderPicker(descending: $contentsDescending)
+        ScrollViewReader { proxy in
+         List {
             Section("目录 · \(document.chapters.count) 章") {
                 ForEach(ChapterOrder.indices(count: document.chapters.count, descending: contentsDescending), id: \.self) { position in
                     let chapter = document.chapters[position]
@@ -202,7 +212,7 @@ struct ReaderView: View {
                             Spacer()
                             if chapter.id == current.chapter { Image(systemName: "speaker.wave.1") }
                         }
-                    }
+                    }.id(position).accessibilityIdentifier("catalog.chapter.\(position)").accessibilityValue(position == current.chapter ? "当前章节" : "")
                 }
             }
             Section("书签 · \(liveBook.bookmarks.count)") {
@@ -222,6 +232,16 @@ struct ReaderView: View {
                     }
                 }
             }
+         }.safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 8) {
+                ChapterOrderPicker(descending: $contentsDescending)
+                HStack {
+                    Text("共 \(document.chapters.count) 章").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("定位当前章") { proxy.scrollTo(current.chapter, anchor: .center) }.accessibilityIdentifier("catalog.current")
+                }
+            }.padding(12).background(.bar)
+         }
         }.navigationTitle("目录与书签").navigationBarTitleDisplayMode(.inline)
     }
 

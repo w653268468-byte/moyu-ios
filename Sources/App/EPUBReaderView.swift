@@ -54,6 +54,8 @@ private struct EPUBReaderView: View {
     @State private var fragment: String?
     @State private var contents = false
     @State private var preferences = false
+    @State private var showProgress = false
+    @AppStorage("reader.contentsDescending") private var contentsDescending = false
     @State private var webError: String?
     @State private var command = 0
     @State private var direction = 1
@@ -72,14 +74,16 @@ private struct EPUBReaderView: View {
             EPUBWebPage(root: publication.root, item: item, initialProgress: fraction, fragment: fragment,
                 originalStyles: originalStyles, style: style,
                 appearanceKey: "\(style.fontSize)-\(style.lineSpacing)-\(style.paperName)-\(style.horizontalMargin)-\(style.verticalMargin)-\(style.paragraphSpacing)-\(style.bold)", command: command, direction: direction,
-                onProgress: { if chapter == readingChapter { save($0) } }, onNavigate: navigate, onBoundary: { jump(chapter + $0) },
+                onProgress: { if chapter == readingChapter { save($0) } }, onNavigate: navigate, onBoundary: { jump(chapter + $0, atEnd: $0 < 0) },
                 toggleChrome: { style.fullScreen.toggle() }, onError: { webError = $0 })
                 .id(chapter)
             if !style.fullScreen {
                 HStack {
                     Button("上一页", systemImage: "chevron.left") { direction = -1; command += 1 }
                     Spacer()
-                    Text("\(chapter + 1)/\(publication.chapters.count) 节 · \(Int(fraction * 100))%").font(.caption).monospacedDigit()
+                    Button { showProgress = true } label: {
+                        Text("\(chapter + 1)/\(publication.chapters.count) 节 · 跳转").font(.caption).monospacedDigit()
+                    }.accessibilityIdentifier("reader.progress")
                     Spacer()
                     Button("下一页", systemImage: "chevron.right") { direction = 1; command += 1 }
                 }.padding(.horizontal).frame(minHeight: 44)
@@ -98,10 +102,20 @@ private struct EPUBReaderView: View {
             }
             .sheet(isPresented: $contents) {
                 NavigationStack {
-                    List(Array(publication.navigation.enumerated()), id: \.offset) { _, item in
+                    List(ChapterOrder.indices(count: publication.navigation.count, descending: contentsDescending), id: \.self) { index in
+                        let item = publication.navigation[index]
                         Button(item.title) { jump(item.chapter, fragment: item.fragment); contents = false }
+                    }.safeAreaInset(edge: .top, spacing: 0) {
+                        ChapterOrderPicker(descending: $contentsDescending).padding(12).background(.bar)
                     }.navigationTitle("EPUB 目录")
                         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { contents = false } } }
+                }
+            }
+            .sheet(isPresented: $showProgress) {
+                ReadingProgressPicker(titles: publication.chapters.map(\.title), current: chapter) { target in
+                    fragment = nil; fraction = 0; webError = nil; chapter = target
+                    direction = 0; command += 1
+                    save(0)
                 }
             }
             .sheet(isPresented: $preferences) { NavigationStack { ReadingPreferences().toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { preferences = false } } } } }
@@ -112,11 +126,10 @@ private struct EPUBReaderView: View {
         let page = pages.isEmpty ? 0 : pages[min(pages.count - 1, Int(Double(pages.count) * fraction))].id
         library.updateEPUBPosition(bookID: book.id, chapter: chapter, progress: fraction, page: page)
     }
-    private func jump(_ target: Int, fragment: String? = nil) {
+    private func jump(_ target: Int, fragment: String? = nil, atEnd: Bool = false) {
         guard publication.chapters.indices.contains(target) else { return }
         let same = target == chapter
-        let backwards = target < chapter
-        self.fragment = fragment; fraction = backwards && fragment == nil ? 1 : 0
+        self.fragment = fragment; fraction = atEnd && fragment == nil ? 1 : 0
         chapter = target; webError = nil
         if same { command += 1; direction = 0 }
     }

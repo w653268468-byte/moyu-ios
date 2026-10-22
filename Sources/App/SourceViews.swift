@@ -206,7 +206,10 @@ struct NovelDetailView: View {
                     }
                 }
             }.navigationTitle("小说详情").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
+                    ToolbarItem(placement: .primaryAction) { Button(loading ? "更新中…" : "更新目录", systemImage: "arrow.clockwise") { load() }.disabled(loading) }
+                }
                 .task { load() }
                 .onDisappear { loadTask?.cancel() }
                 .fullScreenCover(item: $reading) { OnlineReaderView(novel: $0) }
