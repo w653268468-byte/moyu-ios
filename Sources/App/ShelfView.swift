@@ -173,7 +173,7 @@ struct ShelfView: View {
                 }.padding(.horizontal, 20).padding(.bottom, 30)
             }
             .accessibilityIdentifier("shelf.scroll")
-            .background(Color(uiColor: .systemGroupedBackground))
+            .background(InterfaceAppearance.background)
             .refreshable { await online.refreshShelf() }
             .scrollBounceBehavior(.always, axes: .vertical)
             .navigationTitle("Gavin").navigationBarTitleDisplayMode(.inline)

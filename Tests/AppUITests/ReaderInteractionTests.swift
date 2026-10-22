@@ -210,6 +210,25 @@ final class ReaderInteractionTests: XCTestCase {
         app.terminate()
     }
 
+    @MainActor func testPreloadedChapterAvoidsAnotherLoadingPageAndDefaultsToLight() {
+        let app = application(); app.launchArguments = ["--ui-tab", "0", "--ui-prefetch-reader", "-AppleInterfaceStyle", "Dark"]; app.launch()
+        let book = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "预加载测试书")).firstMatch
+        XCTAssertTrue(book.waitForExistence(timeout: 15)); book.tap()
+        let ready = app.staticTexts["prefetch.ready"]
+        expectation(for: NSPredicate(format: "label == %@", "ready:2"), evaluatedWith: ready); waitForExpectations(timeout: 15)
+        XCTAssertEqual(app.staticTexts["prefetch.cold"].label, "cold:1")
+        app.buttons["下一章"].tap()
+        let page = app.descendants(matching: .any)["reader.pageText"]
+        expectation(for: NSPredicate(format: "label CONTAINS %@", "第2章已预取"), evaluatedWith: page); waitForExpectations(timeout: 5)
+        XCTAssertEqual(app.staticTexts["prefetch.cold"].label, "cold:1", "Preloaded chapter reopened the loading page")
+        app.buttons["返回书架"].tap(); app.tabBars.buttons["设置"].tap()
+        let appearance = app.descendants(matching: .any)["settings.appearance"]
+        XCTAssertTrue(appearance.waitForExistence(timeout: 5))
+        XCTAssertTrue(appearance.label.contains("浅色纸白") || appearance.value as? String == "浅色纸白")
+        let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "light-interface-on-dark-system"; capture.lifetime = .keepAlways; add(capture)
+        app.terminate()
+    }
+
     @MainActor func testPullToRefreshShelfShowsNewChapterAndRetainsItAfterRelaunch() {
         let app = application(); app.launchArguments = ["--ui-tab", "0", "--ui-shelf-refresh"]; app.launch()
         XCTAssertTrue(app.staticTexts["最新：第3章 测试"].waitForExistence(timeout: 15))

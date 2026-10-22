@@ -7,6 +7,7 @@ private actor OfflineCheckServer {
     var requests: [String: Int] = [:]
     func allowSecond() { failSecond = false }
     func disconnect() { offline = true }
+    func reconnect() { offline = false }
     func count(_ path: String) -> Int { requests[path, default: 0] }
     func render(_ request: URLRequest) throws -> (Data, URL) {
         guard let url = request.url else { throw SourceError.message("Missing test URL") }
@@ -66,8 +67,16 @@ private actor OfflineCheckServer {
         // A stale scan must not overwrite the new catalog's 3/4 cache state.
         await reloaded.refreshDownload(book)
         guard reloaded.downloadState(expanded)?.total == 4 else { throw SourceError.message("旧目录缓存统计覆盖了新目录") }
-        reloaded.clearCache(); await reloaded.refreshDownload(expanded)
+        await reloaded.clearCache(); await reloaded.refreshDownload(expanded)
         guard reloaded.downloadState(expanded)?.completed == 0 else { throw SourceError.message("清理缓存后仍显示已下载") }
+        await server.reconnect()
+        await reloaded.preloadChapters(Array(expanded.chapters.prefix(2)), sourceID: book.sourceID)
+        guard reloaded.readyChapter(book.chapters[0], sourceID: book.sourceID) != nil,
+              reloaded.readyChapter(book.chapters[1], sourceID: book.sourceID) != nil,
+              reloaded.readyChapter(book.chapters[2], sourceID: book.sourceID) == nil else { throw SourceError.message("后续两章未提前准备，或预取超出范围") }
+        await server.disconnect()
+        guard try await reloaded.chapter(book.chapters[1], sourceID: book.sourceID).contains("离线下载测试正文"),
+              await server.count("/1") == 2, await server.count("/2") == 3 else { throw SourceError.message("预取后切章仍重新访问网络") }
         try reloaded.flushProgress()
     }
 }

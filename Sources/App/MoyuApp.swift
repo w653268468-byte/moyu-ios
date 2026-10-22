@@ -12,6 +12,7 @@ enum AppBuildIdentity {
 @main
 struct MoyuApp: App {
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("reader.interfaceAppearance") private var interfaceAppearance = InterfaceAppearance.light.rawValue
     @StateObject private var library = LibraryStore()
     @StateObject private var online = OnlineStore()
     @State private var selectedTab: Int = {
@@ -44,6 +45,7 @@ struct MoyuApp: App {
                 }
                 .environmentObject(library)
                 .environmentObject(online)
+                .preferredColorScheme((InterfaceAppearance(rawValue: interfaceAppearance) ?? .light).scheme)
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .background { online.pauseAllDownloads() }
                     if phase != .active {
@@ -53,6 +55,12 @@ struct MoyuApp: App {
                 }
                 .onAppear {
                     _ = ReaderFontStore.shared
+                    if !UserDefaults.standard.bool(forKey: "reader.lightAppearanceMigration") {
+                        interfaceAppearance = InterfaceAppearance.light.rawValue
+                        let oldPaper = UserDefaults.standard.string(forKey: "reader.paper") ?? "cream"
+                        if Paper(rawValue: oldPaper)?.isDark == true { UserDefaults.standard.set("cream", forKey: "reader.paper") }
+                        UserDefaults.standard.set(true, forKey: "reader.lightAppearanceMigration")
+                    }
                     #if DEBUG
                     try? Data("onAppear".utf8).write(to: URL.documentsDirectory.appendingPathComponent("ui-startup.txt"), options: .atomic)
                     if ProcessInfo.processInfo.arguments.contains("--ui-scroll-check") {
@@ -86,6 +94,11 @@ struct MoyuApp: App {
                         UserDefaults.standard.set("在线", forKey: "reader.shelfScope")
                         UserDefaults.standard.set(false, forKey: "reader.fullScreen")
                         try? online.prepareOfflineShelfFixture(refreshable: true)
+                    }
+                    if ProcessInfo.processInfo.arguments.contains("--ui-prefetch-reader") {
+                        UserDefaults.standard.set("在线", forKey: "reader.shelfScope")
+                        UserDefaults.standard.set(false, forKey: "reader.fullScreen")
+                        try? online.prepareOfflineShelfFixture(prefetchable: true)
                     }
                     if ProcessInfo.processInfo.arguments.contains("--ui-import-preview") || ProcessInfo.processInfo.arguments.contains("--ui-import-samples") { showSourceImportPreview = true }
                     if ProcessInfo.processInfo.arguments.contains("--ui-preferences") { showReaderPreferences = true }

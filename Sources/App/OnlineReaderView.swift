@@ -6,6 +6,11 @@ struct OnlineReaderView: View {
     @State private var novel: OnlineNovel
     @State private var index: Int
     @State private var text = ""
+    @State private var loadedChapterKey: String?
+    #if DEBUG
+    @State private var preloadedCount = 0
+    @State private var coldLoads = 0
+    #endif
     @State private var failure: String?
     @State private var loading = true
     @State private var showContents = false
@@ -65,9 +70,9 @@ struct OnlineReaderView: View {
                    if style.paged {
                     PagedReadingView(text: rendered.body.text, title: rendered.title, resumeOffset: rendered.body.displayOffset(resumeOffset),
                         onOffset: { guard index == readingIndex else { return }; let original = rendered.body.originalOffset($0); resumeOffset = original; online.position(novel, index: index, textOffset: original) },
-                        previousChapter: { if index > 0 { openAtEnd = true; index -= 1 } },
-                        nextChapter: { if index + 1 < novel.chapters.count { index += 1 } },
-                        toggleChrome: { style.fullScreen.toggle() }).id(index)
+                        previousChapter: { if index > 0 { openAtEnd = true; selectChapter(index - 1) } },
+                        nextChapter: { if index + 1 < novel.chapters.count { selectChapter(index + 1) } },
+                        toggleChrome: { style.fullScreen.toggle() }).id("\(index)-\(positionRevision)")
                 } else {
                     ScrollReadingView(text: rendered.body.text, resumeOffset: rendered.body.displayOffset(resumeOffset), resumeFraction: resumeFraction,
                         onPosition: { offset, fraction in
@@ -75,12 +80,12 @@ struct OnlineReaderView: View {
                             let original = rendered.body.originalOffset(offset)
                             resumeOffset = original; resumeFraction = fraction
                             online.position(novel, index: index, textOffset: original, scrollFraction: fraction)
-                        }, toggleChrome: { style.fullScreen.toggle() }).id(index)
+                        }, toggleChrome: { style.fullScreen.toggle() }).id("\(index)-\(positionRevision)")
                 }
                   }
                 }
                 if !style.fullScreen { HStack {
-                    Button { index -= 1 } label: { Label("上一章", systemImage: "chevron.left").frame(minHeight: 44) }
+                    Button { selectChapter(index - 1) } label: { Label("上一章", systemImage: "chevron.left").frame(minHeight: 44) }
                         .disabled(index <= 0)
                     Spacer()
                     Button { showProgress = true } label: {
@@ -88,7 +93,7 @@ struct OnlineReaderView: View {
                             .font(.caption).monospacedDigit().frame(minHeight: 44)
                     }.accessibilityIdentifier("reader.progress")
                     Spacer()
-                    Button { index += 1 } label: { Label("下一章", systemImage: "chevron.right").frame(minHeight: 44) }
+                    Button { selectChapter(index + 1) } label: { Label("下一章", systemImage: "chevron.right").frame(minHeight: 44) }
                         .disabled(index >= novel.chapters.count - 1)
                 }.font(.subheadline).padding(.horizontal, 18) }
             }.ignoresSafeArea(.container, edges: style.fullScreen && style.paged ? .all : [])
@@ -105,25 +110,41 @@ struct OnlineReaderView: View {
                     guard novel.chapters.indices.contains(index) else { loading = false; return }
                     if speech.owner == speechKey && speech.chapterIndex != index { speech.stop() }
                     let target = index
+                    let chapterKey = novel.sourceID + "|" + novel.chapters[target].id
+                    if loadedChapterKey == chapterKey, !text.isEmpty, pendingOffset == nil, !openAtEnd { return }
+                    if let ready = online.readyChapter(novel.chapters[target], sourceID: novel.sourceID) {
+                        installChapter(ready, at: target)
+                        return
+                    }
                     loading = true; failure = nil; text = ""
+                    #if DEBUG
+                    coldLoads += 1
+                    #endif
                     do {
                         let fetched = try await online.chapter(novel.chapters[target], sourceID: novel.sourceID)
                         try Task.checkCancellation()
                         guard target == index else { return }
-                        let saved = online.novels.first { $0.id == novel.id } ?? novel
-                        resumeOffset = pendingOffset ?? (openAtEnd ? Int.max : (saved.chapterIndex == target ? (saved.textOffset ?? 0) : 0))
-                        resumeFraction = pendingOffset == nil && !openAtEnd && saved.chapterIndex == target ? saved.scrollFraction : nil
-                        pendingOffset = nil
-                        openAtEnd = false
-                        text = fetched
-                        online.position(novel, index: target)
-                        loading = false
+                        installChapter(fetched, at: target)
                     } catch {
                         guard !Task.isCancelled, target == index else { return }
                         failure = error.localizedDescription
                         loading = false
                         if style.autoChangeSource { startSwitch() }
                     }
+                }
+                .task(id: "\(novel.sourceID)-\(index)-\(loading)-" + upcomingChapters.map(\.id).joined(separator: "|")) {
+                    guard !loading, failure == nil else { return }
+                    await online.preloadChapters(upcomingChapters, sourceID: novel.sourceID)
+                    #if DEBUG
+                    if !Task.isCancelled { preloadedCount = upcomingChapters.filter { online.readyChapter($0, sourceID: novel.sourceID) != nil }.count }
+                    #endif
+                }
+                .overlay(alignment: .top) {
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--ui-prefetch-reader") {
+                        VStack { Text("ready:\(preloadedCount)").accessibilityIdentifier("prefetch.ready"); Text("cold:\(coldLoads)").accessibilityIdentifier("prefetch.cold") }.font(.caption2)
+                    }
+                    #endif
                 }
                 .onDisappear { cancelSwitch(); catalogTask?.cancel() }
                 .onChange(of: index) { _, value in cancelSwitch(); if speech.owner == speechKey && speech.chapterIndex != value { speech.stop() } }
@@ -154,7 +175,7 @@ struct OnlineReaderView: View {
                               if contentsTab == "目录" {
                                ForEach(ChapterOrder.indices(count: novel.chapters.count, descending: contentsDescending).filter { chapterFilter.isEmpty || novel.chapters[$0].title.localizedCaseInsensitiveContains(chapterFilter) }, id: \.self) { number in
                                 let chapter = novel.chapters[number]
-                                Button { pendingOffset = 0; positionRevision = UUID(); index = number; showContents = false } label: {
+                                Button { pendingOffset = 0; positionRevision = UUID(); selectChapter(number); showContents = false } label: {
                                     HStack {
                                         Text(chapter.title).foregroundStyle(.primary)
                                         Spacer()
@@ -194,6 +215,23 @@ struct OnlineReaderView: View {
                 }
         }
     }
+    private var upcomingChapters: [OnlineChapter] {
+        guard novel.chapters.indices.contains(index) else { return [] }
+        return Array(novel.chapters.dropFirst(index + 1).prefix(2))
+    }
+    private func installChapter(_ fetched: String, at target: Int) {
+        let saved = online.novels.first { $0.id == novel.id && $0.sourceID == novel.sourceID } ?? novel
+        resumeOffset = pendingOffset ?? (openAtEnd ? Int.max : (saved.chapterIndex == target ? (saved.textOffset ?? 0) : 0))
+        resumeFraction = pendingOffset == nil && !openAtEnd && saved.chapterIndex == target ? saved.scrollFraction : nil
+        pendingOffset = nil; openAtEnd = false; text = fetched; failure = nil; loading = false
+        loadedChapterKey = novel.sourceID + "|" + novel.chapters[target].id
+        online.position(novel, index: target)
+    }
+    private func selectChapter(_ target: Int) {
+        guard novel.chapters.indices.contains(target) else { return }
+        index = target
+        if let ready = online.readyChapter(novel.chapters[target], sourceID: novel.sourceID) { installChapter(ready, at: target) }
+    }
     private var readerControls: some View {
         HStack(spacing: 0) {
             Button { dismiss() } label: { Image(systemName: "chevron.down").frame(width: 44, height: 44) }.accessibilityLabel("返回书架")
@@ -223,7 +261,7 @@ struct OnlineReaderView: View {
         guard novel.chapters.indices.contains(target) else { return }
         if speech.owner == speechKey { speech.stop() }
         pendingOffset = 0; openAtEnd = false; resumeFraction = nil
-        index = target; positionRevision = UUID()
+        selectChapter(target); positionRevision = UUID()
         online.position(novel, index: target, textOffset: 0, scrollFraction: 0)
     }
 

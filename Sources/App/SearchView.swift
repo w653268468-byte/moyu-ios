@@ -133,7 +133,7 @@ struct SourceHubView: View {
                 if let failure { Section { Text(failure).foregroundStyle(.red).textSelection(.enabled) } }
                 if let message = search.message { Section { Text(message).foregroundStyle(.orange) } }
                 if !search.didSearch { toolsSection }
-            }.navigationTitle("找书").scrollDismissesKeyboard(.interactively)
+            }.scrollContentBackground(.hidden).background(InterfaceAppearance.background).navigationTitle("找书").scrollDismissesKeyboard(.interactively)
                 .toolbar {
                     ToolbarItemGroup(placement: .topBarTrailing) {
                         Button { showOptions = true } label: { Image(systemName: "slider.horizontal.3") }.accessibilityLabel("搜索设置")

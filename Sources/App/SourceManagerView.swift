@@ -106,7 +106,7 @@ struct SourceManagerView: View {
                     Text("校验优先使用作者的测试词，再尝试通用书名，优先同名书；读取目录，从目录前 100 项选择编号正文章节，最多检查三个候选章节；没有编号时需手动核实及至少 200 字正文。每个书源最多等待 45 秒。校验失败不一定代表永久失效。删除书源保留书架记录和已缓存章节。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-            }.navigationTitle("书源管理")
+            }.scrollContentBackground(.hidden).background(InterfaceAppearance.background).navigationTitle("书源管理")
                 .searchable(text: $query, prompt: "名称、网址或分组")
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) { Button(selecting ? "完成" : "多选") { selecting.toggle(); selection = [] } }

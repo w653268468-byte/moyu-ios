@@ -131,6 +131,7 @@ struct AppSettingsView: View {
     @State private var confirmRestore = false
     @State private var confirmCache = false
     @State private var message: String?
+    @AppStorage("reader.interfaceAppearance") private var interfaceAppearance = InterfaceAppearance.light.rawValue
     private func progressSnapshot() throws -> Data {
         try library.flushProgress(); try online.flushProgress()
         return try BackupService.create()
@@ -150,6 +151,9 @@ struct AppSettingsView: View {
                     }.padding(.vertical, 6)
                 }
                 Section("阅读") {
+                    Picker("界面外观", selection: $interfaceAppearance) {
+                        ForEach(InterfaceAppearance.allCases) { appearance in Text(appearance.name).tag(appearance.rawValue) }
+                    }.accessibilityIdentifier("settings.appearance")
                     NavigationLink { ReplacementRulesView() } label: { Label("替换净化", systemImage: "text.badge.minus") }
                     NavigationLink { ReadingPreferences() } label: { Label("字体、排版与主题", systemImage: "textformat.size") }
                     NavigationLink { ReaderFontSettings() } label: { Label("自定义字体", systemImage: "textformat.abc") }
@@ -177,7 +181,7 @@ struct AppSettingsView: View {
                     NavigationLink("支持格式、兼容性与关于") { AppAboutView() }
                     Text(AppBuildIdentity.label).font(.caption).foregroundStyle(.secondary)
                 }
-            }.navigationTitle("设置")
+            }.scrollContentBackground(.hidden).background(InterfaceAppearance.background).navigationTitle("设置")
                 .fileExporter(isPresented: $exporting, document: export, contentType: .json, defaultFilename: "Gavin完整备份.json") { result in
                     if case .failure(let error) = result { message = error.localizedDescription }
                 }
@@ -188,7 +192,7 @@ struct AppSettingsView: View {
                     Button("恢复备份", role: .destructive) { restore() }
                 } message: { Text("建议先导出当前备份。仅支持Gavin导出的完整备份文件。") }
                 .confirmationDialog("清理全部在线章节缓存？", isPresented: $confirmCache, titleVisibility: .visible) {
-                    Button("清理缓存", role: .destructive) { online.clearCache() }
+                    Button("清理缓存", role: .destructive) { Task { await online.clearCache() } }
                 }
                 .alert("提示", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
                     Button("知道了") { message = nil }

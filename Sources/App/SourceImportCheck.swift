@@ -108,7 +108,7 @@ private actor SearchCheckGate {
             try await ShelfRefreshCheck.run(directory: root.appendingPathComponent("shelf-refresh-test"))
             try ShelfOrganizationCheck.run(directory: root.appendingPathComponent("shelf-group-test"))
             try await ReadingToolsCheck.run(directory: root.appendingPathComponent("reading-tools-test"))
-            let report: [String: Any] = ["status": "passed", "textReplacementPersistenceImportAndMapping": true, "shelfOrganizationPersistenceAndBatchRemoval": true, "shelfRefreshPartialFailureAndStaleResult": true, "offlineDownloadResumeAndDisconnectedRead": true, "redirect": true, "partialFailure": true,
+            let report: [String: Any] = ["status": "passed", "chapterLookaheadAndOfflineHandoff": true, "textReplacementPersistenceImportAndMapping": true, "shelfOrganizationPersistenceAndBatchRemoval": true, "shelfRefreshPartialFailureAndStaleResult": true, "offlineDownloadResumeAndDisconnectedRead": true, "redirect": true, "partialFailure": true,
                 "pastedJSON": true, "savedAndReloaded": true, "preservedUnknownFields": true,
                 "duplicateUpdated": true, "searchCatalogContent": true, "onlineBookmarkAndNote": true,
                 "cryptoJSAndAES": true, "nestedRules": true, "sourceLoginKeychain": true, "rsaRoundTrip": true, "coalescedProgressReloaded": true]

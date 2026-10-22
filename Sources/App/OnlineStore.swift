@@ -32,6 +32,9 @@ final class OnlineStore: ObservableObject {
     private var downloadTasks: [String: Task<Void, Never>] = [:]
     private var downloadRuns: [String: UUID] = [:]
     private var cacheRevision = UUID()
+    private let chapterReads = ChapterReadCache()
+    private var readyChapters: [URL: String] = [:]
+    private var readyOrder: [URL] = []
     private var downloadsURL: URL { directory.appendingPathComponent("downloads.json") }
     func downloadKey(_ book: OnlineNovel) -> String { book.sourceID + "|" + book.id }
     func downloadState(_ book: OnlineNovel) -> OfflineDownloadState? { downloads[downloadKey(book)] }
@@ -52,6 +55,7 @@ final class OnlineStore: ObservableObject {
     func reload() {
         cancelShelfRefresh()
         cacheRevision = UUID()
+        readyChapters.removeAll(); readyOrder.removeAll()
         pauseAllDownloads()
         writer.discardPendingAndWait()
         downloadWriter.discardPendingAndWait()
@@ -285,16 +289,41 @@ final class OnlineStore: ObservableObject {
 
     func chapter(_ chapter: OnlineChapter, sourceID: String, requestClient: SourceClient? = nil) async throws -> String {
         let cache = cacheURL(chapter, sourceID: sourceID)
-        if let text = try? String(contentsOf: cache, encoding: .utf8), !text.isEmpty { return text }
-        let text: String
-        guard let source = sources.first(where: { $0.id == sourceID }) else {
-            throw SourceError.message("对应书源已删除或专用接口已移除。这一章尚未缓存，请重新导入书源。")
+        if let text = readyChapter(chapter, sourceID: sourceID) { return text }
+        let source = sources.first(where: { $0.id == sourceID }), requestClient = requestClient ?? client, revision = cacheRevision
+        let text = try await chapterReads.read(at: cache) {
+            guard let source else { throw SourceError.message("对应书源已删除或专用接口已移除。这一章尚未缓存，请重新导入书源。") }
+            return try await requestClient.chapter(chapter, source: source)
         }
-        text = try await (requestClient ?? client).chapter(chapter, source: source)
         try Task.checkCancellation()
-        // A failed cache write must be visible; never silently claim offline availability.
-        try text.write(to: cache, atomically: true, encoding: .utf8)
+        guard revision == cacheRevision else { throw CancellationError() }
+        rememberChapter(text, at: cache)
         return text
+    }
+
+    func readyChapter(_ chapter: OnlineChapter, sourceID: String) -> String? {
+        let key = cacheURL(chapter, sourceID: sourceID)
+        guard let text = readyChapters[key] else { return nil }
+        readyOrder.removeAll { $0 == key }; readyOrder.append(key)
+        return text
+    }
+    private func rememberChapter(_ text: String, at key: URL) {
+        guard text.utf8.count <= 2 * 1024 * 1024 else { return }
+        readyChapters[key] = text; readyOrder.removeAll { $0 == key }; readyOrder.append(key)
+        while readyOrder.count > 8 || readyChapters.values.reduce(0, { $0 + $1.utf8.count }) > 8 * 1024 * 1024 {
+            readyChapters.removeValue(forKey: readyOrder.removeFirst())
+        }
+    }
+    func preloadChapters(_ chapters: [OnlineChapter], sourceID: String) async {
+        await withTaskGroup(of: Void.self) { group in
+            for chapter in chapters.prefix(2) {
+                group.addTask { [weak self] in
+                    guard let self, !Task.isCancelled else { return }
+                    let worker = await self.client.isolatedWorker()
+                    _ = try? await self.chapter(chapter, sourceID: sourceID, requestClient: worker)
+                }
+            }
+        }
     }
 
     private func persistDownloads() {
@@ -382,30 +411,31 @@ final class OnlineStore: ObservableObject {
     }
 
     #if DEBUG
-    func prepareOfflineShelfFixture(refreshable: Bool = false) throws {
-        let origin = URL(string: refreshable ? "http://127.0.0.1:18765/catalog-refresh-origin" : "https://offline-shelf.example")!
-        if refreshable {
+    func prepareOfflineShelfFixture(refreshable: Bool = false, prefetchable: Bool = false) throws {
+        let origin = URL(string: prefetchable ? "http://127.0.0.1:18765/prefetch-origin" : refreshable ? "http://127.0.0.1:18765/catalog-refresh-origin" : "https://offline-shelf.example")!
+        if refreshable || prefetchable {
             let source = ##"{"bookSourceName":"目录更新测试","bookSourceUrl":"http://127.0.0.1:18765/catalog-refresh-origin","ruleToc":{"chapterList":"#list a","chapterName":"text","chapterUrl":"href"},"ruleContent":{"content":"#content@text"}}"##
-            try addSources(SourceImport.parse(Data(source.utf8)).sources)
+            try addSources(SourceImport.parse(Data(source.replacingOccurrences(of: "http://127.0.0.1:18765/catalog-refresh-origin", with: origin.absoluteString).utf8)).sources)
         }
-        var book = OnlineNovel(title: refreshable ? "目录更新测试书" : "离线书架测试", author: "Gavin", url: origin.appendingPathComponent("book"), sourceID: origin.absoluteString)
+        var book = OnlineNovel(title: prefetchable ? "预加载测试书" : refreshable ? "目录更新测试书" : "离线书架测试", author: "Gavin", url: origin.appendingPathComponent("book"), sourceID: origin.absoluteString)
         book.chapters = (1...3).map { OnlineChapter(title: "第\($0)章 测试", url: origin.appendingPathComponent(String($0))) }
         try keep(book)
         for (index, chapter) in book.chapters.enumerated() {
+            if prefetchable && index > 0 { try? FileManager.default.removeItem(at: cacheURL(chapter, sourceID: book.sourceID)); continue }
             try ("第\(index + 1)章 测试\n" + String(repeating: "没有网络也能阅读已经下载的章节。", count: 50)).write(to: cacheURL(chapter, sourceID: book.sourceID), atomically: true, encoding: .utf8)
         }
-        downloads[downloadKey(book)] = OfflineDownloadState(phase: .completed, completed: 3, total: 3, message: "全书已下载，可离线阅读")
+        downloads[downloadKey(book)] = OfflineDownloadState(phase: prefetchable ? .paused : .completed, completed: prefetchable ? 1 : 3, total: 3, message: prefetchable ? "等待预取" : "全书已下载，可离线阅读")
         persistDownloads(); try flushProgress()
     }
     #endif
 
-    func clearCache() {
+    func clearCache() async {
         cacheRevision = UUID()
+        readyChapters.removeAll(); readyOrder.removeAll()
         pauseAllDownloads()
         downloads = [:]; persistDownloads()
         do {
-            for url in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-            where url.pathExtension == "txt" { try FileManager.default.removeItem(at: url) }
+            try await chapterReads.clear(in: directory)
         } catch { errorMessage = "清理缓存失败：\(error.localizedDescription)" }
     }
 }

@@ -2,6 +2,7 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from socketserver import TCPServer
 import json
+import time
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
@@ -32,6 +33,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             content_type = "application/json; charset=utf-8"
             body = json.dumps([{"id": 991, "name": "Import rule", "pattern": "AD_TEXT", "replacement": "", "isRegex": False}, {"name": "Invalid rule", "pattern": "(", "isRegex": True}]).encode()
+        elif self.path in ("/prefetch-origin/2", "/prefetch-origin/3"):
+            time.sleep(0.5)
+            self.send_response(200)
+            body = ("<div id='content'>第" + self.path[-1] + "章已预取。" + "提前准备好的章节正文。" * 80 + "</div>").encode()
         elif self.path == "/catalog-refresh-origin/book":
             self.send_response(200)
             body = ("<div id='list'>" + "".join(f"<a href='/catalog-refresh-origin/{n}'>第{n}章 测试</a>" for n in range(1, 5)) + "</div>").encode()
