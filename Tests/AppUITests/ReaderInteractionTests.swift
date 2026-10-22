@@ -49,6 +49,16 @@ final class ReaderInteractionTests: XCTestCase {
         XCTAssertTrue(XCUIApplication().frame.intersects(element.frame))
         element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
+    @MainActor private func enableSwitch(_ element: XCUIElement) {
+        XCTAssertTrue(element.waitForExistence(timeout: 5))
+        if element.value as? String != "1" {
+            // SwiftUI exposes the whole labelled row as a switch. Its midpoint can
+            // be inert text; the actual control is at the trailing edge.
+            element.coordinate(withNormalizedOffset: CGVector(dx: 0.94, dy: 0.5)).tap()
+        }
+        expectation(for: NSPredicate(format: "value == %@", "1"), evaluatedWith: element)
+        waitForExpectations(timeout: 5)
+    }
     @MainActor private func application() -> XCUIApplication {
         let app = XCUIApplication()
         let path = ProcessInfo.processInfo.environment["GAVIN_SIMULATOR_SWIFT"] ?? ""
@@ -206,7 +216,11 @@ final class ReaderInteractionTests: XCTestCase {
         let scroll = app.scrollViews["shelf.scroll"]
         XCTAssertTrue(scroll.waitForExistence(timeout: 5))
         XCTAssertGreaterThan(scroll.frame.height, app.frame.height * 0.5)
-        scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).press(forDuration: 0.1, thenDragTo: scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
+        let header = app.staticTexts["我的书架"]
+        XCTAssertTrue(header.isHittable)
+        // ScrollView's AX frame includes the navigation/search bars. Use actual
+        // visible content as the drag origin so this gesture reaches its pan recognizer.
+        header.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
         XCTAssertTrue(app.staticTexts["最新：第4章 测试"].waitForExistence(timeout: 20))
         XCTAssertTrue(app.staticTexts["新增 1 章"].exists)
         let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "shelf-refreshed"; screenshot.lifetime = .keepAlways; add(screenshot)
@@ -224,8 +238,8 @@ final class ReaderInteractionTests: XCTestCase {
         XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("UI Reading")
         app.buttons["shelf.group.create"].tap(); app.buttons["完成"].tap()
         tapMenu(app.buttons["在线书籍管理：离线书架测试"]); app.buttons["分组与置顶"].tap()
-        XCTAssertTrue(app.switches["shelf.pin"].waitForExistence(timeout: 5)); app.switches["shelf.pin"].tap()
-        app.switches["UI Reading"].tap(); app.buttons["完成"].tap()
+        enableSwitch(app.switches["shelf.pin"])
+        enableSwitch(app.switches["UI Reading"]); app.buttons["完成"].tap()
         app.buttons["UI Reading"].tap()
         XCTAssertTrue(app.staticTexts["离线书架测试"].firstMatch.exists)
         XCTAssertTrue(app.staticTexts["置顶"].firstMatch.exists)

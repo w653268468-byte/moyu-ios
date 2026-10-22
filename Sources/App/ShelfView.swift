@@ -63,7 +63,7 @@ struct ShelfView: View {
                         Text("本地书架").tag("本地")
                     }.pickerStyle(.segmented).accessibilityIdentifier("shelf.scope")
                     groupBar
-                    if shelfScope != "本地" { ShelfRefreshStatus() }
+                    if shelfScope != "本地", !online.novels.isEmpty || shelfScope == "在线" { ShelfRefreshStatus() }
 
                     if library.isImporting {
                         HStack {
@@ -100,7 +100,7 @@ struct ShelfView: View {
                         }.buttonStyle(.plain)
                     }
 
-                    if shelfScope != "本地" {
+                    if shelfScope != "本地", !online.novels.isEmpty || shelfScope == "在线" {
                         VStack(alignment: .leading, spacing: 14) {
                             HStack {
                                 Text("在线书架").font(.title3.bold())
@@ -290,13 +290,13 @@ struct ShelfView: View {
                 groupChip("全部分组", id: "all")
                 groupChip("未分组", id: "ungrouped")
                 ForEach(organization.value.groups) { group in groupChip(group.name, id: group.id) }
-                Button { manageGroups = true } label: { Image(systemName: "plus").padding(9) }.accessibilityLabel("添加书架分组")
+                Button { manageGroups = true } label: { Image(systemName: "plus").frame(width: 44, height: 44) }.accessibilityLabel("添加书架分组")
             }
         }
     }
     private func groupChip(_ title: String, id: String) -> some View {
         Button { groupFilter = id } label: {
-            Text(title).font(.caption.weight(.medium)).padding(.horizontal, 12).padding(.vertical, 8)
+            Text(title).font(.caption.weight(.medium)).padding(.horizontal, 12).frame(minHeight: 44)
                 .foregroundStyle(groupFilter == id ? Color.white : Color.primary)
                 .background(groupFilter == id ? Color.accentColor : Color(uiColor: .secondarySystemGroupedBackground), in: Capsule())
         }.buttonStyle(.plain).accessibilityIdentifier("shelf.group." + id)

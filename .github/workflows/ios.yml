@@ -43,6 +43,15 @@ jobs:
           DEVICE_ID=$(xcrun simctl list devices available --json | python3 -c 'import sys,json; d=json.load(sys.stdin); print(next(v["udid"] for k,vs in d["devices"].items() if "iOS" in k for v in vs if v["name"].startswith("iPhone")))')
           echo "GAVIN_SIMULATOR_ID=$DEVICE_ID" >> "$GITHUB_ENV"
           xcrun simctl boot "$DEVICE_ID"
+      - name: Cache Swift package compilation
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            Vendor/QuickJS-Swift/.build
+          key: gavin-swift-${{ runner.os }}-${{ runner.arch }}-xcode16.4-${{ hashFiles('Package.swift', 'Vendor/QuickJS-Swift/Package.swift', 'Sources/**', 'Tests/**', 'Vendor/QuickJS-Swift/Sources/**', 'Vendor/QuickJS-Swift/Tests/**') }}
+          restore-keys: |
+            gavin-swift-${{ runner.os }}-${{ runner.arch }}-xcode16.4-
       - name: Validate project files
         run: python3 scripts/validate.py
       - name: Verify JavaScript compatibility adapters

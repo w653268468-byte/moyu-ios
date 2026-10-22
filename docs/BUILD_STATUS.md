@@ -1,7 +1,9 @@
 # 构建状态
 
-最新已验证集成：构建 65，提交 `096b0875a65ff637176673794d2470adc0e4f6ee`，[Actions](https://github.com/w653268468-byte/moyu-ios/actions/runs/39346110320)、[安装包与配套源码](https://github.com/w653268468-byte/moyu-ios/releases/tag/v2.0.0-preview.65)。核心回归、16 项脚本运行时测试、3 项联网测试、8 份原生检查报告及 6 项 XCUITest 通过。新增原生证据包括打包 AES/RSA、嵌套规则、Keychain 登录头保存/读回、网页登录、验证码回传与取消、内置样例预览确认，以及导入后重开保留。听书报告仅验证模拟音频状态，未验证实际声音。
+最新已验证集成：构建 74，提交 `bfcba2ac742fe760f81461cc3f0aa59b4f7c737a`，[Actions](https://github.com/w653268468-byte/moyu-ios/actions/runs/39704154281)、[安装包与配套源码](https://github.com/w653268468-byte/moyu-ios/releases/tag/v2.0.0-preview.74)。155 个核心测试条目（部分按环境跳过）、16 项脚本运行时测试、3 项联网测试、8 份原生检查报告及 8 项 XCUITest 通过。新增固定目录排序、定位当前章、按章/百分比确认跳转、阅读内更新目录和缓存覆盖率核对。交互检查验证新增章读取、3/4 下载状态及重开位置；听书报告仅验证模拟音频状态，未验证实际声音。
 
-IPA 为 arm64、org.moyu.reader、构建 65；IPA/源码 SHA-256 已核对，源码 213 个文件与构建提交逐一匹配。三个 JS 资源和内置样例也已从 IPA 取出核对。模拟器测试身份只用于模拟器，不进入待用户签名的 iPhone IPA。
+IPA 为 arm64、org.moyu.reader、构建 74；IPA/源码 SHA-256 已核对，源码 225 个文件与构建提交逐一匹配。三个 JS 资源和内置样例也已从 IPA 取出核对。模拟器测试身份只用于模拟器，不进入待用户签名的 iPhone IPA。
+
+后续书架美化、分组、下拉更新、整页翻动与正文净化已提交。构建 79 编译及原生检查通过，交互通过 9/11；下拉和分组测试继续修复，尚未满足发布条件。失败构建未替换上述已验证安装包。详细状态见 [对标开发状态](PARITY_STATUS.md)。
 
 完整 JVM/Android 类和所有脚本书源仍不保证兼容；本轮公开验证覆盖 55 个站点地址、56 条配置，9 个完整链路通过（5 个脚本源），8 条通用样例见 [扩展实测书源](../Examples/verified-sources-expanded.json)。失败、空搜索及登录限制不算通过。真实网站结果见 SOURCE_VALIDATION.md。
