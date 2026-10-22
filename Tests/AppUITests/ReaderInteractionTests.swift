@@ -33,6 +33,22 @@ final class ReaderInteractionTests: XCTestCase {
         app.terminate()
     }
     override func setUp() { super.setUp(); continueAfterFailure = false }
+    override func tearDown() {
+        if let testRun, testRun.failureCount > 0 {
+            MainActor.assumeIsolated {
+                let hierarchy = XCTAttachment(string: XCUIApplication().debugDescription)
+                hierarchy.name = "failure-hierarchy"; hierarchy.lifetime = .keepAlways; add(hierarchy)
+            }
+        }
+        super.tearDown()
+    }
+    @MainActor private func tapMenu(_ element: XCUIElement) {
+        // SwiftUI Menu sometimes rejects AXScrollToVisible even when its label is
+        // already on screen. Tap the visible label, then still verify the menu items.
+        XCTAssertTrue(element.exists)
+        XCTAssertTrue(XCUIApplication().frame.intersects(element.frame))
+        element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    }
     @MainActor private func application() -> XCUIApplication {
         let app = XCUIApplication()
         let path = ProcessInfo.processInfo.environment["GAVIN_SIMULATOR_SWIFT"] ?? ""
@@ -189,7 +205,8 @@ final class ReaderInteractionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["最新：第3章 测试"].waitForExistence(timeout: 15))
         let scroll = app.scrollViews["shelf.scroll"]
         XCTAssertTrue(scroll.waitForExistence(timeout: 5))
-        scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).press(forDuration: 0.1, thenDragTo: scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
+        XCTAssertGreaterThan(scroll.frame.height, app.frame.height * 0.5)
+        scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).press(forDuration: 0.1, thenDragTo: scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
         XCTAssertTrue(app.staticTexts["最新：第4章 测试"].waitForExistence(timeout: 20))
         XCTAssertTrue(app.staticTexts["新增 1 章"].exists)
         let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "shelf-refreshed"; screenshot.lifetime = .keepAlways; add(screenshot)
@@ -201,21 +218,21 @@ final class ReaderInteractionTests: XCTestCase {
 
     @MainActor func testShelfGroupsPinAndBothLayoutsPersist() {
         let app = application(); app.launchArguments = ["--ui-tab", "0", "--ui-online-shelf"]; app.launch()
-        XCTAssertTrue(app.buttons["书架显示与管理"].waitForExistence(timeout: 15)); app.buttons["书架显示与管理"].tap()
+        XCTAssertTrue(app.buttons["书架显示与管理"].waitForExistence(timeout: 15)); tapMenu(app.buttons["书架显示与管理"])
         app.buttons["管理分组"].tap()
         let name = app.textFields["shelf.group.name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5)); name.tap(); name.typeText("UI Reading")
         app.buttons["shelf.group.create"].tap(); app.buttons["完成"].tap()
-        app.buttons["在线书籍管理：离线书架测试"].tap(); app.buttons["分组与置顶"].tap()
+        tapMenu(app.buttons["在线书籍管理：离线书架测试"]); app.buttons["分组与置顶"].tap()
         XCTAssertTrue(app.switches["shelf.pin"].waitForExistence(timeout: 5)); app.switches["shelf.pin"].tap()
         app.switches["UI Reading"].tap(); app.buttons["完成"].tap()
         app.buttons["UI Reading"].tap()
         XCTAssertTrue(app.staticTexts["离线书架测试"].firstMatch.exists)
         XCTAssertTrue(app.staticTexts["置顶"].firstMatch.exists)
-        app.buttons["书架显示与管理"].tap(); app.buttons["网格书架"].tap()
+        tapMenu(app.buttons["书架显示与管理"]); app.buttons["网格书架"].tap()
         XCTAssertTrue(app.staticTexts["离线书架测试"].firstMatch.exists)
         let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "shelf-group-grid"; screenshot.lifetime = .keepAlways; add(screenshot)
-        app.buttons["书架显示与管理"].tap(); app.buttons["列表书架"].tap()
+        tapMenu(app.buttons["书架显示与管理"]); app.buttons["列表书架"].tap()
         app.terminate(); app.launchArguments = ["--ui-tab", "0"]; app.launch()
         XCTAssertTrue(app.staticTexts["离线书架测试"].firstMatch.waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["置顶"].firstMatch.exists)
@@ -239,7 +256,7 @@ final class ReaderInteractionTests: XCTestCase {
         let replaced = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "REPLACED reader text.")).firstMatch
         XCTAssertTrue(replaced.waitForExistence(timeout: 15))
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).press(forDuration: 0.7)
-        app.buttons["阅读菜单"].tap(); app.buttons["替换净化"].tap()
+        tapMenu(app.buttons["阅读菜单"]); app.buttons["替换净化"].tap()
         let enabled = app.switches["启用 UI Replace"]
         XCTAssertTrue(enabled.waitForExistence(timeout: 5)); enabled.tap(); app.buttons["完成"].tap()
         let original = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "ORIGINAL reader text.")).firstMatch

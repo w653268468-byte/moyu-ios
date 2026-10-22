@@ -89,6 +89,9 @@ struct PagedReadingView: View {
                         VStack(spacing: 0) {
                             if showTitle { Text(title).font(.caption).lineLimit(1).opacity(0.6).frame(height: 28, alignment: .topLeading).frame(maxWidth: .infinity, alignment: .leading) }
                             PageDrawing(text: attributed, range: pages[page], ink: UIColor(style.paper.ink)).frame(width: width, height: height)
+                                .accessibilityAction(named: "下一页") { move(1) }
+                                .accessibilityAction(named: "上一页") { move(-1) }
+                                .accessibilityAction(named: "阅读菜单") { toggleChrome() }
                             Text("\(page + 1) / \(pages.count)").font(.caption2).monospacedDigit().opacity(0.6).frame(height: 26, alignment: .bottom)
                                 .accessibilityIdentifier("reader.pageIndicator")
                         }.padding(.top, top).padding(.bottom, bottom).padding(.horizontal, side)
@@ -98,6 +101,7 @@ struct PagedReadingView: View {
                             .transition(.asymmetric(insertion: .move(edge: forward ? .trailing : .leading), removal: .move(edge: forward ? .leading : .trailing)))
                     } else { ProgressView("正在分页…") }
                 }.frame(width: geometry.size.width, height: geometry.size.height).background(style.paper.background).clipped()
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("reader.pageCanvas")
                     .gesture(DragGesture(minimumDistance: 25).onEnded { value in
                         guard style.pageAnimation != "curl" else { return }
@@ -117,9 +121,6 @@ struct PagedReadingView: View {
                         }
                     }
                 })
-                .accessibilityAction(named: "下一页") { move(1) }
-                .accessibilityAction(named: "上一页") { move(-1) }
-                .accessibilityAction(named: "阅读菜单") { toggleChrome() }
                 .task(id: "\(width)-\(height)-\(style.fontSize)-\(style.fontFamily)-\(style.bold)-\(style.letterSpacing)-\(style.lineSpacing)-\(style.paragraphSpacing)-\(style.indent)-\(style.paperName)") {
                     await repaginate(size: CGSize(width: width, height: height))
                 }

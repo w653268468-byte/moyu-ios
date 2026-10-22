@@ -211,6 +211,8 @@ jobs:
             build/ui/test-summary.json
             build/ui/test-details.json
             build/ui/*-check.json
+            build/ui/*.png
+            build/ui/attachments/**/*.txt
           if-no-files-found: warn
           retention-days: 14
       - name: Upload simulator screens
