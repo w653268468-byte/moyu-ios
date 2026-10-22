@@ -35,6 +35,7 @@ final class OnlineStore: ObservableObject {
     private let chapterReads = ChapterReadCache()
     private var readyChapters: [URL: String] = [:]
     private var readyOrder: [URL] = []
+    private var clearingCache = false
     private var downloadsURL: URL { directory.appendingPathComponent("downloads.json") }
     func downloadKey(_ book: OnlineNovel) -> String { book.sourceID + "|" + book.id }
     func downloadState(_ book: OnlineNovel) -> OfflineDownloadState? { downloads[downloadKey(book)] }
@@ -288,6 +289,7 @@ final class OnlineStore: ObservableObject {
     }
 
     func chapter(_ chapter: OnlineChapter, sourceID: String, requestClient: SourceClient? = nil) async throws -> String {
+        guard !clearingCache else { throw SourceError.message("正在清理章节缓存，请稍后重试。") }
         let cache = cacheURL(chapter, sourceID: sourceID)
         if let text = readyChapter(chapter, sourceID: sourceID) { return text }
         let source = sources.first(where: { $0.id == sourceID }), requestClient = requestClient ?? client, revision = cacheRevision
@@ -430,6 +432,9 @@ final class OnlineStore: ObservableObject {
     #endif
 
     func clearCache() async {
+        guard !clearingCache else { return }
+        clearingCache = true
+        defer { clearingCache = false }
         cacheRevision = UUID()
         readyChapters.removeAll(); readyOrder.removeAll()
         pauseAllDownloads()
