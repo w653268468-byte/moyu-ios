@@ -45,8 +45,21 @@ final class ReaderInteractionTests: XCTestCase {
     @MainActor private func tapMenu(_ element: XCUIElement) {
         // SwiftUI Menu sometimes rejects AXScrollToVisible even when its label is
         // already on screen. Tap the visible label, then still verify the menu items.
+        let app = XCUIApplication()
+        if element.label.hasPrefix("在线书籍管理：") {
+            let scroll = app.scrollViews["shelf.scroll"]
+            let bottom = app.tabBars.firstMatch.frame.minY - 4
+            let top = app.buttons["书架显示与管理"].frame.maxY + 4
+            for _ in 0..<6 {
+                if element.isHittable, element.frame.minY >= top, element.frame.maxY <= bottom { break }
+                scroll.swipeUp()
+            }
+            XCTAssertTrue(element.isHittable)
+            XCTAssertGreaterThanOrEqual(element.frame.minY, top)
+            XCTAssertLessThanOrEqual(element.frame.maxY, bottom)
+        }
         XCTAssertTrue(element.exists)
-        XCTAssertTrue(XCUIApplication().frame.intersects(element.frame))
+        XCTAssertTrue(app.frame.intersects(element.frame))
         element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
     @MainActor private func enableSwitch(_ element: XCUIElement) {
