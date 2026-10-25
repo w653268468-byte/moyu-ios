@@ -7,7 +7,14 @@ final class ReaderInteractionTests: XCTestCase {
         XCTAssertTrue(sample.waitForExistence(timeout: 15)); sample.tap()
         let confirm = app.buttons["确认导入 3 个书源"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 10)); confirm.tap()
-        XCTAssertTrue(app.staticTexts["奇异网"].firstMatch.waitForExistence(timeout: 10))
+        // Source actions and the existing fixture rows can place imported samples
+        // below the visible, lazily materialized portion of the List.
+        let imported = app.staticTexts["奇异网"].firstMatch
+        for _ in 0..<8 {
+            if imported.waitForExistence(timeout: 1) { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(imported.exists)
         app.terminate()
     }
     @MainActor func testSourceRequestedLoginAndImageCodeResumeScript() {
