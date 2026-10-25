@@ -49,8 +49,8 @@ class Handler(BaseHTTPRequestHandler):
                     audio.writeframes(b"".join(struct.pack("<h", int(700 * math.sin(2 * math.pi * 220 * n / 8000))) for n in range(2400)))
                 body = output.getvalue()
         elif self.path == "/tts-library.js":
+            self.send_response(200); content_type = "application/javascript"
             body = b"function sharedVoice(text){return 'http://127.0.0.1:18765/tts-audio?text='+java.encodeURI(text)+'&engine='+source.id;}"
-            self.send_response(200); self.send_header("Content-Type", "application/javascript"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
         elif self.path == "/tts-config.json":
             self.send_response(200); content_type = "application/json"
             body = json.dumps([{"id": 991, "name": "本地测试音色", "url": "http://127.0.0.1:18765/tts-audio?text={{java.encodeURI(speakText)}}&speed={{speakSpeed}}", "contentType": "audio/wav"}]).encode()

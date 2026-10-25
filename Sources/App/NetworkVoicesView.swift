@@ -29,7 +29,7 @@ struct NetworkVoicesView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack { Text(engine.name).font(.headline); Spacer(); if selected == String(engine.id) { Image(systemName: "checkmark.circle.fill").foregroundStyle(.tint) } }
                     HStack(spacing: 22) {
-                        Button("使用") { store.select(engine) }.accessibilityIdentifier("voice.use.\(engine.id)")
+                        Button("使用") { store.select(engine) }.accessibilityIdentifier("voice.use.\(engine.id)").accessibilityValue(selected == String(engine.id) ? "已选择" : "未选择")
                         Button("试听") { player.preview(engine) }.accessibilityIdentifier("voice.preview.\(engine.id)")
                         Button("音色与登录参数") { configuring = engine }
                     }.buttonStyle(.borderless).font(.subheadline)

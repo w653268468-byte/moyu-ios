@@ -235,6 +235,7 @@ final class ReaderInteractionTests: XCTestCase {
         app.terminate(); app.launch()
         app.buttons["在线音色与朗读"].tap()
         XCTAssertTrue(app.buttons["voice.use.991"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["voice.use.991"].value as? String, "已选择")
         XCTAssertTrue(app.staticTexts["本地测试音色"].exists)
         let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "network-voice-imported"; screenshot.lifetime = .keepAlways; add(screenshot)
         app.buttons["系统离线朗读"].tap(); app.terminate()
