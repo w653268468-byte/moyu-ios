@@ -21,12 +21,13 @@ final class NetworkSpeechTests: XCTestCase {
         XCTAssertEqual(request.value(forHTTPHeaderField: "X-Speed"), "10")
     }
     func testInlineSharedScriptBuildsAbsoluteRequest() async throws {
-        let engine = NetworkSpeechEngine(id: 3, name: "Script", url: "@js:voiceURL(speakText, speakSpeed)", jsLib: "function voiceURL(text,speed){return 'https://tts.example/say?q='+java.encodeURI(text)+'&s='+(speed+1)}")
+        let engine = NetworkSpeechEngine(id: 3, name: "Script", url: "@js:voiceURL(speakText, speakSpeed)", jsLib: "function voiceURL(text,speed){return 'https://tts.example/say?q='+java.encodeURI(text)+'&s='+(speed+1)+'&engine='+source.id}")
         let request = try await NetworkSpeechClient().request(engine, text: "音色", speed: 15)
         let parts = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
         XCTAssertEqual(parts.host, "tts.example")
         XCTAssertEqual(parts.queryItems?.first(where: { $0.name == "q" })?.value, "音色")
         XCTAssertEqual(parts.queryItems?.first(where: { $0.name == "s" })?.value, "16")
+        XCTAssertEqual(parts.queryItems?.first(where: { $0.name == "engine" })?.value, "3")
     }
     func testAudioErrorsAreRejectedInsteadOfBeingPlayed() throws {
         XCTAssertThrowsError(try NetworkSpeechClient.validateAudio(Data("<html>needs login</html>".utf8)))

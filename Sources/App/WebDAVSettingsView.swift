@@ -66,7 +66,7 @@ struct WebDAVSettingsView: View {
         var decision: SyncDecision
     }
     private enum SyncAction: String, Identifiable { case upload, download; var id: String { rawValue } }
-    private func progressSnapshot() throws -> Data {
+    @MainActor private func progressSnapshot() throws -> Data {
         try library.flushProgress(); try online.flushProgress()
         return try BackupService.create()
     }

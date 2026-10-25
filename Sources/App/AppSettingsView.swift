@@ -11,7 +11,8 @@ struct ReaderBackup: Codable {
 enum BackupService {
     static let folders = ["Moyu", "MoyuOnline", "GavinFonts"]
     static let maximumBytes = 200 * 1024 * 1024
-    static func create() throws -> Data {
+    @MainActor static func create() throws -> Data {
+        try SourceHealthStore.shared.flush()
         var files: [String: Data] = [:]
         var total = 0
         for folder in folders {
@@ -31,6 +32,7 @@ enum BackupService {
     }
 
     @MainActor static func restore(_ data: Data) throws {
+        try SourceHealthStore.shared.flush()
         guard data.count <= maximumBytes * 2 else { throw SourceError.message("备份文件过大。") }
         let backup = try JSONDecoder().decode(ReaderBackup.self, from: data)
         guard backup.version == 1, backup.files.count <= 25000 else { throw SourceError.message("备份版本或文件数量不受支持。") }
@@ -119,6 +121,8 @@ enum BackupService {
         for (key, value) in preferences { UserDefaults.standard.set(value, forKey: key) }
         ReaderFontStore.shared.reload()
         ReadingToolsStore.shared.reload()
+        NetworkVoiceStore.shared.reload()
+        SourceHealthStore.shared.reload()
     }
 }
 
@@ -133,7 +137,7 @@ struct AppSettingsView: View {
     @State private var confirmCache = false
     @State private var message: String?
     @AppStorage("reader.interfaceAppearance") private var interfaceAppearance = InterfaceAppearance.light.rawValue
-    private func progressSnapshot() throws -> Data {
+    @MainActor private func progressSnapshot() throws -> Data {
         try library.flushProgress(); try online.flushProgress()
         return try BackupService.create()
     }
@@ -210,7 +214,7 @@ struct AppSettingsView: View {
             guard size <= BackupService.maximumBytes * 2 else { throw SourceError.message("备份文件过大。") }
             try library.flushProgress(); try online.flushProgress()
             try BackupService.restore(Data(contentsOf: url))
-            library.reload(); online.reload(); NetworkVoiceStore.shared.reload(); message = "备份已恢复。"
+            library.reload(); online.reload(); message = "备份已恢复。"
         } catch { message = error.localizedDescription }
     }
 }

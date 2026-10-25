@@ -35,6 +35,11 @@ final class SourceHealthTests: XCTestCase {
         health.receive(gone, failure: "网站返回错误 HTTP 410", verifiedProbe: true)
         XCTAssertTrue(health.record(for: gone)!.removable)
         for item in [timeout, login, denied] { XCTAssertFalse(health.record(for: item)!.removable) }
+        var protected = gone; protected.header = #"{"Authorization":"Bearer configured"}"#
+        for _ in 0..<2 { health.receive(protected, failure: "网站返回错误 HTTP 404", verifiedProbe: true) }
+        XCTAssertFalse(health.record(for: protected)!.removable)
+        XCTAssertEqual(health.record(for: protected)?.kind, .login)
+        XCTAssertNotEqual(SourceFailureKind.classify("JavaScript 执行失败: HTTP 404"), .endpointGone)
         health.receive(gone, failure: nil, hasResults: false)
         XCTAssertFalse(health.record(for: gone)!.removable)
     }

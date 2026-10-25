@@ -3,6 +3,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from socketserver import TCPServer
 import json
 import time
+import io
+import wave
+import math
+import struct
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
@@ -29,7 +33,28 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         print("GET", self.path, flush=True)
         content_type = "text/html; charset=utf-8"
-        if self.path == "/replace-rules.json":
+        if self.path.startswith("/health-gone/search"):
+            self.send_response(404); body = b"gone"
+        elif self.path.startswith("/health-login/search"):
+            self.send_response(403); body = b"login required"
+        elif self.path.startswith("/tts-audio"):
+            query = parse_qs(urlparse(self.path).query)
+            if query.get("requireAuth") == ["1"] and (self.headers.get("X-Voice") != "native" or self.headers.get("X-Token") != "native-secret-value"):
+                self.send_response(401); content_type = "application/json"; body = b'{"error":"missing credentials"}'
+            else:
+                self.send_response(200); content_type = "audio/wav"
+                output = io.BytesIO()
+                with wave.open(output, "wb") as audio:
+                    audio.setnchannels(1); audio.setsampwidth(2); audio.setframerate(8000)
+                    audio.writeframes(b"".join(struct.pack("<h", int(700 * math.sin(2 * math.pi * 220 * n / 8000))) for n in range(2400)))
+                body = output.getvalue()
+        elif self.path == "/tts-library.js":
+            body = b"function sharedVoice(text){return 'http://127.0.0.1:18765/tts-audio?text='+java.encodeURI(text)+'&engine='+source.id;}"
+            self.send_response(200); self.send_header("Content-Type", "application/javascript"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+        elif self.path == "/tts-config.json":
+            self.send_response(200); content_type = "application/json"
+            body = json.dumps([{"id": 991, "name": "本地测试音色", "url": "http://127.0.0.1:18765/tts-audio?text={{java.encodeURI(speakText)}}&speed={{speakSpeed}}", "contentType": "audio/wav"}]).encode()
+        elif self.path == "/replace-rules.json":
             self.send_response(200)
             content_type = "application/json; charset=utf-8"
             body = json.dumps([{"id": 991, "name": "Import rule", "pattern": "AD_TEXT", "replacement": "", "isRegex": False}, {"name": "Invalid rule", "pattern": "(", "isRegex": True}]).encode()

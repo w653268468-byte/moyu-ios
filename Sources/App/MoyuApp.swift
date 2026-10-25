@@ -14,7 +14,13 @@ struct MoyuApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("reader.interfaceAppearance") private var interfaceAppearance = InterfaceAppearance.light.rawValue
     @StateObject private var library = LibraryStore()
-    @StateObject private var online = OnlineStore()
+    @StateObject private var online = MoyuApp.makeOnlineStore()
+    @MainActor private static func makeOnlineStore() -> OnlineStore {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-source-health") { return OnlineStore(directory: URL.documentsDirectory.appendingPathComponent("UI-health-online")) }
+        #endif
+        return OnlineStore()
+    }
     @State private var selectedTab: Int = {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
@@ -99,6 +105,12 @@ struct MoyuApp: App {
                         UserDefaults.standard.set("在线", forKey: "reader.shelfScope")
                         UserDefaults.standard.set(false, forKey: "reader.fullScreen")
                         try? online.prepareOfflineShelfFixture(prefetchable: true)
+                    }
+                    if ProcessInfo.processInfo.arguments.contains("--ui-source-health"), online.sources.isEmpty {
+                        let sources = ["gone", "login"].map { kind in
+                            ["bookSourceName": kind == "gone" ? "失效测试源" : "登录测试源", "bookSourceUrl": "http://127.0.0.1:18765/health-\(kind)", "searchUrl": "/health-\(kind)/search?key={{key}}", "ruleSearch": ["bookList": ".book", "name": "a@text", "bookUrl": "a@href"], "ruleToc": ["chapterList": "#list a", "chapterName": "text", "chapterUrl": "href"], "ruleContent": ["content": "#content@text"]] as [String: Any]
+                        }
+                        if let data = try? JSONSerialization.data(withJSONObject: sources), let parsed = try? SourceImport.parse(data) { try? online.addSources(parsed.sources) }
                     }
                     if ProcessInfo.processInfo.arguments.contains("--ui-import-preview") || ProcessInfo.processInfo.arguments.contains("--ui-import-samples") { showSourceImportPreview = true }
                     if ProcessInfo.processInfo.arguments.contains("--ui-preferences") { showReaderPreferences = true }

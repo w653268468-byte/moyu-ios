@@ -223,6 +223,38 @@ final class ReaderInteractionTests: XCTestCase {
         app.terminate()
     }
 
+    @MainActor func testNetworkVoiceImportAndSelectionPersist() {
+        let app = application(); app.launchArguments = ["--ui-tab", "3"]; app.launch()
+        XCTAssertTrue(app.buttons["在线音色与朗读"].waitForExistence(timeout: 10)); app.buttons["在线音色与朗读"].tap()
+        app.buttons["voices.import"].tap()
+        let input = app.textViews["voices.input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 5)); input.tap(); input.typeText("http://127.0.0.1:18765/tts-config.json")
+        app.buttons["voices.parse"].tap()
+        XCTAssertTrue(app.buttons["voices.confirm"].waitForExistence(timeout: 10)); app.buttons["voices.confirm"].tap()
+        XCTAssertTrue(app.buttons["voice.use.991"].waitForExistence(timeout: 5)); app.buttons["voice.use.991"].tap()
+        app.terminate(); app.launch()
+        app.buttons["在线音色与朗读"].tap()
+        XCTAssertTrue(app.buttons["voice.use.991"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["本地测试音色"].exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "network-voice-imported"; screenshot.lifetime = .keepAlways; add(screenshot)
+        app.buttons["系统离线朗读"].tap(); app.terminate()
+    }
+
+    @MainActor func testSourceHealthProbeCleanupAndRecoveryKeepRestrictedSource() {
+        let app = application(); app.launchArguments = ["--ui-tab", "2", "--ui-source-health"]; app.launch()
+        XCTAssertTrue(app.buttons["sources.probe"].waitForExistence(timeout: 10)); app.buttons["sources.probe"].tap()
+        let cleanup = app.buttons["sources.cleanup"]
+        expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: cleanup); waitForExpectations(timeout: 15)
+        XCTAssertTrue(app.staticTexts["登录测试源"].exists)
+        cleanup.tap(); app.buttons["备份并删除失效源"].tap()
+        XCTAssertFalse(app.staticTexts["失效测试源"].exists)
+        XCTAssertTrue(app.staticTexts["登录测试源"].exists)
+        tapMenu(app.buttons["sources.actions"]); app.buttons["恢复上次清理"].tap()
+        XCTAssertTrue(app.staticTexts["失效测试源"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["登录测试源"].exists)
+        app.terminate()
+    }
+
     @MainActor func testPreloadedChapterAvoidsAnotherLoadingPageAndDefaultsToLight() {
         let app = application(); app.launchArguments = ["--ui-tab", "0", "--ui-prefetch-reader", "-AppleInterfaceStyle", "Dark"]; app.launch()
         let book = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "预加载测试书")).firstMatch

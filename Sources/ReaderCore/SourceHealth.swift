@@ -21,11 +21,11 @@ public enum SourceFailureKind: String, Codable, Sendable {
     case endpointGone, access, login, timeout, network, rule, other
     public static func classify(_ message: String) -> Self {
         let value = message.lowercased()
-        if value.contains("http 404") || value.contains("http 410") { return .endpointGone }
+        if ["网站返回错误 http 404", "网站返回错误 http 410", "http 404", "http 410"].contains(where: value.hasPrefix) { return .endpointGone }
         if value.contains("http 403") || value.contains("http 429") || value.contains("访问限制") { return .access }
-        if value.contains("登录") || value.contains("验证") || value.contains("captcha") { return .login }
         if value.contains("超时") || value.contains("timed out") || value.contains("-1001") { return .timeout }
         if value.contains("网络") || value.contains("域名") || value.contains("证书") || value.contains("http 5") || value.contains("connection") { return .network }
+        if value.contains("登录") || value.contains("需要验证") || value.contains("验证码") || value.contains("http 401") || value.contains("captcha") { return .login }
         if value.contains("规则") || value.contains("解析") || value.contains("javascript") || value.contains("json") { return .rule }
         return .other
     }
@@ -78,7 +78,13 @@ public struct SourceHealthLedger: Codable, Sendable {
                                  verifiedProbe: Bool = false, fullValidation: Bool = false, now: Date = Date()) {
         var entry = record(for: source) ?? SourceHealthRecord(signature: Self.signature(source))
         if let failure {
-            let kind = SourceFailureKind.classify(failure)
+            var kind = SourceFailureKind.classify(failure)
+            if kind == .endpointGone {
+                let raw = source.originalJSON.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] }
+                let login = (raw?["loginUrl"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let header = (source.header ?? "").lowercased()
+                if !login.isEmpty || header.contains("authorization") || header.contains("cookie") { kind = .login }
+            }
             entry.failures += 1; entry.lastFailure = now; entry.kind = kind; entry.message = String(failure.prefix(1000))
             if verifiedProbe && kind == .endpointGone { entry.confirmedGone += 1 } else if kind != .endpointGone { entry.confirmedGone = 0 }
             if entry.failures >= 2 { entry.cooldownUntil = now.addingTimeInterval(kind == .login || kind == .access ? 900 : 300) }

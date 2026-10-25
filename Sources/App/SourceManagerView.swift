@@ -41,9 +41,9 @@ struct SourceManagerView: View {
             case "已启用": state = source.enabled != false
             case "已禁用": state = source.enabled == false
             case "规则不兼容": state = online.sourceReason(source) != nil
-            case "校验失败": state = failed.contains(source.id)
+            case "校验失败": state = failed.contains(source.id) || health.ledger.record(for: source)?.kind != nil
             case "已确认失效": state = health.ledger.record(for: source)?.removable == true
-            case "暂避搜索": state = (health.ledger.record(for: source)?.cooldownUntil ?? .distantPast) > Date()
+            case "暂避搜索": state = health.ledger.record(for: source)?.removable == true || (health.ledger.record(for: source)?.cooldownUntil ?? .distantPast) > Date()
             default: state = true
             }
             return matches && state
@@ -134,7 +134,7 @@ struct SourceManagerView: View {
                             Button("恢复上次清理", systemImage: "arrow.uturn.backward") {
                                 do { try health.restore(online: online) } catch { online.errorMessage = error.localizedDescription }
                             }
-                        } label: { Image(systemName: "ellipsis.circle") }
+                        } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("书源操作").accessibilityIdentifier("sources.actions")
                         Button { importing = true } label: { Image(systemName: "plus.circle.fill") }
                     }
                     ToolbarItemGroup(placement: .bottomBar) {

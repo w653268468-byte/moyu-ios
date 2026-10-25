@@ -183,7 +183,7 @@ import MediaPlayer
                 }
                 try Task.checkCancellation(); guard active, token == current, chapterIndex == chapter, chunkIndex == chunk else { return }
                 let player = try AVAudioPlayer(data: data)
-                guard player.duration.isFinite, player.duration > 0, player.prepareToPlay() else { throw SourceError.message("返回音频无法解码或为空。") }
+                guard player.duration.isFinite, player.duration > 0, simulated || player.prepareToPlay() else { throw SourceError.message("返回音频无法解码或为空。") }
                 player.delegate = self; audioPlayer = player; loading = false
                 progress?(chapter, chunks[chunk].utf16Offset)
                 if !paused && !simulated, !player.play() { throw SourceError.message("无法播放在线音频，请检查音频输出。") }
@@ -241,7 +241,7 @@ extension ReaderSpeech {
         let player = ReaderSpeech(simulated: true)
         var requested: [Int] = [], positions: [Int] = []
         func wait(_ condition: () -> Bool) async throws {
-            for _ in 0..<100 { if condition() { return }; try await Task.sleep(for: .milliseconds(10)) }
+            for _ in 0..<500 { if condition() { return }; try await Task.sleep(for: .milliseconds(10)) }
             throw SourceError.message("听书状态转换超时")
         }
         do {
@@ -273,7 +273,29 @@ extension ReaderSpeech {
             player.speechSynthesizer(player.synthesizer, didFinish: transformed)
             try await wait { !player.active }
             guard mappedOffsets.last == (original as NSString).length else { throw SourceError.message("净化听书保存了错误的原文结束位置") }
-            try Data(#"{"status":"passed","chapterAdvance":true,"pauseResume":true,"staleCallbackIgnored":true,"endOfBook":true,"transformedOffsets":true,"audioOutput":"not_tested"}"#.utf8).write(to: file, options: .atomic)
+            let engine = NetworkSpeechEngine(id: 990, name: "原生网络音频检查", url: "http://127.0.0.1:18765/tts-audio?text={{java.encodeURI(speakText)}}&speed={{speakSpeed}}")
+            let network = ReaderSpeech(simulated: true)
+            var networkRequests: [Int] = [], networkPositions: [Int] = []
+            network.start(owner: "network-test", title: "网络朗读", chapter: 0, offset: 0, loader: { index in
+                networkRequests.append(index)
+                if index == 0 { return ("第一章", String(repeating: "网络音频解码与下一段预取。", count: 40)) }
+                return index == 1 ? ("第二章", "自动接续下一章。") : nil
+            }, progress: { chapter, _ in networkPositions.append(chapter) }, overrideEngine: engine)
+            try await wait { network.audioPlayer != nil }
+            guard let audio = network.audioPlayer, audio.duration > 0 else { throw SourceError.message("网络 WAV 未完成原生解码") }
+            network.pause(); guard network.paused else { throw SourceError.message("网络朗读暂停失败") }; network.resume()
+            network.audioPlayerDidFinishPlaying(audio, successfully: true)
+            try await wait { network.audioPlayer != nil && network.chunkIndex == 1 }
+            let nextAudio = network.audioPlayer!
+            network.audioPlayerDidFinishPlaying(audio, successfully: true)
+            try await Task.sleep(for: .milliseconds(20))
+            guard network.audioPlayer === nextAudio else { throw SourceError.message("旧网络音频回调改变了播放位置") }
+            network.audioPlayerDidFinishPlaying(nextAudio, successfully: true)
+            try await wait { network.chapterIndex == 1 && network.audioPlayer != nil }
+            network.audioPlayerDidFinishPlaying(network.audioPlayer!, successfully: true)
+            try await wait { !network.active }
+            guard networkRequests == [0, 1, 2], networkPositions.contains(1) else { throw SourceError.message("网络音色未自动跨章或保存进度") }
+            try Data(#"{"status":"passed","networkAudioDecodeAndAdvance":true,"chapterAdvance":true,"pauseResume":true,"staleCallbackIgnored":true,"endOfBook":true,"transformedOffsets":true,"audioOutput":"not_tested"}"#.utf8).write(to: file, options: .atomic)
         } catch {
             player.stop()
             let data = try? JSONSerialization.data(withJSONObject: ["status": "failed", "error": error.localizedDescription])

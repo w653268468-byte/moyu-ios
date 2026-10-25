@@ -87,11 +87,25 @@ public actor NetworkSpeechClient {
     private func script(_ engine: NetworkSpeechEngine) throws -> SourceScript {
         if let old = engines[engine.id], old.0 == engine { return old.1 }
         let value = try SourceScript(configuration: configuration)
-        let source: [String: Any] = ["bookSourceUrl": "httpTts:\(engine.id)", "name": engine.name, "header": engine.header ?? ""]
+        var source = (try? JSONSerialization.jsonObject(with: Data(engine.originalJSON.utf8))) as? [String: Any] ?? [:]
+        source["bookSourceUrl"] = "httpTts:\(engine.id)"; source["id"] = engine.id; source["url"] = engine.url
+        source["name"] = engine.name; source["header"] = engine.header ?? ""
         try value.setJSONGlobal("source", json: String(decoding: try JSONSerialization.data(withJSONObject: source), as: UTF8.self))
         if let library = engine.jsLib, !library.isEmpty {
             guard library.utf8.count <= 512 * 1024 else { throw SourceError.message("音色脚本过大。") }
-            _ = try value.evaluate(library + "\n;void 0;", result: "", baseURL: engine.base, timeout: 3, persistentDefinitions: true)
+            if let urls = try? JSONDecoder().decode([String: String].self, from: Data(library.utf8)) {
+                guard urls.count <= 8 else { throw SourceError.message("共享音色脚本最多 8 个。") }
+                let deadline = Date().addingTimeInterval(30)
+                for name in urls.keys.sorted() {
+                    try Task.checkCancellation()
+                    guard Date() < deadline, let raw = urls[name] else { throw SourceError.message("共享音色脚本加载超时。") }
+                    let url = try SourceClient.resolve(raw, base: engine.base)
+                    guard url.host != "tts.invalid" else { throw SourceError.message("共享音色脚本需要有效地址。") }
+                    let literal = String(decoding: try JSONSerialization.data(withJSONObject: url.absoluteString, options: .fragmentsAllowed), as: UTF8.self)
+                    guard let code = try value.evaluate("java.ajax(\(literal))", result: "", baseURL: engine.base) as? String, code.utf8.count <= 512 * 1024 else { throw SourceError.message("共享音色脚本为空或过大。") }
+                    _ = try value.evaluate(code + "\n;void 0;", result: "", baseURL: engine.base, timeout: 3, persistentDefinitions: true)
+                }
+            } else { _ = try value.evaluate(library + "\n;void 0;", result: "", baseURL: engine.base, timeout: 3, persistentDefinitions: true) }
         }
         if engines.count >= 3 { engines.removeAll() }
         engines[engine.id] = (engine, value)
@@ -160,21 +174,28 @@ public actor NetworkSpeechClient {
     }
     public func importText(_ input: String) async throws -> NetworkVoiceImport {
         var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let url = URLComponents(string: text), url.scheme == "legado", let source = url.queryItems?.first(where: { ["src", "url"].contains($0.name) })?.value { text = source }
+        if let url = URLComponents(string: text), url.scheme?.lowercased() == "legado", let source = url.queryItems?.first(where: { ["src", "url"].contains($0.name) })?.value { text = source }
+        if let expression = try? NSRegularExpression(pattern: #"^\[[^\]\r\n]*\]\((https?://[^)\s]+)\)$"#),
+           let match = expression.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)), let range = Range(match.range(at: 1), in: text) { text = String(text[range]) }
         switch try SourceImportInput.detect(text) {
         case .json(let data): return try NetworkVoiceImport.parse(data)
         case .links(let urls):
             var result = NetworkVoiceImport(engines: [], failures: [])
+            var received = 0
             for url in urls {
                 try Task.checkCancellation()
+                if received >= 20 * 1024 * 1024 { result.failures.append("音色配置总下载量达到 20 MB，已停止获取余下链接。"); break }
                 do {
-                    let (bytes, response) = try await session.bytes(from: url)
+                    let normalized = try SourceSubscription.normalize(url)
+                    let (bytes, response) = try await session.bytes(from: normalized)
                     guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), response.expectedContentLength <= 5 * 1024 * 1024 else { throw SourceError.message("音色链接返回错误或文件过大。") }
                     var data = Data()
-                    for try await byte in bytes { guard data.count < 5 * 1024 * 1024 else { throw SourceError.message("音色文件超过 5 MB。") }; data.append(byte) }
+                    for try await byte in bytes { guard data.count < 5 * 1024 * 1024, received < 20 * 1024 * 1024 else { throw SourceError.message("音色文件或总下载量过大。") }; data.append(byte); received += 1 }
                     let parsed = try NetworkVoiceImport.parse(data)
-                    for engine in parsed.engines { result.engines.removeAll { $0.id == engine.id }; result.engines.append(engine) }
-                    guard result.engines.count <= 500 else { throw SourceError.message("音色总数超过 500。") }
+                    var merged = result.engines
+                    for engine in parsed.engines { merged.removeAll { $0.id == engine.id }; merged.append(engine) }
+                    guard merged.count <= 500 else { throw SourceError.message("音色总数超过 500。") }
+                    result.engines = merged
                     result.failures += parsed.failures
                 } catch { if Task.isCancelled { throw CancellationError() }; result.failures.append("\(url.host ?? "音色链接")：\(error.localizedDescription)") }
             }
