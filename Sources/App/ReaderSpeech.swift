@@ -2,7 +2,7 @@ import SwiftUI
 import AVFoundation
 import MediaPlayer
 
-@MainActor final class ReaderSpeech: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
+@MainActor final class ReaderSpeech: NSObject, ObservableObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate {
     static let shared = ReaderSpeech()
     @Published private(set) var active = false
     @Published private(set) var paused = false
@@ -17,6 +17,8 @@ import MediaPlayer
     private var loader: ((Int) async throws -> (String, String)?)?
     private var positionMap: ((Int, Int, Bool) -> Int)?
     private var progress: ((Int, Int) -> Void)?
+    private var originalProgress: ((Int, Int) -> Void)?
+    private var spokenOffset = 0
     private var chunks: [SpeechTextChunk] = []
     private var chunkIndex = 0
     private var speaking: AVSpeechUtterance?
@@ -25,6 +27,11 @@ import MediaPlayer
     private var chapterTitle = ""
     private var observers: [NSObjectProtocol] = []
     private let simulated: Bool
+    private var networkClient = NetworkSpeechClient()
+    private var networkEngine: NetworkSpeechEngine?
+    private var audioPlayer: AVAudioPlayer?
+    private var audioTask: Task<Void, Never>?
+    private var prefetchedAudio: (chapter: Int, chunk: Int, speed: Int, task: Task<Data, Error>)?
     init(simulated: Bool = false) {
         self.simulated = simulated
         super.init(); synthesizer.delegate = self; synthesizer.usesApplicationAudioSession = true
@@ -40,9 +47,13 @@ import MediaPlayer
         observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] note in Task { @MainActor in self?.routeChanged(note) } })
     }
     func start(owner: String, title: String, chapter: Int, offset: Int,
-               loader: @escaping (Int) async throws -> (String, String)?, positionMap: ((Int, Int, Bool) -> Int)? = nil, progress: @escaping (Int, Int) -> Void) {
+               loader: @escaping (Int) async throws -> (String, String)?, positionMap: ((Int, Int, Bool) -> Int)? = nil, progress: @escaping (Int, Int) -> Void, overrideEngine: NetworkSpeechEngine? = nil) {
         if active && self.owner == owner { toggle(); return }
         stop()
+        message = nil; networkClient = NetworkSpeechClient()
+        let selected = UserDefaults.standard.string(forKey: "reader.speechEngine") ?? ""
+        networkEngine = overrideEngine ?? (simulated ? nil : NetworkVoiceStore.shared.engines.first { String($0.id) == selected })
+        if !simulated && !selected.isEmpty && networkEngine == nil { message = "选中的网络音色已移除，请重新选择音色。"; return }
         do {
             if !simulated {
                 let session = AVAudioSession.sharedInstance()
@@ -51,7 +62,8 @@ import MediaPlayer
             }
         } catch { message = "无法开启听书音频：" + error.localizedDescription; return }
         self.owner = owner; self.title = title; self.loader = loader; self.positionMap = positionMap
-        self.progress = { chapter, offset in progress(chapter, positionMap?(chapter, offset, true) ?? offset) }
+        originalProgress = progress
+        self.progress = { [weak self] chapter, offset in self?.spokenOffset = offset; progress(chapter, positionMap?(chapter, offset, true) ?? offset) }
         active = true; paused = false
         let minutes = min(180, max(0, UserDefaults.standard.integer(forKey: "reader.sleepMinutes")))
         if minutes > 0 { sleepTask = Task { try? await Task.sleep(for: .seconds(minutes * 60)); guard !Task.isCancelled else { return }; self.stop() } }
@@ -59,6 +71,7 @@ import MediaPlayer
     }
     private func load(_ index: Int, offset: Int) {
         loadTask?.cancel(); token = UUID(); let current = token
+        audioTask?.cancel(); prefetchedAudio?.task.cancel(); prefetchedAudio = nil; audioPlayer?.stop(); audioPlayer = nil
         speaking = nil; synthesizer.stopSpeaking(at: .immediate); loading = true
         guard let loader else { stop(); return }
         loadTask = Task {
@@ -67,7 +80,7 @@ import MediaPlayer
             do {
                 guard let (name, text) = try await loader(index) else { if current == token { stop() }; return }
                 try Task.checkCancellation(); guard current == token else { return }
-                let value = SpeechText.chunks(text, startingAt: positionMap?(index, offset, false) ?? offset)
+                let value = SpeechText.chunks(text, startingAt: positionMap?(index, offset, false) ?? offset, maximumCharacters: networkEngine == nil ? 1200 : 320)
                 guard !value.isEmpty else { stop(); message = "这一章没有可朗读的文字。"; return }
                 chapterTitle = name; chapterIndex = index; chunks = value; chunkIndex = 0; loading = false
                 progress?(index, value[0].utf16Offset)
@@ -80,6 +93,7 @@ import MediaPlayer
     }
     private func speakChunk() {
         guard active, !paused, chunks.indices.contains(chunkIndex) else { return }
+        if let engine = networkEngine { playNetworkChunk(engine); return }
         let utterance = AVSpeechUtterance(string: chunks[chunkIndex].text)
         let voiceID = UserDefaults.standard.string(forKey: "reader.speechVoice") ?? ""
         utterance.voice = AVSpeechSynthesisVoice(identifier: voiceID) ?? AVSpeechSynthesisVoice(language: "zh-CN")
@@ -90,10 +104,15 @@ import MediaPlayer
     func toggle() { if paused { resume() } else { pause() } }
     func pause() {
         guard active else { return }; paused = true
+        audioPlayer?.pause()
         synthesizer.pauseSpeaking(at: .immediate); updateNowPlaying()
     }
     func resume() {
         guard active else { return }; paused = false
+        if networkEngine != nil {
+            if !simulated { try? AVAudioSession.sharedInstance().setActive(true); audioPlayer?.play() }
+            if !loading && audioPlayer == nil { speakChunk() }; updateNowPlaying(); return
+        }
         if simulated { if !loading && speaking == nil { speakChunk() }; updateNowPlaying(); return }
         if !simulated { try? AVAudioSession.sharedInstance().setActive(true) }
         if synthesizer.isPaused { synthesizer.continueSpeaking() }
@@ -103,7 +122,9 @@ import MediaPlayer
     func stop() {
         token = UUID(); loadTask?.cancel(); sleepTask?.cancel(); loadTask = nil; sleepTask = nil
         speaking = nil; synthesizer.stopSpeaking(at: .immediate)
-        active = false; paused = false; loading = false; owner = ""; loader = nil; progress = nil; positionMap = nil; chunks = []
+        audioTask?.cancel(); audioTask = nil; prefetchedAudio?.task.cancel(); prefetchedAudio = nil
+        audioPlayer?.stop(); audioPlayer = nil; networkEngine = nil
+        active = false; paused = false; loading = false; owner = ""; loader = nil; progress = nil; originalProgress = nil; positionMap = nil; chunks = []
         if !simulated {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -126,12 +147,74 @@ import MediaPlayer
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         Task { @MainActor in
             guard speaking === utterance, active else { return }
-            if chunks.indices.contains(chunkIndex) { progress?(chapterIndex, chunks[chunkIndex].utf16Offset + (chunks[chunkIndex].text as NSString).length) }
-            chunkIndex += 1
-            if chunks.indices.contains(chunkIndex) { if !paused { speakChunk() } }
-            else if UserDefaults.standard.bool(forKey: "reader.stopAfterChapter") { stop() }
-            else { load(chapterIndex + 1, offset: 0) }
+            advanceChunk()
         }
+    }
+
+    func preview(_ engine: NetworkSpeechEngine) {
+        start(owner: "voice-preview:\(engine.id)", title: engine.name, chapter: 0, offset: 0,
+              loader: { index in index == 0 ? (engine.name, "你好，这是 Gavin 在线朗读试听。愿每一段故事，都有喜欢的声音陪伴。") : nil }, progress: { _, _ in }, overrideEngine: engine)
+    }
+    func changeVoice(_ engine: NetworkSpeechEngine?) {
+        UserDefaults.standard.set(engine.map { String($0.id) } ?? "", forKey: "reader.speechEngine")
+        guard active, let loader, let progress = originalProgress else { return }
+        let oldOwner = owner, oldTitle = title, chapter = chapterIndex, mapping = positionMap, wasPaused = paused
+        let offset = mapping?(chapter, spokenOffset, true) ?? spokenOffset
+        stop()
+        start(owner: oldOwner, title: oldTitle, chapter: chapter, offset: offset, loader: loader, positionMap: mapping, progress: progress, overrideEngine: engine)
+        if wasPaused { pause() }
+    }
+    private func playNetworkChunk(_ engine: NetworkSpeechEngine) {
+        audioTask?.cancel()
+        let current = token, chapter = chapterIndex, chunk = chunkIndex
+        let speed = min(50, max(5, UserDefaults.standard.object(forKey: "reader.networkSpeechSpeed") as? Int ?? 10))
+        let prepared = prefetchedAudio; prefetchedAudio = nil
+        loading = true
+        audioTask = Task {
+            do {
+                if chunk > 0, engine.pauseDuration > 0 { try await Task.sleep(for: .milliseconds(engine.pauseDuration)) }
+                let data: Data
+                if let prepared, prepared.chapter == chapter, prepared.chunk == chunk, prepared.speed == speed {
+                    do { data = try await prepared.task.value }
+                    catch { try Task.checkCancellation(); data = try await networkClient.render(engine, text: chunks[chunk].text, speed: speed) }
+                } else {
+                    prepared?.task.cancel()
+                    data = try await networkClient.render(engine, text: chunks[chunk].text, speed: speed)
+                }
+                try Task.checkCancellation(); guard active, token == current, chapterIndex == chapter, chunkIndex == chunk else { return }
+                let player = try AVAudioPlayer(data: data)
+                guard player.duration.isFinite, player.duration > 0, player.prepareToPlay() else { throw SourceError.message("返回音频无法解码或为空。") }
+                player.delegate = self; audioPlayer = player; loading = false
+                progress?(chapter, chunks[chunk].utf16Offset)
+                if !paused && !simulated, !player.play() { throw SourceError.message("无法播放在线音频，请检查音频输出。") }
+                if chunks.indices.contains(chunk + 1) {
+                    let next = chunks[chunk + 1].text, client = networkClient
+                    prefetchedAudio = (chapter, chunk + 1, speed, Task { try await client.render(engine, text: next, speed: speed) })
+                }
+                updateNowPlaying()
+            } catch {
+                guard token == current, !Task.isCancelled else { return }
+                stop(); message = "在线朗读失败：" + error.localizedDescription
+            }
+        }
+    }
+    private func advanceChunk() {
+        if chunks.indices.contains(chunkIndex) { progress?(chapterIndex, chunks[chunkIndex].utf16Offset + (chunks[chunkIndex].text as NSString).length) }
+        chunkIndex += 1
+        if chunks.indices.contains(chunkIndex) { if !paused { speakChunk() } }
+        else if UserDefaults.standard.bool(forKey: "reader.stopAfterChapter") { stop() }
+        else { load(chapterIndex + 1, offset: 0) }
+    }
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in
+            guard audioPlayer === player, active else { return }
+            audioPlayer = nil
+            guard flag else { stop(); message = "在线音频播放中断，请重试。"; return }
+            advanceChunk()
+        }
+    }
+    nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        Task { @MainActor in guard audioPlayer === player, active else { return }; stop(); message = "在线音频解码失败，请更换音色或重试。" }
     }
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         Task { @MainActor in guard speaking === utterance, active else { return }; stop(); message = "朗读被系统中止，可以从已保存的位置重新开始。" }
@@ -202,16 +285,19 @@ extension ReaderSpeech {
 
 struct SpeechMiniPlayer: View {
     @ObservedObject private var player = ReaderSpeech.shared
+    @State private var voices = false
     var body: some View {
         if player.active {
             HStack {
                 Image(systemName: "headphones")
                 Text(player.title).font(.subheadline).lineLimit(1)
                 Spacer()
+                Button { voices = true } label: { Image(systemName: "waveform") }.accessibilityLabel("切换朗读音色")
                 if player.loading { ProgressView() }
                 Button { player.toggle() } label: { Image(systemName: player.paused ? "play.fill" : "pause.fill") }.accessibilityLabel(player.paused ? "继续听书" : "暂停听书")
                 Button { player.stop() } label: { Image(systemName: "stop.fill") }.accessibilityLabel("停止听书")
             }.padding(12).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14)).padding(.horizontal).padding(.bottom, 58)
+                .sheet(isPresented: $voices) { NavigationStack { NetworkVoicesView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { voices = false } } } } }
         }
     }
 }

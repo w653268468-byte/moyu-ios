@@ -11,6 +11,9 @@ struct JSONExport: FileDocument {
 
 struct SourceManagerView: View {
     @EnvironmentObject private var online: OnlineStore
+    @ObservedObject private var health = SourceHealthStore.shared
+    @State private var cleanupPending = false
+    @State private var probeCompleted = 0
     @State private var query = ""
     @State private var filter = "全部"
     @State private var selection: Set<String> = []
@@ -27,7 +30,8 @@ struct SourceManagerView: View {
     @State private var checking = false
     @State private var checkTask: Task<Void, Never>?
     @State private var checkProgress = ""
-    private let filters = ["全部", "已启用", "已禁用", "规则不兼容", "校验失败"]
+    private let filters = ["全部", "已启用", "已禁用", "规则不兼容", "校验失败", "已确认失效", "暂避搜索"]
+    private var removable: [BookSource] { online.sources.filter { health.ledger.record(for: $0)?.removable == true } }
 
     private var visible: [BookSource] {
         online.sources.filter { source in
@@ -38,6 +42,8 @@ struct SourceManagerView: View {
             case "已禁用": state = source.enabled == false
             case "规则不兼容": state = online.sourceReason(source) != nil
             case "校验失败": state = failed.contains(source.id)
+            case "已确认失效": state = health.ledger.record(for: source)?.removable == true
+            case "暂避搜索": state = (health.ledger.record(for: source)?.cooldownUntil ?? .distantPast) > Date()
             default: state = true
             }
             return matches && state
@@ -51,6 +57,10 @@ struct SourceManagerView: View {
                     Picker("筛选", selection: $filter) { ForEach(filters, id: \.self) { Text($0).tag($0) } }
                     Text("共 \(online.sources.count) 个 · 当前显示 \(visible.count) 个")
                         .font(.caption).foregroundStyle(.secondary)
+                    Button("检测失效源（快速）", systemImage: "waveform.path.ecg") { probe(visible) }.disabled(checking).accessibilityIdentifier("sources.probe")
+                    Button("一键清理已确认失效 · \(removable.count) 个", systemImage: "trash", role: .destructive) { cleanupPending = true }
+                        .disabled(removable.isEmpty || checking).accessibilityIdentifier("sources.cleanup")
+                    if let message = health.message { Text(message).font(.caption).foregroundStyle(.orange) }
                     if selecting {
                         HStack {
                             Button("全选当前列表") { selection.formUnion(visible.map(\.id)) }
@@ -86,6 +96,11 @@ struct SourceManagerView: View {
                             if let reason = online.sourceReason(source) { Label(reason, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange).lineLimit(3) }
                             else { Text("规则可识别 · 尚不代表网站可用").font(.caption).foregroundStyle(.secondary) }
                             if let check = checks[source.id] { Text(check).font(.caption).textSelection(.enabled) }
+                            else if let record = health.ledger.record(for: source) {
+                                Text(record.kind.map { $0.name + " · " + record.message } ?? (record.lastValidated != nil ? "完整链路通过" : record.hasResults ? "搜索已取得结果" : "搜索接口已响应，暂无匹配结果"))
+                                    .font(.caption).foregroundStyle(record.kind == nil ? Color.secondary : Color.orange).lineLimit(3)
+                                if let latency = record.latency { Text("近期响应约 \(latency) ms").font(.caption2).foregroundStyle(.secondary) }
+                            }
                             if !selecting {
                                 HStack(spacing: 22) {
                                     Button("编辑") { editing = source }
@@ -115,6 +130,10 @@ struct SourceManagerView: View {
                             Button("导入书源", systemImage: "plus") { importing = true }
                             Button("导出全部", systemImage: "square.and.arrow.up") { exportSources(online.sources) }
                             Button("校验当前列表", systemImage: "checkmark.shield") { check(visible) }.disabled(checking)
+                            Button("重新尝试当前书源") { health.reset(Set(visible.map(\.id))) }
+                            Button("恢复上次清理", systemImage: "arrow.uturn.backward") {
+                                do { try health.restore(online: online) } catch { online.errorMessage = error.localizedDescription }
+                            }
                         } label: { Image(systemName: "ellipsis.circle") }
                         Button { importing = true } label: { Image(systemName: "plus.circle.fill") }
                     }
@@ -133,6 +152,11 @@ struct SourceManagerView: View {
                     }
                 }
                 .sheet(isPresented: $importing) { SourceImportView() }
+                .confirmationDialog("清理 \(removable.count) 个已复核失效的书源？", isPresented: $cleanupPending, titleVisibility: .visible) {
+                    Button("备份并删除失效源", role: .destructive) {
+                        do { try health.cleanup(Set(removable.map(\.id)), online: online) } catch { online.errorMessage = error.localizedDescription }
+                    }
+                } message: { Text("仅清理地址两次返回 404/410 的当前规则。超时、登录、限流或规则兼容问题不自动删除；清理前保存备份，可从右上角恢复。书架和已缓存章节保留。") }
                 .sheet(item: $authorizing) { source in
                     if let url = BrowserSessions.loginURL(source) { OfficialWebView(url: url) }
                 }
@@ -148,6 +172,35 @@ struct SourceManagerView: View {
     }
 
     private func askDelete(_ ids: Set<String>) { pendingDelete = ids; confirmDelete = !ids.isEmpty }
+    private func probe(_ sources: [BookSource]) {
+        guard !checking else { return }
+        checking = true; probeCompleted = 0; let client = online.client, health = health, session = UUID()
+        let lookup = Dictionary(sources.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        checkTask = Task {
+            defer { checking = false; checkProgress = "" }
+            do {
+                try await SourceSearch.run(requests: sources.map { SourceSearchRequest(source: $0, page: 1) }, concurrency: 6, timeoutSeconds: 10, search: { source, page in
+                    do { return try await client.searchIndependent("三国演义", source: source, page: page, sessionID: session) }
+                    catch {
+                        try Task.checkCancellation()
+                        guard SourceFailureKind.classify(error.localizedDescription) == .endpointGone else { throw error }
+                        await health.receive(source, failure: error.localizedDescription, verifiedProbe: true)
+                        try await Task.sleep(for: .milliseconds(300))
+                        return try await client.searchIndependent("三国演义", source: source, page: page, sessionID: UUID())
+                    }
+                }, onResult: { outcome in
+                    await MainActor.run {
+                        guard !Task.isCancelled, let source = lookup[outcome.sourceID] else { return false }
+                        health.receive(source, failure: outcome.failure, latency: outcome.elapsedMilliseconds, hasResults: !outcome.novels.isEmpty, verifiedProbe: true)
+                        probeCompleted += 1; checkProgress = "\(probeCompleted)/\(sources.count) · \(outcome.sourceName)"
+                        checks[source.id] = outcome.failure ?? (outcome.novels.isEmpty ? "接口已响应，无匹配结果；不算失效" : "搜索接口可用")
+                        if outcome.failure != nil { failed.insert(source.id) } else { failed.remove(source.id) }
+                        return true
+                    }
+                })
+            } catch { if !Task.isCancelled { online.errorMessage = error.localizedDescription } }
+        }
+    }
     private func exportSources(_ sources: [BookSource]) {
         do { export = JSONExport(data: try SourceImport.export(sources)); exporting = true }
         catch { online.errorMessage = error.localizedDescription }
@@ -165,9 +218,11 @@ struct SourceManagerView: View {
                     let report = try await SourceValidator.validate(source, client: online.client)
                     checks[source.id] = "搜索、目录、正文通过 · \(report.chapters) 章 · \(report.chapterTitle) \(report.characters) 字"
                     failed.remove(source.id)
+                    health.receive(source, failure: nil, hasResults: true, fullValidation: true)
                 } catch {
                     if Task.isCancelled { break }
                     checks[source.id] = "校验失败：\(error.localizedDescription)"; failed.insert(source.id)
+                    health.receive(source, failure: error.localizedDescription)
                 }
             }
         }

@@ -31,23 +31,34 @@ import SwiftUI
     @Published private(set) var message: String?
     @Published private(set) var keyword = ""
     @Published private(set) var pendingCount = 0
+    @Published private(set) var avoidedCount = 0
+    private var avoided: [BookSource] = []
+    private let health: SourceHealthStore?
+    init(health: SourceHealthStore? = nil) { self.health = health }
     private var sources: [BookSource] = []
     private var pending: [SourceSearchRequest] = []
     private var generation = UUID()
     private var sessionID = UUID()
     private var task: Task<Void, Never>?
-    private var concurrency = 6, timeout = 15.0
-    var canLoadMore: Bool { !state.limitReached && sources.contains { state.failures[$0.id] == nil && !state.exhausted.contains($0.id) && (state.nextPages[$0.id] ?? 1) <= 10000 } }
+    private var concurrency = 6, timeout = 10.0
+    private var activeSources: [BookSource] { let skipped = Set(avoided.map(\.id)); return sources.filter { !skipped.contains($0.id) } }
+    var canLoadMore: Bool { !state.limitReached && activeSources.contains { state.failures[$0.id] == nil && !state.exhausted.contains($0.id) && (state.nextPages[$0.id] ?? 1) <= 10000 } }
     var failures: [SourceSearchFailure] { state.failures.values.sorted { $0.sourceName.localizedStandardCompare($1.sourceName) == .orderedAscending } }
 
-    func start(_ text: String, sources: [BookSource], client: SourceClient, concurrency: Int = 6, timeout: Double = 15) {
+    func start(_ text: String, sources: [BookSource], client: SourceClient, concurrency: Int = 6, timeout: Double = 10, smartSources: Bool = true) {
         reset(); keyword = text; self.sources = sources; didSearch = true
         self.concurrency = concurrency; self.timeout = timeout
-        batch(sources.map { SourceSearchRequest(source: $0, page: 1) }, client: client)
+        let plan = smartSources ? health?.ledger.ordered(sources) : nil
+        avoided = plan?.avoided ?? []; avoidedCount = avoided.count
+        batch((plan?.active ?? sources).map { SourceSearchRequest(source: $0, page: 1) }, client: client)
+    }
+    func retryAvoided(client: SourceClient) {
+        let retry = avoided; avoided = []; avoidedCount = 0
+        batch(retry.map { SourceSearchRequest(source: $0, page: state.nextPages[$0.id] ?? 1) }, client: client)
     }
     func resume(client: SourceClient) { batch(pending, client: client) }
     func more(client: SourceClient) {
-        batch(sources.filter { state.failures[$0.id] == nil && !state.exhausted.contains($0.id) && (state.nextPages[$0.id] ?? 1) <= 10000 }
+        batch(activeSources.filter { state.failures[$0.id] == nil && !state.exhausted.contains($0.id) && (state.nextPages[$0.id] ?? 1) <= 10000 }
             .map { SourceSearchRequest(source: $0, page: state.nextPages[$0.id] ?? 1) }, client: client)
     }
     func retry(client: SourceClient, sourceID: String? = nil) {
@@ -58,9 +69,13 @@ import SwiftUI
     func reset() {
         cancel(); sessionID = UUID(); state = SourceSearchState(); sources = []; pending = []; pendingCount = 0; keyword = ""; message = nil
         didSearch = false; completed = 0; total = 0; resultRevision += 1
+        avoided = []; avoidedCount = 0
     }
     private func receive(_ outcome: SourceSearchOutcome, token: UUID) -> Bool {
         guard token == generation else { return false }
+        if let source = sources.first(where: { $0.id == outcome.sourceID }) {
+            health?.receive(source, failure: outcome.failure, latency: outcome.elapsedMilliseconds, hasResults: !outcome.novels.isEmpty)
+        }
         pending.removeAll { $0.source.id == outcome.sourceID }; pendingCount = pending.count
         state.receive(outcome); completed += 1; resultRevision += 1
         if state.limitReached { message = "已达到 5000 条结果，可选择书源分组或使用精准筛选。" }
@@ -91,14 +106,15 @@ import SwiftUI
 
 struct SourceHubView: View {
     @EnvironmentObject private var online: OnlineStore
-    @StateObject private var search = SearchViewModel()
+    @StateObject private var search = SearchViewModel(health: .shared)
     @StateObject private var preferences = SearchPreferences()
     @AppStorage("reader.search.merge") private var merged = true
     @AppStorage("reader.search.exact") private var exact = false
     @AppStorage("reader.search.field") private var fieldRaw = BookSearchField.all.rawValue
     @AppStorage("reader.search.sort") private var sortRaw = BookSearchSort.relevance.rawValue
     @AppStorage("reader.search.concurrency") private var concurrency = 6
-    @AppStorage("reader.search.timeout") private var timeout = 15.0
+    @AppStorage("reader.search.timeout") private var timeout = 10.0
+    @AppStorage("reader.search.smartSources") private var smartSources = true
     @AppStorage("reader.search.saveHistory") private var saveHistory = true
     @AppStorage("reader.search.scope") private var scopeRaw = "全部书源"
     @AppStorage("reader.search.customIDs") private var customIDs = "[]"
@@ -129,6 +145,9 @@ struct SourceHubView: View {
                 searchBar
                 if !search.didSearch { historySection }
                 if search.didSearch { resultsSection }
+                if search.avoidedCount > 0 {
+                    Section { Button("本次暂避 \(search.avoidedCount) 个反复失败书源 · 仍要重试") { search.retryAvoided(client: online.client) }.disabled(search.searching).accessibilityIdentifier("search.retryAvoided") }
+                }
                 if !search.failures.isEmpty { failureSection }
                 if let failure { Section { Text(failure).foregroundStyle(.red).textSelection(.enabled) } }
                 if let message = search.message { Section { Text(message).foregroundStyle(.orange) } }
@@ -256,7 +275,7 @@ struct SourceHubView: View {
         guard !scoped.isEmpty else { failure = "当前范围没有可搜索书源，请选择其他分组或导入书源。"; return }
         query = keyword; failure = nil; queryFocused = false
         if saveHistory { preferences.record(keyword) }
-        search.start(keyword, sources: scoped, client: online.client, concurrency: concurrency, timeout: timeout)
+        search.start(keyword, sources: scoped, client: online.client, concurrency: concurrency, timeout: timeout, smartSources: smartSources)
     }
     private func isOnShelf(_ book: OnlineNovel) -> Bool {
         online.novels.contains { $0.id == book.id || (!$0.author.isEmpty && BookSearchPresentation.normalized($0.title) == BookSearchPresentation.normalized(book.title) && BookSearchPresentation.normalized($0.author) == BookSearchPresentation.normalized(book.author)) }

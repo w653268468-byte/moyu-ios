@@ -6,7 +6,8 @@ struct SearchConfigurationView: View {
     @AppStorage("reader.search.field") private var fieldRaw = "all"
     @AppStorage("reader.search.sort") private var sortRaw = "relevance"
     @AppStorage("reader.search.concurrency") private var concurrency = 6
-    @AppStorage("reader.search.timeout") private var timeout = 15.0
+    @AppStorage("reader.search.timeout") private var timeout = 10.0
+    @AppStorage("reader.search.smartSources") private var smartSources = true
     @AppStorage("reader.search.saveHistory") private var history = true
     @State private var clear = false
     var body: some View {
@@ -21,6 +22,9 @@ struct SearchConfigurationView: View {
             Section("速度与等待时间") {
                 Picker("同时搜索书源数", selection: $concurrency) { ForEach(1...8, id: \.self) { Text("\($0) 个").tag($0) } }
                 Picker("单个书源等待", selection: $timeout) { ForEach([5.0, 10, 15, 30, 60], id: \.self) { Text("\(Int($0)) 秒").tag($0) } }
+                Toggle("优先可用书源，暂避反复失败源", isOn: $smartSources)
+                Text("按近期成功与速度安排搜索；反复失败的书源暂避 5–15 分钟，可在搜索页强制重试。无结果不等于失效，登录或限流也不会自动删除。")
+                    .font(.caption).foregroundStyle(.secondary)
                 Text("下一轮搜索生效。停止后保留已有结果，可继续剩余书源；搜索速度不代表正文一定可用。").font(.caption).foregroundStyle(.secondary)
             }
             Section("隐私") {

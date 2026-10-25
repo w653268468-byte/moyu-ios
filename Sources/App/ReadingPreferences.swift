@@ -200,6 +200,7 @@ struct ReadingPreferences: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("听书") {
+                NavigationLink { NetworkVoicesView() } label: { Label("在线音色 · 导入与管理", systemImage: "waveform") }
                 control("语速", value: Binding(get: { style.speechRate }, set: { style.speechRate = $0 }), range: 0.25...0.65, step: 0.05)
                 Picker("朗读声音", selection: $speechVoice) {
                     Text("系统中文").tag("")

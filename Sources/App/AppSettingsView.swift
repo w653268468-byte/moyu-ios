@@ -61,6 +61,7 @@ enum BackupService {
             guard rules.count <= 5000, Set(rules.map(\.id)).count == rules.count else { throw SourceError.message("备份中的替换规则数量或标识无效。") }
             for rule in rules { try rule.validate() }
         }
+        if let data = backup.files["MoyuOnline/network-voices.json"], (try JSONSerialization.jsonObject(with: data) as? [Any])?.isEmpty != true { _ = try NetworkVoiceImport.parse(data) }
         if let data = backup.files["MoyuOnline/shelf-organization.json"] {
             let shelf = try JSONDecoder().decode(ShelfOrganization.self, from: data)
             guard shelf.groups.count <= 100, Set(shelf.groups.map(\.id)).count == shelf.groups.count,
@@ -151,6 +152,7 @@ struct AppSettingsView: View {
                     }.padding(.vertical, 6)
                 }
                 Section("阅读") {
+                    NavigationLink { NetworkVoicesView() } label: { Label("在线音色与朗读", systemImage: "waveform") }
                     Picker("界面外观", selection: $interfaceAppearance) {
                         ForEach(InterfaceAppearance.allCases) { appearance in Text(appearance.name).tag(appearance.rawValue) }
                     }.accessibilityIdentifier("settings.appearance")
@@ -208,7 +210,7 @@ struct AppSettingsView: View {
             guard size <= BackupService.maximumBytes * 2 else { throw SourceError.message("备份文件过大。") }
             try library.flushProgress(); try online.flushProgress()
             try BackupService.restore(Data(contentsOf: url))
-            library.reload(); online.reload(); message = "备份已恢复。"
+            library.reload(); online.reload(); NetworkVoiceStore.shared.reload(); message = "备份已恢复。"
         } catch { message = error.localizedDescription }
     }
 }
