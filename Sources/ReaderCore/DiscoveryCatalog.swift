@@ -40,13 +40,14 @@ public enum DiscoveryCatalog {
         let entries = sections(categories)
         let featured = entries.filter { $0.lane == .daily }
         let candidates = featured.isEmpty ? entries : featured
-        return candidates.sorted { score(day + $0.id) < score(day + $1.id) }.prefix(max(0, min(6, limit))).map(\.category)
+        return candidates.map { (entry: $0, key: score(day + $0.id)) }.sorted { $0.key < $1.key }
+            .prefix(max(0, min(6, limit))).map(\.entry.category)
     }
 
     public static func dailyBooks(_ books: [OnlineNovel], day: String, batch: Int = 0, limit: Int = 12) -> [OnlineNovel] {
         var seen = Set<String>()
         let unique = books.filter { seen.insert($0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() + "|" + $0.author.lowercased()).inserted }
-            .sorted { score(day + $0.id) < score(day + $1.id) }
+            .map { (book: $0, key: score(day + $0.id)) }.sorted { $0.key < $1.key }.map(\.book)
         guard !unique.isEmpty else { return [] }
         let count = min(max(0, limit), unique.count)
         let offset = ((max(0, batch) % unique.count) * count) % unique.count

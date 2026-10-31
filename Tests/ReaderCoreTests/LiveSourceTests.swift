@@ -44,7 +44,7 @@ final class LiveSourceTests: XCTestCase {
         print("LIVE PASS: search → book 84 → HTML text; public EPUB \(document.chapters.count) reading sections, \(document.pages.count) segments")
         var discovery = source
         discovery.exploreUrl = "下载排行榜::/browse/scores/top"
-        discovery.ruleExplore = try JSONDecoder().decode(SourceRule.self, from: Data(#"{"bookList":"#books-last1 + ol li","name":"a@text","bookUrl":"a@href"}"#.utf8))
+        discovery.ruleExplore = try JSONDecoder().decode(SourceRule.self, from: Data(##"{"bookList":"#books-last1 + ol li","name":"a@text","bookUrl":"a@href"}"##.utf8))
         let categories = try await client.categories(source: discovery)
         let ranking = try await client.explore(categories[0], page: 1, source: discovery)
         XCTAssertGreaterThan(ranking.count, 50)
