@@ -54,6 +54,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200); body = b"<a class='catalog' href='/source-toc'>TOC</a>"
         elif self.path == "/discovery-failure":
             self.send_response(503); body = b"temporary failure"
+        elif self.path.startswith("/health-slow/search"):
+            time.sleep(8)
+            self.send_response(200); body = b"<div class='book'><a href='/book'>Health resume test</a></div>"
         elif self.path.startswith("/health-gone/search"):
             self.send_response(404); body = b"gone"
         elif self.path.startswith("/health-login/search"):

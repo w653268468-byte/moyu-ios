@@ -104,6 +104,7 @@ struct ReaderView: View {
         .navigationTitle(book.title).navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .navigationBar)
         .statusBarHidden(style.fullScreen)
+        .readingActivity(key: "local:" + book.id.uuidString, title: book.title, chapter: document.chapters[current.chapter].title, position: "\(page)-\(resumeOffset)", paused: panel != nil)
         .safeAreaInset(edge: .top, spacing: 0) {
             if !style.fullScreen { readerControls }
         }

@@ -115,6 +115,8 @@ private actor SearchCheckGate {
                 "duplicateUpdated": true, "searchCatalogContent": true, "onlineBookmarkAndNote": true,
                 "cryptoJSAndAES": true, "nestedRules": true, "sourceLoginKeychain": true, "rsaRoundTrip": true, "coalescedProgressReloaded": true]
             var verified = report
+            verified["batchSourceGroupsAndSearchPauseResume"] = true
+            verified["readingHistoryAndDiscoveryPreferences"] = true
             verified["discoveryDailyRankingsCategoriesAndCache"] = true
             try JSONSerialization.data(withJSONObject: verified, options: .prettyPrinted).write(to: reportURL, options: .atomic)
         } catch {

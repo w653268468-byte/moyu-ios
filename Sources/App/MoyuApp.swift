@@ -18,6 +18,7 @@ struct MoyuApp: App {
     @MainActor private static func makeOnlineStore() -> OnlineStore {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-source-health") { return OnlineStore(directory: URL.documentsDirectory.appendingPathComponent("UI-health-online")) }
+        if ProcessInfo.processInfo.arguments.contains("--ui-source-resume") { return OnlineStore(directory: URL.documentsDirectory.appendingPathComponent("UI-health-resume-online")) }
         if ProcessInfo.processInfo.arguments.contains("--ui-discovery") { return OnlineStore(directory: URL.documentsDirectory.appendingPathComponent("UI-discovery-online")) }
         #endif
         return OnlineStore()
@@ -113,6 +114,12 @@ struct MoyuApp: App {
                     if ProcessInfo.processInfo.arguments.contains("--ui-source-health"), online.sources.isEmpty {
                         let sources = ["gone", "login"].map { kind in
                             ["bookSourceName": kind == "gone" ? "失效测试源" : "登录测试源", "bookSourceUrl": "http://127.0.0.1:18765/health-\(kind)", "searchUrl": "/health-\(kind)/search?key={{key}}", "ruleSearch": ["bookList": ".book", "name": "a@text", "bookUrl": "a@href"], "ruleToc": ["chapterList": "#list a", "chapterName": "text", "chapterUrl": "href"], "ruleContent": ["content": "#content@text"]] as [String: Any]
+                        }
+                        if let data = try? JSONSerialization.data(withJSONObject: sources), let parsed = try? SourceImport.parse(data) { try? online.addSources(parsed.sources) }
+                    }
+                    if ProcessInfo.processInfo.arguments.contains("--ui-source-resume"), online.sources.isEmpty {
+                        let sources = (0..<2).map { index in
+                            ["bookSourceName": "继续检测测试\(index)", "bookSourceUrl": "http://127.0.0.1:18765/health-slow-\(index)", "searchUrl": "/health-slow/search?source=\(index)", "ruleSearch": ["bookList": ".book", "name": "a@text", "bookUrl": "a@href"]] as [String: Any]
                         }
                         if let data = try? JSONSerialization.data(withJSONObject: sources), let parsed = try? SourceImport.parse(data) { try? online.addSources(parsed.sources) }
                     }

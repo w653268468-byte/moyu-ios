@@ -73,7 +73,10 @@ struct ShelfRefreshStatus: View {
         }.padding(12).background(Color(uiColor: .secondarySystemGroupedBackground).opacity(0.8), in: RoundedRectangle(cornerRadius: 14))
             .sheet(isPresented: $showFailures) {
                 NavigationStack {
-                    List(online.refreshFailures.keys.sorted(), id: \.self) { key in Text(online.refreshFailures[key] ?? "").textSelection(.enabled) }
+                    List {
+                        Button("仅重试更新失败的书籍") { Task { await online.refreshShelf(onlyFailed: true) } }.disabled(online.refreshingShelf || online.refreshFailures.isEmpty)
+                        ForEach(online.refreshFailures.keys.sorted(), id: \.self) { key in Text(online.refreshFailures[key] ?? "").textSelection(.enabled) }
+                    }
                         .navigationTitle("更新失败详情").navigationBarTitleDisplayMode(.inline)
                         .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showFailures = false } } }
                 }

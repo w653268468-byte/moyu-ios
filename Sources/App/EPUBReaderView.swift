@@ -92,6 +92,7 @@ private struct EPUBReaderView: View {
             .modifier(ReadingAppearance())
             .navigationTitle(book.title).navigationBarTitleDisplayMode(.inline)
             .toolbar(style.fullScreen ? .hidden : .visible, for: .navigationBar).statusBarHidden(style.fullScreen)
+            .readingActivity(key: "local:" + book.id.uuidString, title: book.title, chapter: "第\(chapter + 1)章", position: "\(chapter)-\(fraction)", paused: contents || preferences || showProgress)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button { dismiss() } label: { Image(systemName: "chevron.down") }.accessibilityLabel("返回书架") }
                 ToolbarItemGroup(placement: .topBarTrailing) {

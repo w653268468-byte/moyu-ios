@@ -4,12 +4,16 @@ struct DiscoveryView: View {
     @EnvironmentObject private var online: OnlineStore
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model = DiscoveryModel()
+    @ObservedObject private var preferences = DiscoveryPreferences.shared
     @AppStorage("reader.discovery.source") private var sourceID = ""
     @State private var lane = DiscoveryLane.daily
     @State private var importing = false
     @State private var selected: OnlineNovel?
     private var sources: [BookSource] {
-        online.sources.filter { $0.enabled != false && $0.enabledExplore != false && !($0.exploreUrl ?? "").isEmpty }
+        online.sources.filter { $0.enabled != false && $0.enabledExplore != false && !($0.exploreUrl ?? "").isEmpty }.enumerated().sorted {
+            let left = preferences.favorites.contains($0.element.id), right = preferences.favorites.contains($1.element.id)
+            return left == right ? $0.offset < $1.offset : left
+        }.map(\.element)
     }
     private var source: BookSource? { sources.first(where: { $0.id == sourceID }) ?? sources.first }
     private var selectionKey: String { source.map(SourceHealthLedger.signature) ?? "" }
@@ -37,7 +41,10 @@ struct DiscoveryView: View {
                 }.padding(.horizontal, 20).padding(.vertical, 14)
             }.scrollBounceBehavior(.always, axes: .vertical).background(InterfaceAppearance.background)
                 .navigationTitle("发现").navigationBarTitleDisplayMode(.inline)
-                .toolbar { Button { importing = true } label: { Image(systemName: "plus.circle") }.accessibilityLabel("导入发现书源") }
+                .toolbar {
+                    NavigationLink { DiscoveryHiddenBooksView() } label: { Image(systemName: "eye.slash") }.accessibilityLabel("管理屏蔽书籍")
+                    Button { importing = true } label: { Image(systemName: "plus.circle") }.accessibilityLabel("导入发现书源")
+                }
                 .refreshable { if let source { await model.load(source: source, client: online.client, force: true) } }
                 .task(id: selectionKey) { if let source { await model.load(source: source, client: online.client) } else { model.cancel() } }
                 .onChange(of: scenePhase) { _, phase in
@@ -65,21 +72,28 @@ struct DiscoveryView: View {
             Picker("发现书源", selection: Binding(get: { source.id }, set: { sourceID = $0 })) { ForEach(sources) { Text($0.bookSourceName).tag($0.id) } }
                 .accessibilityIdentifier("discovery.source")
             Spacer()
+            Button { preferences.favorite(source.id) } label: { Image(systemName: preferences.favorites.contains(source.id) ? "star.fill" : "star") }.accessibilityLabel("收藏常用发现书源")
             Button { Task { await model.load(source: source, client: online.client, force: true) } } label: { Image(systemName: "arrow.clockwise") }
                 .disabled(model.loading).accessibilityLabel("刷新发现").accessibilityIdentifier("discovery.refresh")
         }.padding(12).background(.background, in: RoundedRectangle(cornerRadius: 15))
     }
     private func daily(_ source: BookSource) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack { Text("每日推荐").font(.title3.bold()); Spacer(); Button("换一批", systemImage: "shuffle") { model.batch += 1 }.disabled(DiscoveryCatalog.dailyBooks(model.pool, day: model.day, limit: 13).count <= 12).accessibilityIdentifier("discovery.shuffle") }
+        let pool = model.pool.filter { preferences.allows($0) }
+        let books = DiscoveryCatalog.dailyBooks(pool, day: model.day, batch: model.batch)
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack { Text("每日推荐").font(.title3.bold()); Spacer(); Button("换一批", systemImage: "shuffle") { model.batch += 1 }.disabled(DiscoveryCatalog.dailyBooks(pool, day: model.day, limit: 13).count <= 12).accessibilityIdentifier("discovery.shuffle") }
             Text("从「\(source.bookSourceName)」的真实发现列表每日轮换，点击即可查看目录。")
                 .font(.caption).foregroundStyle(.secondary)
             if let updated = model.updatedAt { Text("推荐日期 \(model.day) · 更新于 " + updated.formatted(date: .omitted, time: .shortened)).font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("discovery.updated") }
-            if model.books.isEmpty && !model.loading {
+            if books.isEmpty && !model.loading {
                 ContentUnavailableView("暂时没有推荐书籍", systemImage: "book.closed", description: Text("可下拉重试、选择其他书源，或直接浏览分类和榜单。"))
             }
-            ForEach(model.books) { book in
+            ForEach(books) { book in
                 Button { selected = book } label: { DiscoveryBookRow(book: book) }.buttonStyle(.plain).accessibilityIdentifier("discovery.book.\(book.title)")
+                    .contextMenu {
+                        Button("今日不感兴趣", systemImage: "hand.thumbsdown") { preferences.hide(book, today: true) }
+                        Button("屏蔽本书", systemImage: "eye.slash") { preferences.hide(book, today: false) }
+                    }
             }
         }
     }
@@ -131,14 +145,19 @@ struct DiscoveryBooksView: View {
     let source: BookSource
     let entry: DiscoveryCategory
     @StateObject private var model = DiscoveryFeedModel()
+    @ObservedObject private var preferences = DiscoveryPreferences.shared
     @State private var selected: OnlineNovel?
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
                 Text(source.bookSourceName + (entry.lane == .rankings ? " · 网站原榜单顺序" : " · " + entry.group)).font(.caption).foregroundStyle(.secondary)
-                ForEach(Array(model.books.enumerated()), id: \.element.id) { index, book in
+                ForEach(Array(model.books.enumerated()).filter { preferences.allows($0.element) }, id: \.element.id) { index, book in
                     Button { selected = book } label: { DiscoveryBookRow(book: book, rank: entry.lane == .rankings ? index + 1 : nil) }
                         .buttonStyle(.plain).accessibilityIdentifier("discovery.result.\(book.title)")
+                        .contextMenu {
+                            Button("今日不感兴趣", systemImage: "hand.thumbsdown") { preferences.hide(book, today: true) }
+                            Button("屏蔽本书", systemImage: "eye.slash") { preferences.hide(book, today: false) }
+                        }
                 }
                 if let failure = model.failure { Text(failure).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
                 if model.loading { ProgressView("正在获取第 \(model.page + 1) 页…"); Button("停止") { model.cancel() } }

@@ -7,6 +7,10 @@ struct OnlineReaderView: View {
     @State private var index: Int
     @State private var text = ""
     @State private var loadedChapterKey: String?
+    @AppStorage("reader.prefetch.mode") private var prefetchMode = "auto"
+    @State private var charactersPerMinute = 600.0
+    @State private var speedSampleDate = Date()
+    @State private var speedSampleOffset = 0
     #if DEBUG
     @State private var preloadedCount = 0
     @State private var coldLoads = 0
@@ -134,7 +138,7 @@ struct OnlineReaderView: View {
                 }
                 .task(id: "\(novel.sourceID)-\(index)-\(loading)-" + upcomingChapters.map(\.id).joined(separator: "|")) {
                     guard !loading, failure == nil else { return }
-                    await online.preloadChapters(upcomingChapters, sourceID: novel.sourceID)
+                    await online.preloadChapters(upcomingChapters, sourceID: novel.sourceID, protecting: novel.chapters.indices.contains(index) ? novel.chapters[index] : nil)
                     #if DEBUG
                     if !Task.isCancelled { preloadedCount = upcomingChapters.filter { online.readyChapter($0, sourceID: novel.sourceID) != nil }.count }
                     #endif
@@ -147,11 +151,21 @@ struct OnlineReaderView: View {
                     #endif
                 }
                 .onDisappear { cancelSwitch(); catalogTask?.cancel() }
+                .readingActivity(key: "online:" + novel.id, title: novel.title, chapter: novel.chapters.indices.contains(index) ? novel.chapters[index].title : "", position: "\(index)-\(resumeOffset)", paused: loading || failure != nil || showSettings || showContents || showProgress || showSourceSwitch)
+                .onChange(of: resumeOffset) { old, value in
+                    let seconds = Date().timeIntervalSince(speedSampleDate), distance = value - speedSampleOffset
+                    if seconds >= 5 {
+                        if value > old && distance > 0 && distance < 10000 && seconds < 120 {
+                            charactersPerMinute = min(3000, max(300, charactersPerMinute * 0.7 + Double(distance) / seconds * 60 * 0.3))
+                        }
+                        speedSampleDate = Date(); speedSampleOffset = value
+                    }
+                }
                 .onChange(of: index) { _, value in cancelSwitch(); if speech.owner == speechKey && speech.chapterIndex != value { speech.stop() } }
                 .onChange(of: speech.chapterIndex) { _, value in if speech.active && speech.owner == speechKey && novel.chapters.indices.contains(value) { index = value } }
                 .onChange(of: showSourceSwitch) { _, shown in if shown { cancelSwitch() } }
                 .sheet(isPresented: $showSourceSwitch) {
-                    SourceSwitchView(novel: novel, chapterIndex: index, onChanged: applyReplacement)
+                    SourceSwitchView(novel: novel, chapterIndex: index, currentText: text, currentOffset: resumeOffset, onChanged: applyReplacement)
                 }
                 .alert("听书提示", isPresented: Binding(get: { speech.message != nil }, set: { if !$0 { speech.message = nil } })) { Button("知道了") { speech.message = nil } } message: { Text(speech.message ?? "") }
                 .sheet(isPresented: $showSettings) {
@@ -217,9 +231,11 @@ struct OnlineReaderView: View {
     }
     private var upcomingChapters: [OnlineChapter] {
         guard novel.chapters.indices.contains(index) else { return [] }
-        return Array(novel.chapters.dropFirst(index + 1).prefix(2))
+        let count = ReadingPrefetchPolicy.count(mode: prefetchMode, charactersPerMinute: charactersPerMinute, chapterCharacters: text.count)
+        return Array(novel.chapters.dropFirst(index + 1).prefix(count))
     }
     private func installChapter(_ fetched: String, at target: Int) {
+        speedSampleDate = Date(); speedSampleOffset = 0
         let saved = online.novels.first { $0.id == novel.id && $0.sourceID == novel.sourceID } ?? novel
         resumeOffset = pendingOffset ?? (openAtEnd ? Int.max : (saved.chapterIndex == target ? (saved.textOffset ?? 0) : 0))
         resumeFraction = pendingOffset == nil && !openAtEnd && saved.chapterIndex == target ? saved.scrollFraction : nil

@@ -41,6 +41,7 @@ import SwiftUI
     private var sessionID = UUID()
     private var task: Task<Void, Never>?
     private var concurrency = 6, timeout = 10.0
+    private var pauseAtResults = 0
     private var activeSources: [BookSource] { let skipped = Set(avoided.map(\.id)); return sources.filter { !skipped.contains($0.id) } }
     var canLoadMore: Bool { !state.limitReached && activeSources.contains { state.failures[$0.id] == nil && !state.exhausted.contains($0.id) && (state.nextPages[$0.id] ?? 1) <= 10000 } }
     var failures: [SourceSearchFailure] { state.failures.values.sorted { $0.sourceName.localizedStandardCompare($1.sourceName) == .orderedAscending } }
@@ -48,20 +49,24 @@ import SwiftUI
     func start(_ text: String, sources: [BookSource], client: SourceClient, concurrency: Int = 6, timeout: Double = 10, smartSources: Bool = true) {
         reset(); keyword = text; self.sources = sources; didSearch = true
         self.concurrency = concurrency; self.timeout = timeout
+        pauseAtResults = UserDefaults.standard.object(forKey: "reader.search.pauseAtResults") == nil ? 20 : max(0, UserDefaults.standard.integer(forKey: "reader.search.pauseAtResults"))
         let plan = smartSources ? health?.ledger.ordered(sources) : nil
         avoided = plan?.avoided ?? []; avoidedCount = avoided.count
         batch((plan?.active ?? sources).map { SourceSearchRequest(source: $0, page: 1) }, client: client)
     }
     func retryAvoided(client: SourceClient) {
+        pauseAtResults = 0
         let retry = avoided; avoided = []; avoidedCount = 0
         batch(retry.map { SourceSearchRequest(source: $0, page: state.nextPages[$0.id] ?? 1) }, client: client)
     }
-    func resume(client: SourceClient) { batch(pending, client: client) }
+    func resume(client: SourceClient) { pauseAtResults = 0; batch(pending, client: client) }
     func more(client: SourceClient) {
+        pauseAtResults = 0
         batch(activeSources.filter { state.failures[$0.id] == nil && !state.exhausted.contains($0.id) && (state.nextPages[$0.id] ?? 1) <= 10000 }
             .map { SourceSearchRequest(source: $0, page: state.nextPages[$0.id] ?? 1) }, client: client)
     }
     func retry(client: SourceClient, sourceID: String? = nil) {
+        pauseAtResults = 0
         batch(sources.filter { state.failures[$0.id] != nil && (sourceID == nil || $0.id == sourceID) }
             .map { SourceSearchRequest(source: $0, page: state.nextPages[$0.id] ?? 1) }, client: client)
     }
@@ -79,6 +84,10 @@ import SwiftUI
         pending.removeAll { $0.source.id == outcome.sourceID }; pendingCount = pending.count
         state.receive(outcome); completed += 1; resultRevision += 1
         if state.limitReached { message = "已达到 5000 条结果，可选择书源分组或使用精准筛选。" }
+        if pauseAtResults > 0 && state.hits.count >= pauseAtResults && !pending.isEmpty {
+            message = "已找到 \(state.hits.count) 条结果，已暂停剩余慢源。可先选书，或继续搜索剩余书源。"
+            return false
+        }
         return !state.limitReached
     }
     private func batch(_ jobs: [SourceSearchRequest], client: SourceClient) {

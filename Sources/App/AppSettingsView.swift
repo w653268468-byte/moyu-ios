@@ -12,6 +12,7 @@ enum BackupService {
     static let folders = ["Moyu", "MoyuOnline", "GavinFonts"]
     static let maximumBytes = 200 * 1024 * 1024
     @MainActor static func create() throws -> Data {
+        ReadingActivityStore.shared.flush()
         try SourceHealthStore.shared.flush()
         var files: [String: Data] = [:]
         var total = 0
@@ -32,6 +33,7 @@ enum BackupService {
     }
 
     @MainActor static func restore(_ data: Data) throws {
+        ReadingActivityStore.shared.flush()
         try SourceHealthStore.shared.flush()
         guard data.count <= maximumBytes * 2 else { throw SourceError.message("备份文件过大。") }
         let backup = try JSONDecoder().decode(ReaderBackup.self, from: data)
@@ -64,6 +66,7 @@ enum BackupService {
             for rule in rules { try rule.validate() }
         }
         if let data = backup.files["MoyuOnline/network-voices.json"], (try JSONSerialization.jsonObject(with: data) as? [Any])?.isEmpty != true { _ = try NetworkVoiceImport.parse(data) }
+        if let data = backup.files["MoyuOnline/reading-activity.json"] { _ = try JSONDecoder().decode(ReadingActivityLedger.self, from: data) }
         if let data = backup.files["MoyuOnline/shelf-organization.json"] {
             let shelf = try JSONDecoder().decode(ShelfOrganization.self, from: data)
             guard shelf.groups.count <= 100, Set(shelf.groups.map(\.id)).count == shelf.groups.count,
@@ -119,6 +122,7 @@ enum BackupService {
         }
         for key in UserDefaults.standard.dictionaryRepresentation().keys where key.hasPrefix("reader.") { UserDefaults.standard.removeObject(forKey: key) }
         for (key, value) in preferences { UserDefaults.standard.set(value, forKey: key) }
+        ReadingActivityStore.shared.reload(); DiscoveryPreferences.shared.reload()
         ReaderFontStore.shared.reload()
         ReadingToolsStore.shared.reload()
         NetworkVoiceStore.shared.reload()
@@ -156,6 +160,10 @@ struct AppSettingsView: View {
                     }.padding(.vertical, 6)
                 }
                 Section("阅读") {
+                    NavigationLink { ReadingHistoryView() } label: { Label("阅读历史与统计", systemImage: "clock.arrow.circlepath") }
+                    NavigationLink { ChapterUpdateCenter() } label: { Label("章节更新中心", systemImage: "arrow.triangle.2.circlepath") }
+                    NavigationLink { PreloadingPreferencesView() } label: { Label("预加载与缓存", systemImage: "bolt.horizontal.circle") }
+                    NavigationLink { DiscoveryHiddenBooksView() } label: { Label("发现屏蔽管理", systemImage: "eye.slash") }
                     NavigationLink { NetworkVoicesView() } label: { Label("在线音色与朗读", systemImage: "waveform") }
                     Picker("界面外观", selection: $interfaceAppearance) {
                         ForEach(InterfaceAppearance.allCases) { appearance in Text(appearance.name).tag(appearance.rawValue) }

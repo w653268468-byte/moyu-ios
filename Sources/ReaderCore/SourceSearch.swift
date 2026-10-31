@@ -68,6 +68,27 @@ public struct SourceSearchState: Sendable {
 }
 
 public enum SourceSearch {
+    /// Uses an independent search session for the entire health scan, including
+    /// endpoint rechecks. Never invalidates another source's in-flight result.
+    public static func probe(sources: [BookSource], client: SourceClient,
+                             concurrency: Int = 6, timeoutSeconds: Double = 10,
+                             onUnconfirmedGone: @escaping @Sendable (BookSource, String) async -> Void,
+                             onResult: @escaping @Sendable (SourceSearchOutcome) async -> Bool) async throws {
+        let worker = await client.isolatedWorker(reloadIgnoringCache: true)
+        let session = UUID()
+        try await run(requests: sources.map { SourceSearchRequest(source: $0, page: 1) },
+                      concurrency: concurrency, timeoutSeconds: timeoutSeconds, search: { source, page in
+            do { return try await worker.searchIndependent("三国演义", source: source, page: page, sessionID: session) }
+            catch {
+                try Task.checkCancellation()
+                guard SourceFailureKind.classify(error.localizedDescription) == .endpointGone else { throw error }
+                await onUnconfirmedGone(source, error.localizedDescription)
+                try await Task.sleep(for: .milliseconds(300))
+                return try await worker.searchIndependent("三国演义", source: source, page: page, sessionID: session)
+            }
+        }, onResult: onResult)
+    }
+
     /// Delivers each completed source immediately. A failed source doesn't discard
     /// successful sources. Returning false from onResult cancels pending work.
     public static func run(requests: [SourceSearchRequest], concurrency: Int = 4,
@@ -99,8 +120,11 @@ public enum SourceSearch {
                 let elapsed = max(0, Int(duration.seconds * 1000 + duration.attoseconds / 1_000_000_000_000_000))
                 return SourceSearchOutcome(sourceID: job.source.id, sourceName: job.source.bookSourceName, page: job.page, novels: novels, elapsedMilliseconds: elapsed)
             } catch {
-                if Task.isCancelled || error is CancellationError { throw CancellationError() }
-                return SourceSearchOutcome(sourceID: job.source.id, sourceName: job.source.bookSourceName, page: job.page, novels: [], failure: error.localizedDescription)
+                // A cancelled source interpreter/request is not cancellation of
+                // the whole batch. Only the owning worker's cancellation stops it.
+                if Task.isCancelled { throw CancellationError() }
+                let message = error is CancellationError ? "此书源请求已中断，可单独重试。" : error.localizedDescription
+                return SourceSearchOutcome(sourceID: job.source.id, sourceName: job.source.bookSourceName, page: job.page, novels: [], failure: message)
             }
         }
         try await withThrowingTaskGroup(of: SourceSearchOutcome.self) { group in

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SearchConfigurationView: View {
+    @AppStorage("reader.search.pauseAtResults") private var pauseAtResults = 20
     @AppStorage("reader.search.merge") private var merged = true
     @AppStorage("reader.search.exact") private var exact = false
     @AppStorage("reader.search.field") private var fieldRaw = "all"
@@ -20,6 +21,10 @@ struct SearchConfigurationView: View {
                 Text("同名不同作者、作者未知的书保留独立结果；合并后仍可选择各个书源。").font(.caption).foregroundStyle(.secondary)
             }
             Section("速度与等待时间") {
+                Picker("找到结果后暂停慢源", selection: $pauseAtResults) {
+                    Text("不自动暂停").tag(0)
+                    ForEach([10, 20, 50, 100], id: \.self) { Text("\($0) 条结果").tag($0) }
+                }
                 Picker("同时搜索书源数", selection: $concurrency) { ForEach(1...8, id: \.self) { Text("\($0) 个").tag($0) } }
                 Picker("单个书源等待", selection: $timeout) { ForEach([5.0, 10, 15, 30, 60], id: \.self) { Text("\(Int($0)) 秒").tag($0) } }
                 Toggle("优先可用书源，暂避反复失败源", isOn: $smartSources)

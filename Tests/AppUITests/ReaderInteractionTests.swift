@@ -255,10 +255,33 @@ final class ReaderInteractionTests: XCTestCase {
         XCTAssertTrue(confirmation.waitForExistence(timeout: 15)); confirmation.tap()
         expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.staticTexts["失效测试源"])
         waitForExpectations(timeout: 5)
+        for _ in 0..<5 { if app.staticTexts["登录测试源"].isHittable { break }; app.swipeUp() }
         XCTAssertTrue(app.staticTexts["登录测试源"].exists)
         tapMenu(app.buttons["sources.actions"]); app.buttons["恢复上次清理"].tap()
+        for _ in 0..<5 { if app.staticTexts["失效测试源"].isHittable { break }; app.swipeUp() }
         XCTAssertTrue(app.staticTexts["失效测试源"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["登录测试源"].exists)
+        app.terminate()
+    }
+
+    @MainActor func testSourceProbeStopsWithoutAlertAndResumesRemainingSources() {
+        let app = application(); app.launchArguments = ["--ui-tab", "2", "--ui-source-resume"]; app.launch()
+        let scan = app.buttons["sources.probe"]
+        XCTAssertTrue(scan.waitForExistence(timeout: 10)); scan.tap()
+        let stop = app.buttons["sources.probe.stop"]
+        for _ in 0..<4 { if stop.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(stop.waitForExistence(timeout: 5)); stop.tap()
+        let summary = app.staticTexts["sources.probe.summary"]
+        expectation(for: NSPredicate(format: "label BEGINSWITH %@", "检测已停止"), evaluatedWith: summary)
+        waitForExpectations(timeout: 10)
+        XCTAssertFalse(app.alerts["Gavin提示"].exists)
+        let resume = app.buttons["sources.probe.resume"]
+        for _ in 0..<4 { if resume.isHittable { break }; app.swipeDown() }
+        XCTAssertTrue(resume.waitForExistence(timeout: 5)); resume.tap()
+        expectation(for: NSPredicate(format: "label BEGINSWITH %@", "检测完成 2 个"), evaluatedWith: summary)
+        waitForExpectations(timeout: 20)
+        XCTAssertFalse(app.alerts["Gavin提示"].exists)
+        XCTAssertFalse(app.buttons["sources.probe.resume"].exists)
         app.terminate()
     }
 

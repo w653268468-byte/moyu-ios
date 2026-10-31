@@ -21,6 +21,8 @@ struct ShelfView: View {
     @AppStorage("reader.shelfScope") private var shelfScope = "全部"
     @AppStorage("reader.shelfSortUpdated") private var sortUpdated = false
     @State private var showDownloads = false
+    @State private var showUpdates = false
+    @State private var showHistory = false
     @State private var showFindBooks = false
     @State private var onlineReading: OnlineNovel?
     @State private var deletingOnline: OnlineNovel?
@@ -181,6 +183,8 @@ struct ShelfView: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 HStack {
                     Menu {
+                        Button("章节更新中心", systemImage: "arrow.triangle.2.circlepath") { showUpdates = true }
+                        Button("阅读历史与统计", systemImage: "clock.arrow.circlepath") { showHistory = true }
                         Button("管理分组", systemImage: "folder") { manageGroups = true }
                         Button("批量管理", systemImage: "checklist") { batchManaging = true }
                         Button("列表书架", systemImage: shelfLayout == "list" ? "checkmark" : "list.bullet") { shelfLayout = "list" }
@@ -204,6 +208,8 @@ struct ShelfView: View {
                 NavigationStack { ReaderLoader(book: book) }.environmentObject(library)
             }
             .sheet(isPresented: $showAbout) { AboutView() }
+            .sheet(isPresented: $showUpdates) { NavigationStack { ChapterUpdateCenter().toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showUpdates = false } } } } }
+            .sheet(isPresented: $showHistory) { NavigationStack { ReadingHistoryView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showHistory = false } } } } }
             .sheet(isPresented: $manageGroups) { ShelfGroupManager(store: organization) }
             .sheet(isPresented: $batchManaging) { ShelfBatchManager(organization: organization) }
             .sheet(item: $assignment) { ShelfAssignmentView(store: organization, assignment: $0) }

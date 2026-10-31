@@ -33,6 +33,7 @@ final class OnlineStore: ObservableObject {
     private var downloadRuns: [String: UUID] = [:]
     private var cacheRevision = UUID()
     private let chapterReads = ChapterReadCache()
+    private let automaticCache: AutomaticChapterCache
     private var readyChapters: [URL: String] = [:]
     private var readyOrder: [URL] = []
     private var clearingCache = false
@@ -48,6 +49,7 @@ final class OnlineStore: ObservableObject {
     init(directory: URL = URL.documentsDirectory.appendingPathComponent("MoyuOnline", isDirectory: true), client: SourceClient? = nil) {
         self.client = client ?? SourceClient(cookieProvider: { url in await BrowserSessions.cookies(for: url) }, webRenderer: { request, cookies in try await SourceWebRenderer.render(request, cookies: cookies) }, verificationHandler: { input in try await SourceVerificationUI.run(input) })
         self.directory = directory
+        automaticCache = AutomaticChapterCache(directory: directory)
         writer = DeferredSnapshotWriter(destination: directory.appendingPathComponent("index.json"), backup: directory.appendingPathComponent("index.backup.json"))
         downloadWriter = DeferredSnapshotWriter(destination: directory.appendingPathComponent("downloads.json"), backup: directory.appendingPathComponent("downloads.backup.json"))
         reload()
@@ -137,6 +139,17 @@ final class OnlineStore: ObservableObject {
         do { try save() } catch { sources = old; errorMessage = error.localizedDescription }
     }
 
+    func setSourceGroup(_ ids: Set<String>, group: String) throws {
+        let old = sources
+        let value = group.trimmingCharacters(in: .whitespacesAndNewlines)
+        var updated = sources
+        for index in updated.indices where ids.contains(updated[index].id) {
+            updated[index].bookSourceGroup = value.isEmpty ? nil : value
+        }
+        sources = updated
+        do { try save() } catch { sources = old; throw error }
+    }
+
     func replaceSource(_ oldID: String, with source: BookSource) throws {
         guard source.id == oldID else { throw SourceError.message("编辑时请保留书源基础地址；新网站请通过导入添加。") }
         try addSources([source])
@@ -174,11 +187,13 @@ final class OnlineStore: ObservableObject {
         refreshingShelf = false
     }
 
-    func refreshShelf() async {
+    func refreshShelf(onlyFailed: Bool = false) async {
         if let running = shelfRefreshTask { await running.value; return }
         guard !locked else { refreshStatus = "在线书架暂时无法写入，请重新读取后重试。"; return }
         guard !novels.isEmpty else { refreshStatus = "在线书架还没有藏书，加入小说后可下拉更新。"; return }
-        let books = novels, sourceSnapshot = sources, started = Date(), token = UUID()
+        let books = onlyFailed ? novels.filter { refreshFailures[downloadKey($0)] != nil } : novels
+        guard !books.isEmpty else { refreshStatus = "没有需要重试的更新。"; return }
+        let sourceSnapshot = sources, started = Date(), token = UUID()
         shelfRefreshID = token; refreshingShelf = true; refreshFailures = [:]
         shelfRefreshCompleted = 0; shelfRefreshAdded = 0; shelfRefreshTotal = books.count
         refreshStatus = "正在更新 0/\(books.count) 本…"
@@ -316,14 +331,27 @@ final class OnlineStore: ObservableObject {
             readyChapters.removeValue(forKey: readyOrder.removeFirst())
         }
     }
-    func preloadChapters(_ chapters: [OnlineChapter], sourceID: String) async {
+    func preloadChapters(_ chapters: [OnlineChapter], sourceID: String, protecting current: OnlineChapter? = nil) async {
+        var protected = Set(novels.filter { downloads[downloadKey($0)] != nil }.flatMap { book in book.chapters.map { cacheURL($0, sourceID: book.sourceID).lastPathComponent } })
+        if let current { protected.insert(cacheURL(current, sourceID: sourceID).lastPathComponent) }
+        let protection = protected, budget = min(500, max(50, UserDefaults.standard.integer(forKey: "reader.prefetch.budgetMB") == 0 ? 100 : UserDefaults.standard.integer(forKey: "reader.prefetch.budgetMB"))) * 1024 * 1024
+        let pending = Array(chapters.prefix(6))
+        let fetch: @Sendable (OnlineChapter) async -> Void = { [weak self] chapter in
+            guard let self, !Task.isCancelled else { return }
+            let worker = await self.client.isolatedWorker()
+            do {
+                _ = try await self.chapter(chapter, sourceID: sourceID, requestClient: worker)
+                try Task.checkCancellation()
+                let file = await self.cacheURL(chapter, sourceID: sourceID)
+                try await self.automaticCache.register(file, budgetBytes: budget, protected: protection)
+            } catch { /* Prefetch failure is retried by the foreground reader. */ }
+        }
         await withTaskGroup(of: Void.self) { group in
-            for chapter in chapters.prefix(2) {
-                group.addTask { [weak self] in
-                    guard let self, !Task.isCancelled else { return }
-                    let worker = await self.client.isolatedWorker()
-                    _ = try? await self.chapter(chapter, sourceID: sourceID, requestClient: worker)
-                }
+            var next = 0
+            for _ in 0..<min(2, pending.count) { let chapter = pending[next]; next += 1; group.addTask { await fetch(chapter) } }
+            while await group.next() != nil {
+                guard !Task.isCancelled else { group.cancelAll(); return }
+                if next < pending.count { let chapter = pending[next]; next += 1; group.addTask { await fetch(chapter) } }
             }
         }
     }

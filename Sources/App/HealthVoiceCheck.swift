@@ -20,6 +20,11 @@ private actor HealthSearchServer {
         }
         let gone = try source("gone"), fast = try source("fast"), blocked = try source("blocked")
         try online.addSources([gone, fast, blocked])
+        try online.setSourceGroup([gone.id, fast.id], group: " 常用,公版 ")
+        let grouped = OnlineStore(directory: directory, client: client)
+        guard BookSearchPresentation.sourceGroups(grouped.sources.first(where: { $0.id == fast.id })!) == ["常用", "公版"], grouped.sources.first(where: { $0.id == blocked.id })?.bookSourceGroup == nil else { throw SourceError.message("批量分组保存或未选书源隔离失败") }
+        try online.setSourceGroup([fast.id], group: " ")
+        guard OnlineStore(directory: directory, client: client).sources.first(where: { $0.id == fast.id })?.bookSourceGroup == nil else { throw SourceError.message("书源分组不能清空") }
         let chapterURL = URL(string: "https://gone.example/chapter")!
         let chapter = OnlineChapter(title: "第一章", url: chapterURL, requestTemplate: chapterURL.absoluteString + ",{\"webView\":true}")
         var book = OnlineNovel(title: "清理保留测试", url: URL(string: "https://gone.example/book")!, sourceID: gone.id)
@@ -45,6 +50,34 @@ private actor HealthSearchServer {
         model.retryAvoided(client: client)
         try await wait { !model.searching && model.state.hits.count == 2 }
         guard model.avoidedCount == 0, health.ledger.record(for: gone)?.failures == 0 else { throw SourceError.message("强制重试未恢复正常书源") }
+        let previousLimit = UserDefaults.standard.object(forKey: "reader.search.pauseAtResults")
+        UserDefaults.standard.set(1, forKey: "reader.search.pauseAtResults")
+        defer { if let previousLimit { UserDefaults.standard.set(previousLimit, forKey: "reader.search.pauseAtResults") } else { UserDefaults.standard.removeObject(forKey: "reader.search.pauseAtResults") } }
+        let quick = SearchViewModel()
+        quick.start("book", sources: [gone, fast, blocked], client: client, concurrency: 1)
+        try await wait { !quick.searching && quick.completed == 1 }
+        guard quick.pendingCount == 2, quick.state.hits.count == 1 else { throw SourceError.message("搜书足够结果后未暂停慢源") }
+        quick.resume(client: client)
+        try await wait { !quick.searching && quick.pendingCount == 0 }
+        guard quick.state.hits.count == 3 else { throw SourceError.message("继续搜索丢失已返回结果") }
+
+        let activityDirectory = directory.appendingPathComponent("activity")
+        let activity = ReadingActivityStore(directory: activityDirectory)
+        activity.record(key: "online:fixture", title: "阅读统计测试", chapter: "第一章", seconds: 15)
+        activity.record(key: "online:fixture", title: "阅读统计测试", chapter: "第二章", seconds: 15)
+        activity.flush()
+        guard ReadingActivityStore(directory: activityDirectory).ledger.entries.first?.seconds == 30 else { throw SourceError.message("阅读历史统计未持久化") }
+        let suite = "Gavin.discovery-check." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let preference = DiscoveryPreferences(defaults: defaults)
+        preference.hide(book, today: true)
+        guard !DiscoveryPreferences(defaults: defaults).allows(book) else { throw SourceError.message("今日不感兴趣未保存") }
+        preference.hide(book, today: false); preference.favorite(fast.id)
+        let preferenceReloaded = DiscoveryPreferences(defaults: defaults)
+        guard !preferenceReloaded.allows(book), preferenceReloaded.favorites == [fast.id] else { throw SourceError.message("发现屏蔽或收藏未保存") }
+        preferenceReloaded.unhide(preferenceReloaded.hidden[0]); preferenceReloaded.favorite(fast.id)
+        guard DiscoveryPreferences(defaults: defaults).hidden.isEmpty, DiscoveryPreferences(defaults: defaults).favorites.isEmpty else { throw SourceError.message("发现屏蔽和收藏无法取消") }
 
         let voices = NetworkVoiceStore(directory: directory), network = NetworkSpeechClient()
         let imported = try await network.importText("http://127.0.0.1:18765/tts-config.json")
