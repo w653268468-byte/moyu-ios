@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DiscoveryView: View {
     @EnvironmentObject private var online: OnlineStore
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model = DiscoveryModel()
     @AppStorage("reader.discovery.source") private var sourceID = ""
     @State private var lane = DiscoveryLane.daily
@@ -39,6 +40,11 @@ struct DiscoveryView: View {
                 .toolbar { Button { importing = true } label: { Image(systemName: "plus.circle") }.accessibilityLabel("导入发现书源") }
                 .refreshable { if let source { await model.load(source: source, client: online.client, force: true) } }
                 .task(id: selectionKey) { if let source { await model.load(source: source, client: online.client) } else { model.cancel() } }
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active, model.day != DiscoveryCatalog.dayKey(), let source {
+                        Task { await model.load(source: source, client: online.client, force: true) }
+                    }
+                }
                 .onDisappear { model.cancel() }
                 .sheet(isPresented: $importing) { SourceImportView() }
                 .sheet(item: $selected) { NovelDetailView(novel: $0) }
@@ -65,7 +71,7 @@ struct DiscoveryView: View {
     }
     private func daily(_ source: BookSource) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack { Text("每日推荐").font(.title3.bold()); Spacer(); Button("换一批", systemImage: "shuffle") { model.batch += 1 }.disabled(model.pool.count <= 12).accessibilityIdentifier("discovery.shuffle") }
+            HStack { Text("每日推荐").font(.title3.bold()); Spacer(); Button("换一批", systemImage: "shuffle") { model.batch += 1 }.disabled(DiscoveryCatalog.dailyBooks(model.pool, day: model.day, limit: 13).count <= 12).accessibilityIdentifier("discovery.shuffle") }
             Text("从「\(source.bookSourceName)」的真实发现列表每日轮换，点击即可查看目录。")
                 .font(.caption).foregroundStyle(.secondary)
             if let updated = model.updatedAt { Text("推荐日期 \(model.day) · 更新于 " + updated.formatted(date: .omitted, time: .shortened)).font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("discovery.updated") }
