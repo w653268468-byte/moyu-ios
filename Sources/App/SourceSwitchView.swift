@@ -34,6 +34,7 @@ struct SourceSwitchView: View {
                         if let kind = record.kind { Text(kind.name + " · " + record.message).font(.caption).foregroundStyle(.orange).lineLimit(3) }
                     }
                     Button("搜索这个书源") { search() }.disabled(busy || query.isEmpty || sourceID.isEmpty)
+                    Button("并行查找同书替代源（最多50个）") { searchAlternatives() }.disabled(busy || query.isEmpty || sources.isEmpty)
                 }
                 if busy { Section { ProgressView(status); Button("取消") { cancel() } } }
                 if let failure { Section { Text(failure).foregroundStyle(.red).textSelection(.enabled) } }
@@ -41,6 +42,7 @@ struct SourceSwitchView: View {
                     Section("确认小说和继续章节") {
                         Text(catalog.title).font(.headline)
                         Text(catalog.author).foregroundStyle(.secondary)
+                        Text(sources.first(where: { $0.id == catalog.sourceID })?.bookSourceName ?? catalog.sourceID).font(.caption).foregroundStyle(.tint)
                         Text("共 \(catalog.chapters.count) 章 · 最新：" + (catalog.chapters.last?.title ?? catalog.lastChapter ?? "未知")).font(.caption).foregroundStyle(.secondary)
                         if !BookIdentity.matches(novel, catalog, allowMissingAuthor: true) { Text("此结果的书名或作者与当前小说不同，请先核对。").foregroundStyle(.orange).font(.caption) }
                         if !aligned { Text("未可靠匹配当前章节，请手动选择继续位置。").foregroundStyle(.orange).font(.caption) }
@@ -56,9 +58,14 @@ struct SourceSwitchView: View {
                     }
                 } else {
                     Section("搜索结果") {
-                        ForEach(results) { book in
+                        ForEach(Array(results.enumerated()), id: \.offset) { _, book in
                             Button { load(book) } label: {
-                                VStack(alignment: .leading, spacing: 5) { Text(book.title).foregroundStyle(.primary); Text(book.author).font(.caption).foregroundStyle(.secondary); if let latest = book.lastChapter { Text("最新：" + latest).font(.caption2).foregroundStyle(.secondary) } }
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(book.title).foregroundStyle(.primary); Text(book.author).font(.caption).foregroundStyle(.secondary)
+                                    Text(sources.first(where: { $0.id == book.sourceID })?.bookSourceName ?? book.sourceID).font(.caption2).foregroundStyle(.tint)
+                                    if let source = sources.first(where: { $0.id == book.sourceID }), let latency = SourceHealthStore.shared.ledger.record(for: source)?.latency { Text("约 \(latency) ms").font(.caption2).foregroundStyle(.secondary) }
+                                    if let latest = book.lastChapter { Text("最新：" + latest).font(.caption2).foregroundStyle(.secondary) }
+                                }
                             }.disabled(busy)
                         }
                     }
@@ -121,6 +128,32 @@ struct SourceSwitchView: View {
         }
     }
     private func selectedKey(_ book: OnlineNovel) -> String { book.sourceID + "|" + (book.chapters.indices.contains(target) ? book.chapters[target].id : "") }
+    private func searchAlternatives() {
+        cancel(); busy = true; failure = nil; catalog = nil; results = []; preview = ""; previewKey = ""; status = "正在并行查找同书替代源…"
+        let token = operationID, choices = Array(sources.filter { $0.id != novel.sourceID }.prefix(50)), keyword = query, original = novel
+        task = Task {
+            defer { if token == operationID { busy = false } }
+            do {
+                let worker = await online.client.isolatedWorker(), session = UUID()
+                try await SourceSearch.run(requests: choices.map { SourceSearchRequest(source: $0, page: 1) }, concurrency: 4, timeoutSeconds: 8, search: { source, page in
+                    try await worker.searchIndependent(keyword, source: source, page: page, sessionID: session)
+                }, onResult: { outcome in
+                    await MainActor.run {
+                        guard token == operationID, !Task.isCancelled else { return false }
+                        if let source = choices.first(where: { $0.id == outcome.sourceID }) {
+                            SourceHealthStore.shared.receive(source, failure: outcome.failure, latency: outcome.elapsedMilliseconds, hasResults: !outcome.novels.isEmpty)
+                        }
+                        for book in outcome.novels where BookIdentity.matches(original, book, allowMissingAuthor: true) && results.count < 50 {
+                            if !results.contains(where: { $0.id == book.id && $0.sourceID == book.sourceID }) { results.append(book) }
+                        }
+                        status = "已找到 \(results.count) 个同书来源，正在继续比较…"
+                        return results.count < 50
+                    }
+                })
+                if results.isEmpty { failure = "没有找到匹配书名与作者的替代来源，可手动搜索单个书源。" }
+            } catch { if !Task.isCancelled && token == operationID { failure = error.localizedDescription } }
+        }
+    }
     private func previewChapter(_ book: OnlineNovel) {
         guard let source = sources.first(where: { $0.id == book.sourceID }), book.chapters.indices.contains(target) else { return }
         cancel(); busy = true; failure = nil; status = "正在验证正文预览…"

@@ -5,9 +5,10 @@ import SwiftUI
     @Published private(set) var ledger = ReadingActivityLedger()
     @Published var failure: String?
     private let writer: DeferredSnapshotWriter
+    private let file: URL
     private var locked = false
     init(directory: URL = URL.documentsDirectory.appendingPathComponent("MoyuOnline")) {
-        let file = directory.appendingPathComponent("reading-activity.json")
+        let file = directory.appendingPathComponent("reading-activity.json"); self.file = file
         writer = DeferredSnapshotWriter(destination: file, backup: directory.appendingPathComponent("reading-activity.backup.json"))
         if FileManager.default.fileExists(atPath: file.path) {
             do { ledger = try JSONDecoder().decode(ReadingActivityLedger.self, from: Data(contentsOf: file)) }
@@ -25,7 +26,6 @@ import SwiftUI
     func flush() { do { try writer.flush() } catch { failure = error.localizedDescription } }
     func reload() {
         writer.discardPendingAndWait()
-        let file = URL.documentsDirectory.appendingPathComponent("MoyuOnline/reading-activity.json")
         do { ledger = FileManager.default.fileExists(atPath: file.path) ? try JSONDecoder().decode(ReadingActivityLedger.self, from: Data(contentsOf: file)) : ReadingActivityLedger(); locked = false; failure = nil }
         catch { locked = true; failure = "阅读记录无法读取，已保留原文件。" }
     }

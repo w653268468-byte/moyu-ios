@@ -46,6 +46,9 @@ private actor ShelfRefreshServer {
         try store.flushProgress()
         let restored = OnlineStore(directory: directory, client: client)
         guard restored.novels.first(where: { $0.id == good.id })?.unreadChapterIDs?.count == 1 else { throw SourceError.message("新章状态重开后丢失") }
+        let beforeRetryGood = await server.count("/good"), beforeRetryBroken = await server.count("/broken")
+        await store.refreshShelf(onlyFailed: true)
+        guard await server.count("/good") == beforeRetryGood, await server.count("/broken") == beforeRetryBroken + 1, store.refreshFailures.count == 1 else { throw SourceError.message("只重试失败书籍时重复刷新了正常书籍或丢失失败状态") }
         // A refreshable view owns only a waiter, not the store's shared job.
         // Cancelling that waiter must still finish the actual network update.
         let beforeDetachedRefresh = await server.count("/good")

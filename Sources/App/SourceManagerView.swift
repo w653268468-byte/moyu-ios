@@ -89,7 +89,7 @@ struct SourceManagerView: View {
                     Button("检测失效源（快速）", systemImage: "waveform.path.ecg") { probe(visible) }.disabled(checking).accessibilityIdentifier("sources.probe")
                     if !pendingProbeIDs.isEmpty {
                         Button("继续未完成检测 · \(pendingProbeIDs.count) 个", systemImage: "play.circle") {
-                            probe(online.sources.filter { pendingProbeIDs.contains($0.id) }, offerCleanup: resumeCleanup)
+                            probe(online.sources.filter { pendingProbeIDs.contains($0.id) }, offerCleanup: resumeCleanup, continuing: true)
                         }.disabled(checking).accessibilityIdentifier("sources.probe.resume")
                     }
                     let retryIDs = failed.intersection(lastProbeIDs)
@@ -222,12 +222,14 @@ struct SourceManagerView: View {
     }
 
     private func askDelete(_ ids: Set<String>) { pendingDelete = ids; confirmDelete = !ids.isEmpty }
-    private func probe(_ sources: [BookSource], offerCleanup: Bool = false) {
+    private func probe(_ sources: [BookSource], offerCleanup: Bool = false, continuing: Bool = false) {
         guard !checking else { return }
         checking = true; probeCompleted = 0; probeSummary = nil; checkProgress = "准备检测…"
         let client = online.client, health = health
         let lookup = Dictionary(sources.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        pendingProbeIDs = Set(lookup.keys); lastProbeIDs = pendingProbeIDs; resumeCleanup = offerCleanup
+        pendingProbeIDs = Set(lookup.keys)
+        if continuing { lastProbeIDs.formUnion(pendingProbeIDs) } else { lastProbeIDs = pendingProbeIDs }
+        resumeCleanup = offerCleanup
         let started = Date(), total = lookup.count
         checkTask = Task {
             defer { checking = false; checkProgress = "" }
