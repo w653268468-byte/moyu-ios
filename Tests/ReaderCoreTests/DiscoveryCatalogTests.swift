@@ -32,4 +32,12 @@ final class DiscoveryCatalogTests: XCTestCase {
         let date = ISO8601DateFormatter().date(from: "2026-10-30T16:30:00Z")!
         XCTAssertEqual(DiscoveryCatalog.dayKey(date, calendar: calendar), "2026-10-31")
     }
+    func testRefreshedDynamicCategoryUsesCurrentURLAndKeepsDuplicateNamesInTheirGroup() throws {
+        let old = try ExploreCategory.parse("分类\n玄幻::/genre?token=old\n完本\n玄幻::/finished?token=old")
+        let fresh = try ExploreCategory.parse("分类\n玄幻::/genre?token=new\n完本\n玄幻::/finished?token=new")
+        let selected = DiscoveryCatalog.sections(old)[1]
+        XCTAssertEqual(try DiscoveryCatalog.refreshed(selected, in: fresh).url, "/finished?token=new")
+        let changed = try ExploreCategory.parse("分类\n都市::/city")
+        XCTAssertThrowsError(try DiscoveryCatalog.refreshed(selected, in: changed))
+    }
 }

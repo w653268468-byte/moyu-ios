@@ -65,7 +65,7 @@ enum DiscoveryRequest {
                 if !force && saved.day == today && Date().timeIntervalSince(saved.updatedAt) < 1800 && !saved.books.isEmpty { return }
             }
             do {
-                let categoryClient = await client.isolatedWorker()
+                let categoryClient = await client.isolatedWorker(reloadIgnoringCache: true)
                 let found = try await categoryClient.categories(source: source)
                 try Task.checkCancellation(); guard generation == token else { return }
                 categories = found
@@ -75,9 +75,11 @@ enum DiscoveryRequest {
                     do {
                         // A separate context retains this list's JavaScript state;
                         // recompute category setup before evaluating the list URL.
-                        let worker = await client.isolatedWorker()
-                        _ = try await worker.categories(source: source)
-                        let books = try await DiscoveryRequest.books(category, page: 1, source: source, client: worker)
+                        let worker = await client.isolatedWorker(reloadIgnoringCache: true)
+                        let refreshed = try await worker.categories(source: source)
+                        guard let selected = DiscoveryCatalog.sections(found).first(where: { $0.id == category.id }) else { continue }
+                        let activeCategory = try DiscoveryCatalog.refreshed(selected, in: refreshed)
+                        let books = try await DiscoveryRequest.books(activeCategory, page: 1, source: source, client: worker)
                         try Task.checkCancellation(); guard generation == token else { return }
                         for var book in books.prefix(50) where !fresh.contains(where: { $0.id == book.id }) {
                             book.intro = String(book.intro.prefix(1000)); fresh.append(book)
@@ -105,28 +107,33 @@ enum DiscoveryRequest {
     @Published private(set) var exhausted = false
     @Published private(set) var failure: String?
     private var worker: SourceClient?
+    private var category: ExploreCategory?
+    private var retryRefresh = false
     private var generation = UUID()
     private var request: Task<Void, Never>?
     func cancel() { request?.cancel(); request = nil; generation = UUID(); loading = false }
-    func load(source: BookSource, category: ExploreCategory, client: SourceClient, refresh: Bool = false) async {
-        guard !loading, refresh || !exhausted else { return }
-        cancel(); let token = generation, next = refresh ? 1 : page + 1
+    func load(source: BookSource, entry: DiscoveryCategory, client: SourceClient, refresh: Bool = false) async {
+        let resetting = refresh || retryRefresh
+        guard !loading, resetting || !exhausted else { return }
+        cancel(); let token = generation, next = resetting ? 1 : page + 1
+        if resetting { retryRefresh = true }
         loading = true; failure = nil
         let job = Task { @MainActor in
             defer { if generation == token { loading = false; request = nil } }
             do {
-                if worker == nil || refresh {
-                    let newWorker = await client.isolatedWorker()
-                    _ = try await newWorker.categories(source: source)
-                    try Task.checkCancellation(); guard generation == token else { return }; worker = newWorker
+                if worker == nil || resetting {
+                    let newWorker = await client.isolatedWorker(reloadIgnoringCache: true)
+                    let refreshed = try await newWorker.categories(source: source)
+                    let activeCategory = try DiscoveryCatalog.refreshed(entry, in: refreshed)
+                    try Task.checkCancellation(); guard generation == token else { return }; worker = newWorker; category = activeCategory
                 }
-                guard let worker else { return }
+                guard let worker, let category else { return }
                 let found = try await DiscoveryRequest.books(category, page: next, source: source, client: worker)
                 try Task.checkCancellation(); guard generation == token else { return }
-                var result = refresh ? [] : books
+                var result = resetting ? [] : books
                 var seen = Set(result.map(\.id)); let before = result.count
                 result += found.filter { seen.insert($0.id).inserted }.prefix(max(0, 1000 - result.count))
-                books = result; page = next; exhausted = result.count == before || result.count >= 1000
+                books = result; page = next; exhausted = result.count == before || result.count >= 1000; retryRefresh = false
             } catch { if generation == token && !Task.isCancelled { failure = error.localizedDescription } }
         }
         request = job

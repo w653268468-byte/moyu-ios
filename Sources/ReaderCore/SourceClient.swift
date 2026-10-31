@@ -46,8 +46,10 @@ public actor SourceClient {
     deinit { session.invalidateAndCancel() }
 
     /// Share request configuration and authentication providers, but never mutable JS book/chapter globals.
-    public func isolatedWorker() -> SourceClient {
-        SourceClient(configuration: session.configuration, cookieProvider: cookieProvider, webRenderer: webRenderer, verificationHandler: verificationHandler)
+    public func isolatedWorker(reloadIgnoringCache: Bool = false) -> SourceClient {
+        let config = session.configuration
+        if reloadIgnoringCache { config.urlCache = nil; config.requestCachePolicy = .reloadIgnoringLocalCacheData }
+        return SourceClient(configuration: config, cookieProvider: cookieProvider, webRenderer: webRenderer, verificationHandler: verificationHandler)
     }
 
     public func replaceCookies(_ cookies: [HTTPCookie], for url: URL) {

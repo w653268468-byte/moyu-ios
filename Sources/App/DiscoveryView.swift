@@ -142,8 +142,9 @@ struct DiscoveryBooksView: View {
                 }
                 if let failure = model.failure { Text(failure).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
                 if model.loading { ProgressView("正在获取第 \(model.page + 1) 页…"); Button("停止") { model.cancel() } }
+                else if model.failure != nil { Button("重试当前页") { Task { await load() } }.buttonStyle(.bordered).accessibilityIdentifier("discovery.more") }
                 else if model.exhausted { Text(model.books.count >= 1000 ? "已展示 1000 本，可切换更具体的分类。" : "已经到底了").font(.caption).foregroundStyle(.secondary) }
-                else { Button(model.failure != nil ? "重试当前页" : model.page == 0 ? "获取列表" : "加载下一页") { Task { await load() } }.buttonStyle(.bordered).accessibilityIdentifier("discovery.more") }
+                else { Button(model.page == 0 ? "获取列表" : "加载下一页") { Task { await load() } }.buttonStyle(.bordered).accessibilityIdentifier("discovery.more") }
             }.padding(20)
         }.scrollBounceBehavior(.always, axes: .vertical).background(InterfaceAppearance.background)
             .navigationTitle(entry.category.title).navigationBarTitleDisplayMode(.inline)
@@ -155,6 +156,6 @@ struct DiscoveryBooksView: View {
     }
     private func load(refresh: Bool = false) async {
         guard online.sources.contains(where: { $0.id == source.id }) else { return }
-        await model.load(source: source, category: entry.category, client: online.client, refresh: refresh)
+        await model.load(source: source, entry: entry, client: online.client, refresh: refresh)
     }
 }

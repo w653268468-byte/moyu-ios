@@ -9,20 +9,30 @@ public struct DiscoveryCategory: Identifiable, Equatable, Sendable {
     public let category: ExploreCategory
     public let group: String
     public let lane: DiscoveryLane
+    public let position: Int
     public var id: String { category.id }
 }
 
 public enum DiscoveryCatalog {
     public static func sections(_ categories: [ExploreCategory]) -> [DiscoveryCategory] {
         var heading = "分类"
-        return categories.compactMap { category in
+        return categories.enumerated().compactMap { position, category in
             if category.isHeading { heading = category.title; return nil }
             let name = (heading + " " + category.title).lowercased()
             let rankings = ["排行", "榜", "点击", "收藏", "人气", "畅销", "月票", "推荐票", "热度", "top", "ranking", "popular"]
             let daily = ["推荐", "精选", "书单", "编辑", "每日", "精品", "recommend", "featured"]
             let lane: DiscoveryLane = rankings.contains(where: name.contains) ? .rankings : daily.contains(where: name.contains) ? .daily : .genres
-            return DiscoveryCategory(category: category, group: heading, lane: lane)
+            return DiscoveryCategory(category: category, group: heading, lane: lane, position: position)
         }
+    }
+
+    public static func refreshed(_ selected: DiscoveryCategory, in categories: [ExploreCategory]) throws -> ExploreCategory {
+        let options = sections(categories)
+        if let exact = options.first(where: { $0.id == selected.id }) { return exact.category }
+        if let samePosition = options.first(where: { $0.position == selected.position && $0.group == selected.group && $0.category.title == selected.category.title }) { return samePosition.category }
+        let matching = options.filter { $0.group == selected.group && $0.category.title == selected.category.title }
+        guard matching.count == 1 else { throw SourceError.message("发现分类已变化，请返回刷新后重新选择。") }
+        return matching[0].category
     }
 
     public static func dayKey(_ date: Date = Date(), calendar: Calendar = .autoupdatingCurrent) -> String {
