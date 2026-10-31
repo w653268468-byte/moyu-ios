@@ -202,7 +202,10 @@ final class ReaderInteractionTests: XCTestCase {
     }
 
     @MainActor func testRefreshCatalogAddsChapterAndPreservesCurrentDestination() {
-        let app = application(); app.launchArguments = ["--ui-tab", "0", "--ui-catalog-refresh"]; app.launch()
+        // This case checks the partially downloaded 3/4 state after an update.
+        // Automatic lookahead can legitimately cache chapter four first; its
+        // enabled/hot-reader behavior has a separate end-to-end test below.
+        let app = application(); app.launchArguments = ["--ui-tab", "0", "--ui-catalog-refresh", "-reader.prefetch.mode", "off"]; app.launch()
         let book = app.buttons.containing(.staticText, identifier: "目录更新测试书").firstMatch
         XCTAssertTrue(book.waitForExistence(timeout: 15)); book.tap()
         XCTAssertTrue(app.buttons["章节目录"].waitForExistence(timeout: 10)); app.buttons["章节目录"].tap()
