@@ -23,8 +23,13 @@ private actor HealthSearchServer {
         try online.setSourceGroup([gone.id, fast.id], group: " 常用,公版 ")
         let grouped = OnlineStore(directory: directory, client: client)
         guard BookSearchPresentation.sourceGroups(grouped.sources.first(where: { $0.id == fast.id })!) == ["常用", "公版"], grouped.sources.first(where: { $0.id == blocked.id })?.bookSourceGroup == nil else { throw SourceError.message("批量分组保存或未选书源隔离失败") }
+        let importedGroup = try SourceImport.parse(SourceImport.export(grouped.sources.filter { $0.id == fast.id }))
+        try online.addSources(importedGroup.sources)
         try online.setSourceGroup([fast.id], group: " ")
-        guard OnlineStore(directory: directory, client: client).sources.first(where: { $0.id == fast.id })?.bookSourceGroup == nil else { throw SourceError.message("书源分组不能清空") }
+        let cleared = OnlineStore(directory: directory, client: client).sources.first(where: { $0.id == fast.id })!
+        guard BookSearchPresentation.sourceGroups(cleared).isEmpty,
+              let exported = try SourceImport.parse(SourceImport.export([cleared])).sources.first,
+              BookSearchPresentation.sourceGroups(exported).isEmpty else { throw SourceError.message("清空分组后重开或导出再次出现旧分组") }
         let chapterURL = URL(string: "https://gone.example/chapter")!
         let chapter = OnlineChapter(title: "第一章", url: chapterURL, requestTemplate: chapterURL.absoluteString + ",{\"webView\":true}")
         var book = OnlineNovel(title: "清理保留测试", url: URL(string: "https://gone.example/book")!, sourceID: gone.id)
@@ -77,7 +82,8 @@ private actor HealthSearchServer {
         let preferenceReloaded = DiscoveryPreferences(defaults: defaults)
         guard !preferenceReloaded.allows(book), preferenceReloaded.favorites == [fast.id] else { throw SourceError.message("发现屏蔽或收藏未保存") }
         preferenceReloaded.unhide(preferenceReloaded.hidden[0]); preferenceReloaded.favorite(fast.id)
-        guard DiscoveryPreferences(defaults: defaults).hidden.isEmpty, DiscoveryPreferences(defaults: defaults).favorites.isEmpty else { throw SourceError.message("发现屏蔽和收藏无法取消") }
+        guard DiscoveryPreferences(defaults: defaults).hidden.isEmpty, DiscoveryPreferences(defaults: defaults).favorites.isEmpty,
+              DiscoveryPreferences(defaults: defaults).allows(book) else { throw SourceError.message("发现屏蔽和收藏无法取消") }
 
         let voices = NetworkVoiceStore(directory: directory), network = NetworkSpeechClient()
         let imported = try await network.importText("http://127.0.0.1:18765/tts-config.json")

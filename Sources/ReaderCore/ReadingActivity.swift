@@ -67,7 +67,7 @@ public actor AutomaticChapterCache {
         for name in Array(entries?.keys ?? Dictionary<String, Date>().keys) {
             guard name.range(of: "^[a-f0-9]{64}\\.txt$", options: .regularExpression) != nil else { entries?.removeValue(forKey: name); continue }
             let url = directory.appendingPathComponent(name)
-            if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize { total += size }
+            if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize { if !protected.contains(name) { total += size } }
             else { entries?.removeValue(forKey: name) }
         }
         for (name, _) in (entries ?? [:]).sorted(by: { $0.value < $1.value }) where total > max(0, budgetBytes) && !protected.contains(name) {

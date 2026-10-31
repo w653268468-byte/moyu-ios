@@ -74,33 +74,38 @@ struct ReadingHistoryView: View {
     @State private var local: Book?
     @State private var remote: OnlineNovel?
     private var days: [String] { Array(Set(activity.ledger.entries.map(\.day))).sorted(by: >) }
+    private var totalMinutes: Int { Int(activity.ledger.entries.reduce(0.0) { $0 + $1.seconds } / 60) }
+    private var bookCount: Int { Set(activity.ledger.entries.map(\.bookKey)).count }
     var body: some View {
         List {
-            Section("阅读统计") {
-                LabeledContent("累计阅读", value: "\(Int(activity.ledger.entries.reduce(0) { $0 + $1.seconds } / 60)) 分钟")
-                LabeledContent("阅读天数", value: "\(days.count) 天")
-                LabeledContent("读过的书", value: "\(Set(activity.ledger.entries.map(\.bookKey)).count) 本")
-                Text("记录阅读页前台停留时长；切到后台、打开设置或两分钟没有翻动时暂停计时。历史条目点击后继续书架中的最新进度，最多保留 3000 条每日记录。")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+            statistics
             if let failure = activity.failure { Text(failure).foregroundStyle(.orange) }
             if days.isEmpty { ContentUnavailableView("还没有阅读记录", systemImage: "clock", description: Text("开始阅读后，这里会按日期显示书籍与阅读时长。")) }
-            ForEach(days, id: \.self) { day in
-                Section(day) {
-                    ForEach(activity.ledger.entries.filter { $0.day == day }) { entry in
-                        Button { open(entry) } label: {
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(entry.title).foregroundStyle(.primary)
-                                Text(entry.chapter + " · \(Int(entry.seconds / 60)) 分钟").font(.caption).foregroundStyle(.secondary)
-                                if !available(entry) { Text("该书已移出书架，阅读记录仍保留").font(.caption2).foregroundStyle(.secondary) }
-                            }
-                        }.disabled(!available(entry))
-                    }
-                }
-            }
+            ForEach(days, id: \.self) { day in historySection(day) }
         }.navigationTitle("阅读历史与统计").navigationBarTitleDisplayMode(.inline)
-            .fullScreenCover(item: $local) { NavigationStack { ReaderLoader(book: $0) } }
+            .fullScreenCover(item: $local) { book in NavigationStack { ReaderLoader(book: book) } }
             .fullScreenCover(item: $remote) { OnlineReaderView(novel: $0) }
+    }
+    private var statistics: some View {
+        Section("阅读统计") {
+            LabeledContent("累计阅读", value: "\(totalMinutes) 分钟")
+            LabeledContent("阅读天数", value: "\(days.count) 天")
+            LabeledContent("读过的书", value: "\(bookCount) 本")
+            Text("记录阅读页前台停留时长；切到后台、打开设置或两分钟没有翻动时暂停计时。历史条目点击后继续书架中的最新进度，最多保留 3000 条每日记录。")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+    private func historySection(_ day: String) -> some View {
+        Section(day) { ForEach(activity.ledger.entries.filter { $0.day == day }) { entry in historyRow(entry) } }
+    }
+    private func historyRow(_ entry: ReadingActivity) -> some View {
+        Button { open(entry) } label: {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(entry.title).foregroundStyle(.primary)
+                Text(entry.chapter + " · \(Int(entry.seconds / 60)) 分钟").font(.caption).foregroundStyle(.secondary)
+                if !available(entry) { Text("该书已移出书架，阅读记录仍保留").font(.caption2).foregroundStyle(.secondary) }
+            }
+        }.disabled(!available(entry))
     }
     private func available(_ entry: ReadingActivity) -> Bool {
         library.books.contains { "local:" + $0.id.uuidString == entry.bookKey } || online.novels.contains { "online:" + $0.id == entry.bookKey }
@@ -178,7 +183,7 @@ struct PreloadingPreferencesView: View {
         } else if !hidden.contains(value), hidden.count < 1000 { hidden.append(value) }
         save()
     }
-    func unhide(_ key: String) { hidden.removeAll { $0 == key }; save() }
+    func unhide(_ key: String) { hidden.removeAll { $0 == key }; disliked.removeValue(forKey: key); save() }
     func favorite(_ id: String) {
         if favorites.contains(id) { favorites.removeAll { $0 == id } }
         else if favorites.count < 100 { favorites.append(id) }

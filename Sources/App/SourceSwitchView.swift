@@ -66,7 +66,7 @@ struct SourceSwitchView: View {
                                     if let source = sources.first(where: { $0.id == book.sourceID }), let latency = SourceHealthStore.shared.ledger.record(for: source)?.latency { Text("约 \(latency) ms").font(.caption2).foregroundStyle(.secondary) }
                                     if let latest = book.lastChapter { Text("最新：" + latest).font(.caption2).foregroundStyle(.secondary) }
                                 }
-                            }.disabled(busy)
+                            }
                         }
                     }
                 }

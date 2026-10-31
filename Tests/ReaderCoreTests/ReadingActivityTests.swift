@@ -36,6 +36,8 @@ final class ReadingActivityTests: XCTestCase {
         try Data(repeating: 2, count: 50).write(to: b)
         try await AutomaticChapterCache(directory: root).register(a, budgetBytes: 100, protected: [a.lastPathComponent])
         try await AutomaticChapterCache(directory: root).register(b, budgetBytes: 50, protected: [a.lastPathComponent])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: b.path), "Protected downloads must not consume the automatic cache budget")
+        try await AutomaticChapterCache(directory: root).register(b, budgetBytes: 0, protected: [a.lastPathComponent])
         XCTAssertTrue(FileManager.default.fileExists(atPath: a.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: b.path))
     }

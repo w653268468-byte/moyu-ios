@@ -144,7 +144,9 @@ final class OnlineStore: ObservableObject {
         let value = group.trimmingCharacters(in: .whitespacesAndNewlines)
         var updated = sources
         for index in updated.indices where ids.contains(updated[index].id) {
-            updated[index].bookSourceGroup = value.isEmpty ? nil : value
+            // Keep an explicit empty string so JSON export overrides an older
+            // group preserved in originalJSON instead of resurrecting it.
+            updated[index].bookSourceGroup = value
         }
         sources = updated
         do { try save() } catch { sources = old; throw error }
