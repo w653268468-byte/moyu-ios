@@ -253,7 +253,8 @@ final class ReaderInteractionTests: XCTestCase {
         XCTAssertTrue(app.buttons["sources.cleanup.scan"].waitForExistence(timeout: 10)); app.buttons["sources.cleanup.scan"].tap()
         let confirmation = app.buttons["备份并删除失效源"]
         XCTAssertTrue(confirmation.waitForExistence(timeout: 15)); confirmation.tap()
-        XCTAssertFalse(app.staticTexts["失效测试源"].exists)
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.staticTexts["失效测试源"])
+        waitForExpectations(timeout: 5)
         XCTAssertTrue(app.staticTexts["登录测试源"].exists)
         tapMenu(app.buttons["sources.actions"]); app.buttons["恢复上次清理"].tap()
         XCTAssertTrue(app.staticTexts["失效测试源"].waitForExistence(timeout: 5))
@@ -320,13 +321,27 @@ final class ReaderInteractionTests: XCTestCase {
         // ScrollView's AX frame includes the navigation/search bars. Use actual
         // visible content as the drag origin so this gesture reaches its pan recognizer.
         header.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
-        XCTAssertTrue(app.staticTexts["最新：第4章 测试"].waitForExistence(timeout: 20))
+        expectation(for: NSPredicate(format: "label BEGINSWITH %@", "已更新"), evaluatedWith: app.staticTexts["shelf.refresh.status"])
+        waitForExpectations(timeout: 30)
+        findRefreshedShelfBook(in: app)
         XCTAssertTrue(app.staticTexts["新增 1 章"].exists)
         let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "shelf-refreshed"; screenshot.lifetime = .keepAlways; add(screenshot)
         app.terminate(); app.launchArguments = ["--ui-tab", "0"]; app.launch()
-        XCTAssertTrue(app.staticTexts["最新：第4章 测试"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.scrollViews["shelf.scroll"].waitForExistence(timeout: 10))
+        findRefreshedShelfBook(in: app)
         XCTAssertTrue(app.staticTexts["新增 1 章"].exists)
         app.terminate()
+    }
+
+    @MainActor private func findRefreshedShelfBook(in app: XCUIApplication) {
+        // Other cases leave earlier books on the shelf. Verify this exact book,
+        // scrolling to materialize its row in the lazy grid before checking it.
+        let updated = app.buttons.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "目录更新测试书", "最新：第4章 测试")).firstMatch
+        for _ in 0..<8 {
+            if updated.waitForExistence(timeout: 1) { break }
+            app.scrollViews["shelf.scroll"].swipeUp()
+        }
+        XCTAssertTrue(updated.exists, "The pulled update must reach this book and persist after relaunch")
     }
 
     @MainActor func testShelfGroupsPinAndBothLayoutsPersist() {
