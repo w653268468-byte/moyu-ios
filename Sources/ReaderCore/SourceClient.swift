@@ -355,7 +355,13 @@ public actor SourceClient {
     public func categories(source: BookSource) throws -> [ExploreCategory] {
         guard source.enabledExplore != false, let raw = source.exploreUrl, !raw.isEmpty,
               let base = URL(string: source.bookSourceUrl) else { return [] }
-        let text = try ScriptTemplate.expand(raw, using: scriptEngine(for: source), query: "", base: base)
+        // Only evaluate the outer category generator. Expressions inside static
+        // category URLs belong to the selected list's request and current page.
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let generated = trimmed.hasPrefix("@js:") || trimmed.hasPrefix("<js>") || trimmed.hasPrefix("{{")
+        let text: String
+        if generated { text = try ScriptTemplate.expand(raw, using: scriptEngine(for: source), query: "", base: base) }
+        else { text = raw }
         return try ExploreCategory.parse(text)
     }
 

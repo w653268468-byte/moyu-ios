@@ -30,6 +30,7 @@ struct SourceManagerView: View {
     @State private var checking = false
     @State private var checkTask: Task<Void, Never>?
     @State private var checkProgress = ""
+    @State private var probeSummary: String?
     private let filters = ["全部", "已启用", "已禁用", "规则不兼容", "校验失败", "已确认失效", "暂避搜索"]
     private var removable: [BookSource] { online.sources.filter { health.ledger.record(for: $0)?.removable == true } }
 
@@ -57,10 +58,13 @@ struct SourceManagerView: View {
                     Picker("筛选", selection: $filter) { ForEach(filters, id: \.self) { Text($0).tag($0) } }
                     Text("共 \(online.sources.count) 个 · 当前显示 \(visible.count) 个")
                         .font(.caption).foregroundStyle(.secondary)
+                    Button("一键检测并清理失效书源", systemImage: "sparkles") { probe(online.sources, offerCleanup: true) }
+                        .disabled(checking || online.sources.isEmpty).accessibilityIdentifier("sources.cleanup.scan")
                     Button("检测失效源（快速）", systemImage: "waveform.path.ecg") { probe(visible) }.disabled(checking).accessibilityIdentifier("sources.probe")
                     Button("一键清理已确认失效 · \(removable.count) 个", systemImage: "trash", role: .destructive) { cleanupPending = true }
                         .disabled(removable.isEmpty || checking).accessibilityIdentifier("sources.cleanup")
                     if let message = health.message { Text(message).font(.caption).foregroundStyle(.orange) }
+                    if let probeSummary { Text(probeSummary).font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("sources.probe.summary") }
                     if selecting {
                         HStack {
                             Button("全选当前列表") { selection.formUnion(visible.map(\.id)) }
@@ -132,7 +136,7 @@ struct SourceManagerView: View {
                             Button("校验当前列表", systemImage: "checkmark.shield") { check(visible) }.disabled(checking)
                             Button("重新尝试当前书源") { health.reset(Set(visible.map(\.id))) }
                             Button("恢复上次清理", systemImage: "arrow.uturn.backward") {
-                                do { try health.restore(online: online) } catch { online.errorMessage = error.localizedDescription }
+                                do { try health.restore(online: online); checks = [:]; failed = []; filter = "全部" } catch { online.errorMessage = error.localizedDescription }
                             }
                         } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("书源操作").accessibilityIdentifier("sources.actions")
                         Button { importing = true } label: { Image(systemName: "plus.circle.fill") }
@@ -172,9 +176,9 @@ struct SourceManagerView: View {
     }
 
     private func askDelete(_ ids: Set<String>) { pendingDelete = ids; confirmDelete = !ids.isEmpty }
-    private func probe(_ sources: [BookSource]) {
+    private func probe(_ sources: [BookSource], offerCleanup: Bool = false) {
         guard !checking else { return }
-        checking = true; probeCompleted = 0; let client = online.client, health = health, session = UUID()
+        checking = true; probeCompleted = 0; probeSummary = nil; let client = online.client, health = health, session = UUID()
         let lookup = Dictionary(sources.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         checkTask = Task {
             defer { checking = false; checkProgress = "" }
@@ -198,6 +202,9 @@ struct SourceManagerView: View {
                         return true
                     }
                 })
+                try Task.checkCancellation()
+                probeSummary = "检测完成 \(probeCompleted) 个 · 已复核失效 \(removable.count) 个。超时、登录或解析失败不会自动删除。"
+                if offerCleanup && !removable.isEmpty { cleanupPending = true }
             } catch { if !Task.isCancelled { online.errorMessage = error.localizedDescription } }
         }
     }

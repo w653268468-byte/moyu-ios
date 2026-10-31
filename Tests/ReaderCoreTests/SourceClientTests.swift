@@ -525,6 +525,22 @@ final class SourceClientTests: XCTestCase {
         XCTAssertEqual(found.first?.url.absoluteString, "https://fixture.example/book/1")
     }
 
+    func testStaticDiscoveryURLsDeferScriptsUntilSelectedPage() async throws {
+        var source = try source()
+        source.exploreUrl = #"[{"title":"周榜","url":"@js:'/search?page='+page"},{"title":"分类","url":"/search?page={{page + 1}}"}]"#
+        source.ruleExplore = source.ruleSearch
+        let client = makeClient(), categories = try await client.categories(source: source)
+        XCTAssertEqual(categories[0].url, "@js:'/search?page='+page")
+        XCTAssertEqual(categories[1].url, "/search?page={{page + 1}}")
+        let script = try SourceScript()
+        let first = try SourceRequest.make(categories[0].url, query: "", base: URL(string: source.bookSourceUrl)!, script: script, page: 2)
+        let second = try SourceRequest.make(categories[1].url, query: "", base: URL(string: source.bookSourceUrl)!, script: script, page: 2)
+        XCTAssertEqual(first.url?.query, "page=2")
+        XCTAssertEqual(second.url?.query, "page=3")
+        let books = try await client.explore(categories[0], page: 2, source: source)
+        XCTAssertEqual(books.first?.title, "山海来信")
+    }
+
     func testStreamingResponseLimit() async throws {
         do {
             _ = try await makeClient().fetch(URL(string: "https://fixture.example/search")!, limit: 5)

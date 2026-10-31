@@ -18,13 +18,14 @@ struct MoyuApp: App {
     @MainActor private static func makeOnlineStore() -> OnlineStore {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-source-health") { return OnlineStore(directory: URL.documentsDirectory.appendingPathComponent("UI-health-online")) }
+        if ProcessInfo.processInfo.arguments.contains("--ui-discovery") { return OnlineStore(directory: URL.documentsDirectory.appendingPathComponent("UI-discovery-online")) }
         #endif
         return OnlineStore()
     }
     @State private var selectedTab: Int = {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
-        if let flag = arguments.firstIndex(of: "--ui-tab"), arguments.indices.contains(flag + 1), let tab = Int(arguments[flag + 1]), (0...3).contains(tab) { return tab }
+        if let flag = arguments.firstIndex(of: "--ui-tab"), arguments.indices.contains(flag + 1), let tab = Int(arguments[flag + 1]), (0...4).contains(tab) { return tab }
         #endif
         return 0
     }()
@@ -37,6 +38,7 @@ struct MoyuApp: App {
         WindowGroup {
             TabView(selection: $selectedTab) {
                 ShelfView().tabItem { Label("书架", systemImage: "books.vertical") }.tag(0)
+                DiscoveryView().tabItem { Label("发现", systemImage: "sparkles") }.tag(4)
                 SourceHubView().tabItem { Label("找书", systemImage: "magnifyingglass") }.tag(1)
                 SourceManagerView().tabItem { Label("书源", systemImage: "globe.asia.australia") }.tag(2)
                 AppSettingsView().tabItem { Label("设置", systemImage: "gearshape") }.tag(3)
@@ -69,6 +71,8 @@ struct MoyuApp: App {
                     }
                     #if DEBUG
                     try? Data("onAppear".utf8).write(to: URL.documentsDirectory.appendingPathComponent("ui-startup.txt"), options: .atomic)
+                    if ProcessInfo.processInfo.arguments.contains("--ui-discovery"), online.sources.isEmpty,
+                       let source = try? DiscoveryCheck.fixtureSource() { try? online.addSources([source]) }
                     if ProcessInfo.processInfo.arguments.contains("--ui-scroll-check") {
                         Task { @MainActor in try? await Task.sleep(for: .milliseconds(700)); ScrollReadingView.checkPositionRecovery() }
                     }

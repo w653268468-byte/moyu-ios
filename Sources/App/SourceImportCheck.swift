@@ -109,11 +109,14 @@ private actor SearchCheckGate {
             try ShelfOrganizationCheck.run(directory: root.appendingPathComponent("shelf-group-test"))
             try await ReadingToolsCheck.run(directory: root.appendingPathComponent("reading-tools-test"))
             try await HealthVoiceCheck.run(directory: root.appendingPathComponent("health-voice-test"))
+            try await DiscoveryCheck.run(directory: root.appendingPathComponent("discovery-test"))
             let report: [String: Any] = ["status": "passed", "sourceHealthCleanupAndSmartSearch": true, "networkVoiceImportAndCredentials": true, "chapterLookaheadAndOfflineHandoff": true, "textReplacementPersistenceImportAndMapping": true, "shelfOrganizationPersistenceAndBatchRemoval": true, "shelfRefreshPartialFailureAndStaleResult": true, "offlineDownloadResumeAndDisconnectedRead": true, "redirect": true, "partialFailure": true,
                 "pastedJSON": true, "savedAndReloaded": true, "preservedUnknownFields": true,
                 "duplicateUpdated": true, "searchCatalogContent": true, "onlineBookmarkAndNote": true,
                 "cryptoJSAndAES": true, "nestedRules": true, "sourceLoginKeychain": true, "rsaRoundTrip": true, "coalescedProgressReloaded": true]
-            try JSONSerialization.data(withJSONObject: report, options: .prettyPrinted).write(to: reportURL, options: .atomic)
+            var verified = report
+            verified["discoveryDailyRankingsCategoriesAndCache"] = true
+            try JSONSerialization.data(withJSONObject: verified, options: .prettyPrinted).write(to: reportURL, options: .atomic)
         } catch {
             let report = try? JSONSerialization.data(withJSONObject: ["status": "failed", "error": error.localizedDescription])
             try? report?.write(to: reportURL, options: .atomic)

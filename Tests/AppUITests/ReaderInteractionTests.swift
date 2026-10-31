@@ -250,16 +250,43 @@ final class ReaderInteractionTests: XCTestCase {
 
     @MainActor func testSourceHealthProbeCleanupAndRecoveryKeepRestrictedSource() {
         let app = application(); app.launchArguments = ["--ui-tab", "2", "--ui-source-health"]; app.launch()
-        XCTAssertTrue(app.buttons["sources.probe"].waitForExistence(timeout: 10)); app.buttons["sources.probe"].tap()
-        let cleanup = app.buttons["sources.cleanup"]
-        expectation(for: NSPredicate(format: "enabled == true"), evaluatedWith: cleanup); waitForExpectations(timeout: 15)
-        XCTAssertTrue(app.staticTexts["登录测试源"].exists)
-        cleanup.tap(); app.buttons["备份并删除失效源"].tap()
+        XCTAssertTrue(app.buttons["sources.cleanup.scan"].waitForExistence(timeout: 10)); app.buttons["sources.cleanup.scan"].tap()
+        let confirmation = app.buttons["备份并删除失效源"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 15)); confirmation.tap()
         XCTAssertFalse(app.staticTexts["失效测试源"].exists)
         XCTAssertTrue(app.staticTexts["登录测试源"].exists)
         tapMenu(app.buttons["sources.actions"]); app.buttons["恢复上次清理"].tap()
         XCTAssertTrue(app.staticTexts["失效测试源"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["登录测试源"].exists)
+        app.terminate()
+    }
+
+    @MainActor func testDiscoveryRecommendationsRankingsCategoriesAndShelf() {
+        let app = application(); app.launchArguments = ["--ui-tab", "4", "--ui-discovery"]; app.launch()
+        let recommendation = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "discovery.book.")).firstMatch
+        XCTAssertTrue(recommendation.waitForExistence(timeout: 15))
+        app.buttons["discovery.shuffle"].tap()
+        recommendation.tap()
+        XCTAssertTrue(app.buttons["加入书架"].waitForExistence(timeout: 15)); app.buttons["加入书架"].tap()
+        XCTAssertTrue(app.buttons["已加入书架"].exists); app.buttons["关闭"].tap()
+        app.segmentedControls["discovery.lane"].buttons["排行榜"].tap()
+        let ranking = app.buttons["discovery.category.周榜"]
+        XCTAssertTrue(ranking.waitForExistence(timeout: 5)); ranking.tap()
+        let first = app.buttons["discovery.result.周榜书1"], second = app.buttons["discovery.result.周榜书2"]
+        XCTAssertTrue(first.waitForExistence(timeout: 10)); XCTAssertTrue(second.exists)
+        XCTAssertLessThan(first.frame.minY, second.frame.minY)
+        app.buttons["discovery.more"].tap()
+        XCTAssertTrue(app.buttons["discovery.result.周榜书3"].waitForExistence(timeout: 10))
+        app.buttons["discovery.feed.refresh"].tap()
+        expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.buttons["discovery.result.周榜书3"]); waitForExpectations(timeout: 10)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.segmentedControls["discovery.lane"].buttons["分类"].tap()
+        app.buttons["discovery.category.玄幻"].tap()
+        XCTAssertTrue(app.buttons["discovery.result.玄幻书1"].waitForExistence(timeout: 10))
+        let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "discovery-genre-books"; capture.lifetime = .keepAlways; add(capture)
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "discovery.book.")).firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["discovery.updated"].exists)
         app.terminate()
     }
 

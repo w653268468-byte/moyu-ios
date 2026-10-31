@@ -33,7 +33,19 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         print("GET", self.path, flush=True)
         content_type = "text/html; charset=utf-8"
-        if self.path.startswith("/health-gone/search"):
+        if self.path.startswith("/discovery-list?"):
+            self.send_response(200)
+            query = parse_qs(urlparse(self.path).query)
+            kind = query.get("kind", ["featured"])[0]
+            page = query.get("page", ["1"])[0]
+            numbers = list(range(1, 25)) if kind == "featured" and page == "1" else ([1, 2] if page == "1" else [2, 3] if page == "2" else [])
+            label = {"week": "周榜书", "genre": "玄幻书", "featured": "推荐书"}.get(kind, "书")
+            body = ("<main>" + "".join(f"<div class='book'><a href='/discovery-book/{kind}/{n}'>{label}{n}</a><span class='author'>作者{n}</span><p class='intro'>来自真实请求链路的测试书籍简介。</p></div>" for n in numbers) + "</main>").encode()
+        elif self.path.startswith("/discovery-book/"):
+            self.send_response(200); body = b"<a class='catalog' href='/source-toc'>TOC</a>"
+        elif self.path == "/discovery-failure":
+            self.send_response(503); body = b"temporary failure"
+        elif self.path.startswith("/health-gone/search"):
             self.send_response(404); body = b"gone"
         elif self.path.startswith("/health-login/search"):
             self.send_response(403); body = b"login required"

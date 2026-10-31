@@ -42,5 +42,13 @@ final class LiveSourceTests: XCTestCase {
         XCTAssertGreaterThan(document.chapters.count, 5)
         XCTAssertGreaterThan(document.wordCount, 10000)
         print("LIVE PASS: search → book 84 → HTML text; public EPUB \(document.chapters.count) reading sections, \(document.pages.count) segments")
+        var discovery = source
+        discovery.exploreUrl = "下载排行榜::/browse/scores/top"
+        discovery.ruleExplore = try JSONDecoder().decode(SourceRule.self, from: Data(#"{"bookList":"#books-last1 + ol li","name":"a@text","bookUrl":"a@href"}"#.utf8))
+        let categories = try await client.categories(source: discovery)
+        let ranking = try await client.explore(categories[0], page: 1, source: discovery)
+        XCTAssertGreaterThan(ranking.count, 50)
+        XCTAssertTrue(ranking.allSatisfy { $0.url.host == "www.gutenberg.org" && $0.url.path.hasPrefix("/ebooks/") })
+        print("LIVE DISCOVERY PASS: official download ranking → \(ranking.count) distinct book links in website order")
     }
 }

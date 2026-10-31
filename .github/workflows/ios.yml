@@ -170,7 +170,7 @@ jobs:
           done
           cp "$CONTAINER/Documents/cookie-check.json" build/ui/cookie-check.json || true
           python3 -c 'import json,pathlib,sys; p=pathlib.Path(sys.argv[1]); d=json.loads(p.read_text()); print(d); assert d["status"] == "passed"' "$CONTAINER/Documents/cookie-check.json"
-          for TAB in 0 1 2 3; do
+          for TAB in 0 1 2 3 4; do
             xcrun simctl launch --terminate-running-process "$DEVICE_ID" org.moyu.reader --ui-tab "$TAB"
             sleep 3
             xcrun simctl io "$DEVICE_ID" screenshot "build/ui/tab-$TAB.png"
