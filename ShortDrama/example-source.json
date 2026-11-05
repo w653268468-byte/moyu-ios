@@ -1,0 +1,13 @@
+{
+  "name": "格式示例（不可播放）",
+  "dramas": [
+    {
+      "id": "example-drama",
+      "title": "示例短剧",
+      "summary": "将此地址替换为你的视频地址。",
+      "episodes": [
+        {"id": "episode-1", "title": "第 1 集", "url": "https://example.com/episode-1.mp4"}
+      ]
+    }
+  ]
+}

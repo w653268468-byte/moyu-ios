@@ -1,0 +1,38 @@
+name: ShortDrama IPA
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/shortdrama]
+    paths: ['ShortDrama/**', '.github/workflows/shortdrama.yml']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate project
+        run: |
+          brew install xcodegen
+          cd ShortDrama
+          xcodegen generate
+      - name: Build device app
+        run: >-
+          xcodebuild -project ShortDrama/ShortDrama.xcodeproj -scheme ShortDrama
+          -configuration Release -sdk iphoneos -destination 'generic/platform=iOS'
+          -derivedDataPath build/shortdrama CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p build/package/Payload
+          cp -R build/shortdrama/Build/Products/Release-iphoneos/ShortDrama.app build/package/Payload/
+          cd build/package
+          zip -qr ShortDrama-unsigned.ipa Payload
+          shasum -a 256 ShortDrama-unsigned.ipa > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ShortDrama-unsigned-IPA
+          path: |
+            build/package/ShortDrama-unsigned.ipa
+            build/package/SHA256SUMS.txt
+          if-no-files-found: error
