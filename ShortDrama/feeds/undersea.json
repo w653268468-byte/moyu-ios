@@ -1,0 +1,71 @@
+{
+  "name": "海底王国 · 英语连续短片",
+  "dramas": [
+    {
+      "episodes": [
+        {
+          "id": "chapter-1",
+          "url": "https://archive.org/download/UnderseaKingdomChap11/Undersea%20Kingdom%20Chap%201.mp4",
+          "title": "第 1 集"
+        },
+        {
+          "id": "chapter-2",
+          "url": "https://archive.org/download/UnderseaKingdomChap11/Undersea%20Kingdom%20Chap%202.mp4",
+          "title": "第 2 集"
+        },
+        {
+          "id": "chapter-3",
+          "url": "https://archive.org/download/UnderseaKingdomChap11/Undersea%20Kingdom%20Chap%203.mp4",
+          "title": "第 3 集"
+        },
+        {
+          "id": "chapter-4",
+          "url": "https://archive.org/download/UnderseaKingdomChap11/Undersea%20Kingdom%20Chap%204.mp4",
+          "title": "第 4 集"
+        },
+        {
+          "id": "chapter-5",
+          "url": "https://archive.org/download/UnderseaKingdomChap11/Undersea%20Kingdom%20Chap%205.mp4",
+          "title": "第 5 集"
+        },
+        {
+          "id": "chapter-6",
+          "url": "https://archive.org/download/UnderseaKingdomChap11/Undersea%20Kingdom%20Chap%206.mp4",
+          "title": "第 6 集"
+        },
+        {
+          "id": "chapter-7",
+          "url": "https://archive.org/download/UnderseaKingdomChap11/Undersea%20Kingdom%20Chap%207.mp4",
+          "title": "第 7 集"
+        },
+        {
+          "id": "chapter-8",
+          "url": "https://archive.org/download/UnderseaKingdomChap11/Undersea%20Kingdom%20Chap%208.mp4",
+          "title": "第 8 集"
+        },
+        {
+          "id": "chapter-9",
+          "url": "https://archive.org/download/UnderseaKingdomChap11/Undersea%20Kingdom%20Chap%209.mp4",
+          "title": "第 9 集"
+        },
+        {
+          "id": "chapter-10",
+          "url": "https://archive.org/download/UnderseaKingdomChap11/Undersea%20Kingdom%20Chap%2010.mp4",
+          "title": "第 10 集"
+        },
+        {
+          "id": "chapter-11",
+          "url": "https://archive.org/download/UnderseaKingdomChap11/Undersea%20Kingdom%20Chap%2011.mp4",
+          "title": "第 11 集"
+        },
+        {
+          "id": "chapter-12",
+          "url": "https://archive.org/download/UnderseaKingdomChap11/Undersea%20Kingdom%20Chap%2012.mp4",
+          "title": "第 12 集"
+        }
+      ],
+      "id": "undersea",
+      "title": "海底王国"
+    }
+  ]
+}
